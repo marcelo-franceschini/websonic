@@ -41,7 +41,7 @@ Limites desta prova:
 - O firewall não impede escrita HTTPS no GitHub. Só a falta de credenciais impede o push. O teste acima prova a falha sem credenciais, não um bloqueio de rede.
 - O `claude doctor` sem login não acusou erro, mas isso não prova que o Claude Code aceitou o `managed-settings.json`.
 
-## Permissões (sub-etapa 0.2, parte 2: rodada 2 sem falhas, pendências do Marcelo)
+## Permissões (sub-etapa 0.2, parte 2: rodada 3 sem falhas, pendências do Marcelo)
 
 Roteiro: `.devcontainer/testes/permissoes.md`. O resultado de cada teste entra aqui, com o comando e o código de retorno.
 
@@ -214,3 +214,32 @@ Quem analisou: Claude Code, no computador do Marcelo, a partir do registro acima
 | `docs/` com permissão 777 no host | Herdado da 0.1, sem efeito no git. | Corrigido para 755. |
 
 Ainda não provado: o commit pela IA na imagem reconstruída, o `denyWrite` de `.git/config` e `.git/hooks` pelo sandbox sem o classificador, a presença do arquivo da ROM, e os passos `/status` e `claude doctor`.
+
+### Rodada 3 (03/11/2026)
+
+Quem rodou: Claude Code (Opus 5.5), sessão no contêiner reconstruído, workspace `/workspaces/websonic`. Testes do roteiro: 8, 9, 14, 15, 19 e 20. O commit de partida era `c5d5b8c`.
+
+A sessão estava em modo automático, e não em "default" como pede o roteiro. Mesmo assim, o classificador não barrou nenhum comando: todos rodaram e o erro veio do sistema de arquivos. Então a camada provada é o sandbox, que é a que o roteiro quer provar.
+
+`echo ok` imprimiu `ok`, código 0.
+
+| # | Comando | Código | Camada | Esperado? |
+| --- | --- | --- | --- | --- |
+| 8 | `sed -i 's/a/b/' docs/requisitos.md; echo $?` | 4, "cannot rename docs/sed...: Device or resource busy" | sandbox | sim |
+| 9 | `echo x >> docs/requisitos.md; echo $?` | 1, "Read-only file system" | sandbox | sim |
+| 14 | `echo x >> .git/config; echo $?` | 1, "Read-only file system" | sandbox | sim |
+| 15 | `touch .git/hooks/pre-commit; echo $?` | 1, "Read-only file system" | sandbox | sim |
+| 20 | os mesmos comandos dos testes 14 e 15 | 1 e 1, "Read-only file system" | sandbox | sim |
+| 19 | `git add docs && git commit -m ...` (o commit deste registro) | 0 | | sim |
+
+Detalhes:
+- No teste 8, o `sed -i` grava um arquivo temporário em `docs/` e tenta renomeá-lo por cima do original. A pasta `docs/` é gravável, mas o `docs/requisitos.md` é um ponto de montagem só leitura do sandbox, por isso o `rename` falha com "Device or resource busy". O temporário não sobrou (`ls docs/sed*` vazio).
+- Depois dos testes 8 a 15: `git diff --stat` vazio, o fim do `.git/config` continua igual e `.git/hooks/pre-commit` não existe.
+- O teste 19 é o próprio commit que registra esta rodada. Ele prova que a correção da regra `Edit` sobre a `.git` vale na imagem reconstruída: a IA cria `index.lock`, objetos e refs, enquanto `config` e `hooks` continuam travados (teste 20).
+- Dentro do sandbox, o `git status --short` mostra como não rastreados os marcadores do sandbox (`.bashrc`, `.gitconfig`, `.mcp.json`, `.claude/` e outros), como na rodada 2. Eles não entram no commit, porque o commit só adiciona `docs`. O teste 22, fora do Claude, diz se sobram depois.
+
+Conclusão da rodada 3:
+- Nenhum teste de edição do arquivo travado nem da configuração do git passou.
+- O `denyWrite` do sandbox sobre `docs/requisitos.md`, `.git/config` e `.git/hooks` está provado sem o classificador.
+- A IA consegue fazer commit local.
+- Continuam com o Marcelo, fora do Claude: os testes 21 e 22, `/status` e `claude doctor`.
