@@ -25,8 +25,19 @@ Resultado: 19 testes, 19 `PASSOU`, `falhas: 0`. O script é `.devcontainer/teste
 | `git push` sem credenciais falha | repositório temporário com o `origin` do projeto |
 | O volume `/home/dev/.claude` é gravável pelo `dev` | cria e apaga um arquivo |
 
+## Contêiner aberto pelo devcontainer (sub-etapa 0.1b e 0.2: provado)
+
+Data: 03/11/2026. Comando do Marcelo: `devcontainer up --workspace-folder .` (@devcontainers/cli 0.90.0), com `SONIC1_EXT_DIR=~/sonic1-ext`.
+
+- `verifica-host.sh` passou. O `gera-disasm-texto.sh` copiou 455 arquivos `.asm`.
+- A imagem construiu pelo `devcontainer.json`. O UID do `dev` (1000) é igual ao do host, sem remapeamento.
+- O `postStartCommand` rodou o firewall: "dominio fora da lista bloqueado (DNS, IPv4 e IPv6)" e "dominios autorizados conectam".
+- Resultado: `{"outcome":"success"}`, usuário remoto `dev`, workspace `/workspaces/websonic`.
+- Depois, `rede.sh` rodou por `docker exec -u dev` nesse contêiner: 19 de 19 `PASSOU`, `falhas: 0`.
+- Montagens (`docker inspect`): `/mnt/rom`, `/mnt/disasm` e `/mnt/disasm-texto` com `rw=false`. `/mnt/trabalho`, `/workspaces/websonic` e o volume `/home/dev/.claude` com `rw=true`. `/etc/claude-code/managed-settings.json` presente.
+
 Limites desta prova:
-- Rodou por `docker run`, não pelo `devcontainer up`. O caminho do `postStartCommand` ainda não foi exercitado.
+- A primeira rodada do `rede.sh` foi por `docker run`. A segunda, acima, foi pelo contêiner do `devcontainer`.
 - O firewall não impede escrita HTTPS no GitHub. Só a falta de credenciais impede o push. O teste acima prova a falha sem credenciais, não um bloqueio de rede.
 - O `claude doctor` sem login não acusou erro, mas isso não prova que o Claude Code aceitou o `managed-settings.json`.
 

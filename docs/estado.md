@@ -35,8 +35,8 @@ Documento de acompanhamento do progresso das etapas.
 
 ## Bloqueios e pendências
 
-- Verificação do Marcelo: abrir o contêiner pelo `devcontainer.json`, entrar no Claude Code e rodar `/status` e `claude doctor`, que não podem listar entradas rejeitadas do managed settings.
-- Verificação do Marcelo: rodar `devcontainer up` com `SONIC1_EXT_DIR` definida e confirmar que o `verifica-host.sh` e o firewall (`postStartCommand`) passam.
+- Verificação do Marcelo: dentro do contêiner, entrar no Claude Code (login) e rodar `/status` e `claude doctor`, que não podem listar entradas rejeitadas do managed settings.
+- `devcontainer up` verificado em 03/11/2026 (ver `docs/conhecimento/ambiente.md`).
 - Aviso ao chat de planejamento: a cópia de `docs/requisitos.md` não traz o número da revisão, só a data. A D1 muda quem roda os testes de fidelidade.
 - Verificação do Marcelo: rodar o roteiro `.devcontainer/testes/permissoes.md` numa sessão logada dentro do contêiner.
 - Sem push. O push é do Marcelo. O commit a5b0710 ainda não foi publicado.
