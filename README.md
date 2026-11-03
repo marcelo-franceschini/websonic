@@ -44,6 +44,7 @@ set -Ux SONIC1_EXT_DIR ~/sonic1-ext
 Abra um terminal novo, ou use o mesmo terminal onde definiu a variável, antes de subir o contêiner.
 
 O script `.devcontainer/verifica-host.sh` roda sozinho antes de criar o contêiner. Ele:
+
 - recusa a montagem se a variável faltar ou não apontar para uma pasta;
 - recusa se a pasta externa estiver dentro do repositório;
 - cria `trabalho` se ela não existir;
