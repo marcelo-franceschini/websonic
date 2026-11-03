@@ -253,3 +253,17 @@ Verificações fora do Claude (03/11/2026):
 - Um primeiro `claude doctor` colado era do Claude Code do host (pacman, 2.1.312) e foi descartado.
 
 Conclusão: a sub-etapa 0.2 está concluída (rede 19 de 19, leitura da ROM e do disassembly bloqueada, edição travada, commit local da IA, managed settings aceito).
+
+## Sub-etapa 0.6: congelamento e fechamento
+
+Feito em 03/11/2026, no host, por uma sessão que não está sob o `managed-settings.json`.
+
+Congelados (regra `Edit` e `denyWrite` do sandbox, nos dois): `CLAUDE.md`, `.gitignore`, `docs/requisitos.md`, `hooks/`, `refs/`, `.github/` e `.devcontainer/`. A IA continua editando `docs/estado.md`, `docs/conhecimento/`, `crates/`, `xtask/`, `site/` e `Cargo.*`.
+
+Evidência rodada no host:
+- `sh .devcontainer/verifica-config.sh` confere, para cada item congelado, a regra `Edit` e o `denyWrite`. Com a regra de `hooks` ou o `denyWrite` de `refs` removidos de propósito, ele falhou com a mensagem certa. Restaurados, volta a dar OK.
+- Imagem reconstruída (`websonic-dev:0.6`): o `/etc/claude-code/managed-settings.json` é idêntico ao do repositório (`cmp`). O link `/home/dev/.local/bin/claude` existe e o PATH o inclui. O `claude doctor` sem login passou de 4 para 2 avisos. Os dois restantes são benignos: o lançador não veio do instalador (o auto-update já está desligado por `DISABLE_AUTOUPDATER`) e o método de instalação é "not set".
+
+Ainda não provado (exige o Marcelo reconstruir e rodar os testes 23 a 28 do roteiro): que o sandbox barra mesmo a escrita nesses caminhos novos, e que o commit e a edição de `docs/estado.md` continuam funcionando com as novas travas.
+
+Para mexer num item congelado: o Marcelo edita fora do contêiner (ou tira a regra, reconstrói a imagem, a IA edita e ele congela de novo).

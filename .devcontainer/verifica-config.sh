@@ -39,6 +39,14 @@ if grep -q 'Edit(//workspaces/websonic/.git/\*\*)' "$ms"; then
     falha "regra Edit cobre a .git inteira. Use so .git/config e .git/hooks/**."
 fi
 
+# 2c. Itens congelados (0.6): cada um precisa da regra Edit E do denyWrite do sandbox.
+#     So o denyWrite vale para qualquer programa; so a regra Edit vale para as ferramentas.
+for item in CLAUDE.md .gitignore docs/requisitos.md hooks refs .github .devcontainer; do
+    base="//workspaces/websonic/$item"
+    grep -q "\"Edit($base)\"\|\"Edit($base/\*\*)\"" "$ms" || falha "falta a regra Edit de $item."
+    grep -q "\"/workspaces/websonic/$item\"" "$ms" || falha "falta o denyWrite de $item."
+done
+
 # 2b. Perfil seccomp que permite o sandbox do Claude Code (user namespaces) no contêiner.
 perfil=seccomp-userns.json
 [ -f "$perfil" ] || falha "falta $perfil."

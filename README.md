@@ -120,4 +120,4 @@ Para congelar arquivos contra edição da IA:
 2. Adicione `Edit(//workspaces/websonic/caminho)` em `permissions.deny` e o caminho em `sandbox.filesystem.denyWrite`.
 3. Reconstrua a imagem do contêiner (`devcontainer build --workspace-folder .`).
 
-A regra `Edit` vale para as ferramentas do Claude Code e para comandos de shell que ele reconhece (`sed`, `tee`, redirecionamentos). Só o `denyWrite` do sandbox vale para qualquer programa. Por isso as duas regras andam juntas. A prova disso é feita na sub-etapa 0.2.
+A regra `Edit` vale para as ferramentas do Claude Code e para comandos de shell que ele reconhece (`sed`, `tee`, redirecionamentos). Só o `denyWrite` do sandbox vale para qualquer programa. Por isso as duas regras andam juntas. A prova disso é feita na sub-etapa 0.2. Itens já congelados (0.6): `CLAUDE.md`, `.gitignore`, `docs/requisitos.md`, `hooks/`, `refs/`, `.github/` e `.devcontainer/`. O `verifica-config.sh` confere que cada um tem as duas regras.

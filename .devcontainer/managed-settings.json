@@ -8,6 +8,12 @@
       "Read(//mnt/disasm/**)",
       "Read(//mnt/disasm)",
       "Edit(//workspaces/websonic/docs/requisitos.md)",
+      "Edit(//workspaces/websonic/CLAUDE.md)",
+      "Edit(//workspaces/websonic/.gitignore)",
+      "Edit(//workspaces/websonic/hooks/**)",
+      "Edit(//workspaces/websonic/refs/**)",
+      "Edit(//workspaces/websonic/.github/**)",
+      "Edit(//workspaces/websonic/.devcontainer/**)",
       "Edit(//workspaces/websonic/.git/config)",
       "Edit(//workspaces/websonic/.git/hooks/**)",
       "Edit(//home/dev/.claude/**)",
@@ -61,6 +67,12 @@
       ],
       "denyWrite": [
         "/workspaces/websonic/docs/requisitos.md",
+        "/workspaces/websonic/CLAUDE.md",
+        "/workspaces/websonic/.gitignore",
+        "/workspaces/websonic/hooks",
+        "/workspaces/websonic/refs",
+        "/workspaces/websonic/.github",
+        "/workspaces/websonic/.devcontainer",
         "/workspaces/websonic/.git/config",
         "/workspaces/websonic/.git/hooks"
       ]
