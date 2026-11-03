@@ -49,6 +49,6 @@ Para ver o site: `cargo xtask site` e servir `dist/` por HTTP (módulos e WebAss
 - A cola JavaScript e o WebAssembly foram chamados em Node: `abc` recusado com hash `a9993e36...`, arquivo vazio recusado, 512 KiB de zeros recusado por hash. O caminho de aceite da REV01 só é provado com dados sintéticos em Rust (`identificar_com`). A ROM real não foi usada.
 - `cargo xtask anti-rom` no repositório: sem suspeitos. Numa cópia descartável com um `.gen` e um arquivo de 300000 bytes commitados e depois apagados, o comando falhou e listou os dois (pega o histórico).
 
-## Não provado
+## Conferência do Marcelo no navegador (03/11/2026)
 
-- A página num navegador de verdade. Não há navegador na imagem (decisão aprovada). A conferência fica para o Marcelo: servir `dist/`, escolher um arquivo qualquer (recusa) e a ROM REV01 (aceite).
+`dist/` servido por HTTP local. Com a ROM REV01 escolhida, a página mostrou "ROM REV01 válida", SHA-1 `69e102855d4389c3fd1a8f3dc7d193f8eee5fe5b` e 524288 bytes. O aceite no navegador está provado. A recusa foi provada em Node, sem navegador.
