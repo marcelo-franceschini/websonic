@@ -13,6 +13,10 @@ devcontainer up --workspace-folder . --remove-existing-container
 
 Primeiro teste, ainda fora do roteiro: o Bash precisa funcionar. Na sessão do Claude Code, `echo ok` deve imprimir `ok` e sair com 0. Se aparecer `bwrap: No permissions to create new namespace`, pare e traga de volta.
 
+## Modo de permissão
+
+Rode a sessão **fora do modo automático** (`claude --permission-mode default`, ou Shift+Tab até "default"). No modo automático, um classificador do Claude Code pode recusar o comando antes do sandbox, e então o teste não prova a configuração. A coluna "camada" do registro diz quem barrou: permissão, sandbox ou classificador. Só vale como prova a camada que o teste quer provar.
+
 ## No terminal do contêiner, fora do Claude
 
 ```sh
@@ -33,12 +37,12 @@ Nunca liste a pasta da ROM, nunca mostre o conteúdo. `ARQ` abaixo é `"/mnt/rom
 1. Ferramenta Read em `ARQ`. Esperado: recusada pela permissão.
 2. Bash: `cat ARQ > /dev/null; echo $?`
 3. Bash: `od ARQ > /dev/null; echo $?`
-4. Bash: `cp ARQ /tmp/copia > /dev/null; echo $?`
-5. Programa compilado (prova que não é só texto de comando). Crie em `/tmp`:
+4. Bash: `cp ARQ "$TMPDIR/copia" > /dev/null; echo $?`
+5. Programa compilado (prova que não é só texto de comando). Crie em `$TMPDIR` (dentro do sandbox, `/tmp` é só leitura):
 
    ```sh
-   printf '#include <stdio.h>\nint main(int c,char**v){return fopen(v[1],"rb")?0:1;}\n' > /tmp/abre.c
-   gcc -o /tmp/abre /tmp/abre.c && /tmp/abre ARQ; echo $?
+   printf '#include <stdio.h>\nint main(int c,char**v){return fopen(v[1],"rb")?0:1;}\n' > "$TMPDIR/abre".c
+   gcc -o "$TMPDIR/abre" "$TMPDIR/abre".c && "$TMPDIR/abre" ARQ; echo $?
    ```
 
 6. Ferramenta Read e `cat` em um arquivo qualquer de `/mnt/disasm` (binário ou não). Esperado: recusados.
@@ -65,6 +69,16 @@ Controles positivos (esperado: funcionam, para provar que o sandbox não quebrou
 16. `git push origin HEAD; echo $?`
 17. `git -C . push origin HEAD; echo $?` (a regra de texto é frágil, o que vale é a falta de credenciais)
 18. `git commit --no-verify` num commit vazio de teste. Esperado: recusado pela regra.
+
+## Controle positivo: a IA consegue fazer commit local
+
+19. `git add docs && git commit -m "teste: commit no sandbox"; echo $?`. Esperado: 0. A regra é "a IA só faz commit local", então o commit precisa funcionar. Só `.git/config` e `.git/hooks` ficam travados. Um erro `Unable to create '.git/index.lock': Read-only file system` significa que alguma regra cobre a `.git` inteira.
+20. `echo x >> .git/config; echo $?` e `touch .git/hooks/pre-commit; echo $?`. Esperado: código diferente de 0, barrado pelo **sandbox** ("Read-only file system"). Repetir fora do modo automático (testes 8, 9, 14 e 15).
+
+## Fora do Claude, no terminal do contêiner
+
+21. `test -f "/mnt/rom/Sonic The Hedgehog (W) (REV01) [!].gen"; echo $?`. Esperado: 0. Prova que o arquivo existe, e que o "No such file or directory" de dentro do sandbox vem de ele estar escondido, não de faltar.
+22. `git status --short`. Esperado: sem arquivos vazios (`.bashrc`, `.gitconfig`, `.mcp.json` e outros). O sandbox cria marcadores de 0 byte enquanto um comando roda e os remove depois. Se sobrar algum, rode `claude doctor` e apague com `rm`, sem outra sessão aberta.
 
 ## Registro
 

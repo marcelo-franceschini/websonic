@@ -33,6 +33,12 @@ if grep -q '^    "allowedDomains"\|^    "allowManagedDomainsOnly"' "$ms"; then
     falha "allowedDomains/allowManagedDomainsOnly fora de sandbox.network."
 fi
 
+# 2a. Nenhuma regra Edit pode cobrir a .git inteira: a regra tambem vale no sandbox e impede o commit.
+#     So config e hooks ficam travados.
+if grep -q 'Edit(//workspaces/websonic/.git/\*\*)' "$ms"; then
+    falha "regra Edit cobre a .git inteira. Use so .git/config e .git/hooks/**."
+fi
+
 # 2b. Perfil seccomp que permite o sandbox do Claude Code (user namespaces) no contêiner.
 perfil=seccomp-userns.json
 [ -f "$perfil" ] || falha "falta $perfil."

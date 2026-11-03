@@ -8,7 +8,8 @@
       "Read(//mnt/disasm/**)",
       "Read(//mnt/disasm)",
       "Edit(//workspaces/websonic/docs/requisitos.md)",
-      "Edit(//workspaces/websonic/.git/**)",
+      "Edit(//workspaces/websonic/.git/config)",
+      "Edit(//workspaces/websonic/.git/hooks/**)",
       "Edit(//home/dev/.claude/**)",
       "Bash(git push)",
       "Bash(git push *)",
@@ -17,6 +18,8 @@
       "Bash(git * config *)",
       "Bash(git -c *)",
       "Bash(*--no-verify*)",
+      "Bash(git commit -n*)",
+      "Bash(git commit * -n*)",
       "Bash(*core.hooksPath*)",
       "Bash(sudo)",
       "Bash(sudo *)"
