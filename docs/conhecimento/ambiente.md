@@ -243,3 +243,8 @@ Conclusão da rodada 3:
 - O `denyWrite` do sandbox sobre `docs/requisitos.md`, `.git/config` e `.git/hooks` está provado sem o classificador.
 - A IA consegue fazer commit local.
 - Continuam com o Marcelo, fora do Claude: os testes 21 e 22, `/status` e `claude doctor`.
+
+Verificações fora do Claude (03/11/2026):
+- Teste 21: `test -f` no arquivo da ROM REV01, no host, devolveu 0. O arquivo existe com esse nome. Então o "No such file or directory" de dentro do sandbox vem de ele estar escondido.
+- Teste 22: `git status --short` no host, depois de fechar a sessão, saiu vazio. Nenhum marcador de 0 byte sobrou.
+- Falta só `/status` e `claude doctor` com login.
