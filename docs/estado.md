@@ -41,4 +41,4 @@ Documento de acompanhamento do progresso das etapas.
 - Testes 21 e 22 do roteiro: passaram em 03/11/2026 (ROM existe, sem marcadores sobrando).
 - `/status` e `claude doctor` no contêiner: managed settings aceito, sem entradas rejeitadas. Avisos de PATH e método de instalação, sem efeito na segurança, a tratar na 0.6.
 - Verificação do Marcelo: escolher a ROM REV01 no site publicado e, se quiser, ativar a proteção de branch em `main`.
-- Sem push. O push é do Marcelo. Os commits locais até 5264427 ainda não foram publicados.
+- Sem push. O push é do Marcelo. Tudo até o commit 548e997 foi publicado.
