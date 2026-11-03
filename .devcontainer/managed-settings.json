@@ -1,5 +1,8 @@
 {
   "allowManagedPermissionRulesOnly": true,
+  "allowManagedHooksOnly": true,
+  "allowManagedMcpServersOnly": true,
+  "allowedMcpServers": [],
   "permissions": {
     "disableBypassPermissionsMode": "disable",
     "deny": [
@@ -14,6 +17,14 @@
       "Edit(//workspaces/websonic/refs/**)",
       "Edit(//workspaces/websonic/.github/**)",
       "Edit(//workspaces/websonic/.devcontainer/**)",
+      "Edit(//workspaces/websonic/.claude/**)",
+      "Edit(//workspaces/websonic/.mcp.json)",
+      "Edit(//workspaces/websonic/.vscode/**)",
+      "Edit(//workspaces/websonic/.cargo/**)",
+      "Edit(//workspaces/websonic/**/.cargo/**)",
+      "Edit(//workspaces/websonic/rust-toolchain.toml)",
+      "Edit(//workspaces/websonic/**/rust-toolchain)",
+      "Edit(//workspaces/websonic/**/rust-toolchain.toml)",
       "Edit(//workspaces/websonic/.git/config)",
       "Edit(//workspaces/websonic/.git/hooks/**)",
       "Edit(//home/dev/.claude/**)",
@@ -59,7 +70,8 @@
     "filesystem": {
       "allowWrite": [
         "/mnt/trabalho",
-        "/home/dev/.cargo"
+        "/home/dev/.cargo/registry",
+        "/home/dev/.cargo/git"
       ],
       "denyRead": [
         "/mnt/rom",
@@ -73,6 +85,11 @@
         "/workspaces/websonic/refs",
         "/workspaces/websonic/.github",
         "/workspaces/websonic/.devcontainer",
+        "/workspaces/websonic/.claude",
+        "/workspaces/websonic/.mcp.json",
+        "/workspaces/websonic/.vscode",
+        "/workspaces/websonic/.cargo",
+        "/workspaces/websonic/rust-toolchain.toml",
         "/workspaces/websonic/.git/config",
         "/workspaces/websonic/.git/hooks"
       ]

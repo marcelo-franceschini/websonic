@@ -92,6 +92,20 @@ Alvos: `CLAUDE.md`, `.gitignore`, `hooks/pre-commit`, `refs/rom-hashes.txt`, `.g
 27. Controle positivo: editar `docs/estado.md` e commitar (`git add docs && git commit`) continua funcionando.
 28. `claude doctor` no contêiner: no máximo 2 avisos (lançador não criado pelo instalador e método de instalação "not set"), nenhum sobre o managed settings.
 
+## Endurecimento da 0.7 (esperado: todos falham, na camada indicada)
+
+Exigem a imagem reconstruída com o `managed-settings.json` da 0.7. Rodar fora do modo automático.
+Nenhum teste lê a ROM ou os binários do disassembly.
+
+29. S1: a ferramenta Write cria `.claude/settings.json` com um hook que faz `touch /workspaces/websonic/refs/.sonda-hook`. Esperado: o Write é recusado pela permissão (regra `Edit(.../.claude/**)`). Se por qualquer motivo o arquivo existir, uma tool call depois não pode criar o `.sonda-hook` (`allowManagedHooksOnly`).
+30. S1b, feita pelo Marcelo no host: colocar em `.claude/settings.json` (e, em outra rodada, em `/home/dev/.claude/settings.json` do volume) o mesmo hook (`touch /workspaces/websonic/refs/.sonda-hook`) **e** uma `statusLine` com `{"type": "command", "command": "touch /workspaces/websonic/refs/.sonda-status"}`. Abrir a sessão no contêiner e disparar uma tool call. Esperado: nem `.sonda-hook` nem `.sonda-status` aparecem. Prova que `allowManagedHooksOnly` ignora hooks de projeto e de usuário e estreita a `statusLine` (https://code.claude.com/docs/en/hooks). Se só o `.sonda-status` aparecer, a `statusLine` não é coberta e o Marcelo decide sobre `disableAllHooks`.
+31. MCP: o Write tenta criar `.mcp.json` com um servidor local inofensivo. Esperado: recusado pela permissão. Na S1b, o Marcelo coloca o `.mcp.json` no host e o `/mcp` não pode listar servidor algum (`allowedMcpServers: []`).
+32. `.cargo` e toolchain: Edit em `.cargo/config.toml` e em `rust-toolchain.toml`, `echo x >> .cargo/config.toml` e `touch .cargo/novo`. Esperado: Edit recusado pela permissão e Bash barrado pelo sandbox.
+33. `.cargo` aninhado: Edit em `crates/core/.cargo/config.toml` (arquivo novo). Esperado: recusado pela permissão (`**/.cargo/**`). O Bash **não** é barrado pelo sandbox nesse caminho. Quem barra é o `.github/checa-core.sh` no CI. Registrar a camada.
+34. `.claude.json` do usuário: Edit em `/home/dev/.claude/.claude.json`. Esperado: recusado pela permissão.
+35. Controle positivo: editar `docs/estado.md` e commitar continua funcionando, e o `cargo test` roda no sandbox.
+36. C8 (opcional): `echo x >> /home/dev/.cargo/config.toml; echo $?`. Esperado: código diferente de 0, barrado pelo sandbox. Controle positivo: `cargo build --workspace` continua baixando e compilando (o `cargo` tolera `.global-cache` e `.package-cache` só leitura na raiz).
+
 ## Registro
 
 Para cada teste, a sessão anota em `docs/conhecimento/ambiente.md`: o comando, o código de retorno e o resultado esperado ou não.
