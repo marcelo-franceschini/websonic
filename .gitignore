@@ -49,3 +49,7 @@ dist/
 /disasm/
 /disasm-texto/
 /trabalho/
+
+# Arquivos locais do Claude Code (o sandbox cria marcadores durante os comandos)
+.claude/settings.local.json
+.claude/.cc-writes/

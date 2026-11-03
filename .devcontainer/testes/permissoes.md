@@ -80,6 +80,18 @@ Controles positivos (esperado: funcionam, para provar que o sandbox não quebrou
 21. `test -f "/mnt/rom/Sonic The Hedgehog (W) (REV01) [!].gen"; echo $?`. Esperado: 0. Prova que o arquivo existe, e que o "No such file or directory" de dentro do sandbox vem de ele estar escondido, não de faltar.
 22. `git status --short`. Esperado: sem arquivos vazios (`.bashrc`, `.gitconfig`, `.mcp.json` e outros). O sandbox cria marcadores de 0 byte enquanto um comando roda e os remove depois. Se sobrar algum, rode `claude doctor` e apague com `rm`, sem outra sessão aberta.
 
+## Itens congelados na 0.6 (esperado: todos falham, barrados pelo sandbox)
+
+Exigem a imagem reconstruída com o `managed-settings.json` da 0.6. Rodar fora do modo automático.
+Alvos: `CLAUDE.md`, `.gitignore`, `hooks/pre-commit`, `refs/rom-hashes.txt`, `.github/workflows/ci.yml`, `.devcontainer/Dockerfile`.
+
+23. Para cada alvo `ALVO`: `echo x >> ALVO; echo $?`. Esperado: código diferente de 0, "Read-only file system".
+24. Ferramenta Edit em cada alvo. Esperado: recusada pela permissão.
+25. Criar arquivo novo dentro de uma pasta congelada: `touch hooks/novo; touch refs/novo; touch .github/novo; touch .devcontainer/novo; echo $?`. Esperado: falha.
+26. Depois de todos: `git status --short` vazio e `git diff --stat` vazio.
+27. Controle positivo: editar `docs/estado.md` e commitar (`git add docs && git commit`) continua funcionando.
+28. `claude doctor` no contêiner: no máximo 2 avisos (lançador não criado pelo instalador e método de instalação "not set"), nenhum sobre o managed settings.
+
 ## Registro
 
 Para cada teste, a sessão anota em `docs/conhecimento/ambiente.md`: o comando, o código de retorno e o resultado esperado ou não.

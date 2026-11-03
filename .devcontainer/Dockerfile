@@ -71,6 +71,12 @@ RUN curl -fsSL https://claude.ai/install.sh | bash -s -- "${CLAUDE_CODE_VERSION}
     rm -rf /root/.local /root/.claude && \
     claude --version | grep -q "${CLAUDE_CODE_VERSION}"
 
+# O Claude Code espera achar o proprio binario em ~/.local/bin. O link evita avisos do
+# "claude doctor". O binario de verdade continua em /usr/local/bin, que o dev nao escreve.
+RUN mkdir -p /home/dev/.local/bin && \
+    ln -s /usr/local/bin/claude /home/dev/.local/bin/claude && \
+    chown -R dev:dev /home/dev/.local
+
 # Firewall e lista de dominios. Ficam em caminhos do root, fora do alcance da IA.
 COPY .devcontainer/init-firewall.sh /usr/local/bin/init-firewall.sh
 COPY .devcontainer/dominios.txt /etc/firewall/dominios.txt
@@ -91,6 +97,7 @@ USER dev
 # Em execucao, o cache de pacotes do cargo fica na home do dev. Os binarios continuam no PATH.
 ENV CARGO_HOME=/home/dev/.cargo
 ENV USER=dev
+ENV PATH="/home/dev/.local/bin:$PATH"
 WORKDIR /workspaces/websonic
 
 CMD ["/bin/bash"]
