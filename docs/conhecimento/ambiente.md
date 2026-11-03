@@ -356,14 +356,12 @@ Não contornei a regra de texto trocando o comando. Fica sem prova se o `pre-com
 
 ### Chaves do C1 (confirmação)
 
-A documentação (`code.claude.com`) não abriu: o DNS do contêiner recusa, pela D2. As chaves foram confirmadas nas descrições do binário `claude` 2.1.317 (`grep` no binário do Claude Code, nunca na ROM):
-- `allowManagedHooksOnly`: "only hooks from managed settings and from plugins that managed settings enable run. User, project, and local hooks and the hooks of plugins the user installed are ignored."
-- `allowManagedMcpServersOnly`: só faz `allowedMcpServers` ser lida dos managed settings. Ela sozinha não bloqueia servidor algum.
-- `allowedMcpServers`: "If empty array, users can use no servers of their own." Governa servidores de usuário, projeto, local, `--mcp-config` e plugins. A lista vazia é o que bloqueia.
-- `disableAllHooks` desliga também o comando da `statusLine`. Não foi ligada no patch. O comando da `statusLine` em `.claude/settings.json` fica barrado pelo Write (regra `Edit` em `.claude/**`), não por `allowManagedHooksOnly`. Decisão do Marcelo se quer `disableAllHooks` também.
+Fontes: https://code.claude.com/docs/en/hooks (hooks) e https://code.claude.com/docs/en/managed-mcp.md#policy-based-control-with-allowlists-and-denylists (MCP). **Eu não consegui abrir essas páginas**: o DNS do contêiner recusa `code.claude.com`, pela D2. O que está abaixo vem da leitura do Marcelo, e eu só conferi por `grep` no binário `claude` 2.1.317 que as chaves existem.
+- `allowManagedHooksOnly`: só rodam hooks dos managed settings e de plugins que eles habilitam. Hooks de usuário, de projeto e locais são ignorados. Segundo o Marcelo, a documentação diz que a chave também **estreita** o comando da `statusLine`, o `fileSuggestion` e o `subagentStatusLine`. Isso corrige um texto anterior desta nota, que dizia que a `statusLine` não era coberta e que só o `disableAllHooks` a cobria. Por isso a S1b inclui a `statusLine`.
+- `allowManagedMcpServersOnly`: só faz `allowedMcpServers` ser lida dos managed settings. Sozinha, não bloqueia servidor algum.
+- `allowedMcpServers`: lista vazia significa nenhum servidor do usuário, do projeto ou de plugin. A lista vazia é o que bloqueia.
+- `disableAllHooks`: não está no patch. Com `allowManagedHooksOnly` cobrindo a `statusLine`, ele deixa de ser necessário para este fim.
 - O `.claude.json` do usuário fica em `/home/dev/.claude/.claude.json`, porque `CLAUDE_CONFIG_DIR=/home/dev/.claude` (vem do `devcontainer.json`). Ele já está sob `Edit(//home/dev/.claude/**)`. O `verifica-config.sh` confere essa variável.
-
-Links indicados pelo Marcelo: https://code.claude.com/docs/en/managed-mcp.md e https://code.claude.com/docs/en/hooks. Não os abri.
 
 ### Correções preparadas (patches em `/mnt/trabalho/0.7/patches/`)
 
@@ -414,6 +412,17 @@ Observações:
 - Esta tabela não mede a camada de escrita (permissão e sandbox), porque as regras novas só valem depois que a imagem for reconstruída. Isso fica para a Parte 3.
 - `/home/dev/.cargo/config.toml` é gravável pela IA (está em `allowWrite`) e vale para o `cargo` rodado no contêiner. Ele não afeta o CI, que usa `CARGO_HOME=/tmp/cargo`. Um `cargo clippy` local na imagem não prova o C3: a prova é o passo do CI.
 
+### Ajustes pedidos antes da aplicação (03/11/2026)
+
+- **Ordem no `ci.yml`:** "Checagens do nucleo" e "Lints do nucleo" passaram para logo depois de "Construir a imagem de trabalho" e antes de `cargo xtask anti-rom`, porque os passos seguintes executam código do repositório (xtask, `build.rs`, macros) com o checkout em escrita e poderiam reescrever os scripts. Os dois passos usam `MONTAGEM_RO=1` (novo no `rodar-na-imagem.sh`: monta o checkout `:ro`) e `CARGO_TARGET_DIR=/tmp/alvo-nucleo`. Prova feita: os dois scripts passam num checkout sem permissão de escrita (`chmod -R a-w`) com o alvo fora dele. A montagem `:ro` do Docker em si não foi provada (sem Docker aqui).
+- **Regex de `allow` e `expect` no `checa-core.sh`:** agora `#!?\[[[:space:]]*(allow|expect)\b`. Provado em cópias descartáveis, 9 casos, todos como esperado: `#[allow(..)]`, `#![allow(..)]`, `#[ allow(..)]` e `#[expect(..)]` barrados (rc 1, "atributo allow ou expect no nucleo"); `Some(1u8).expect("a")` e `x.expect("a")` liberados (rc 0); `#![cfg_attr(.., allow(..))]` continua barrado pela regra do `cfg_attr`; a base limpa passa.
+- **C8 (opcional, patch separado `0.7-c8-cargo-home-opcional.patch`):** reduz o `allowWrite` de `/home/dev/.cargo` para `/home/dev/.cargo/registry` e `/home/dev/.cargo/git` (e o Dockerfile cria as duas pastas). Fica fora do `0.7-todos.patch`. Verificação no contêiner:
+  - O `bwrap` aninhado não cria namespace dentro do sandbox ("No permissions to create new namespace"), então emulei por permissões de arquivo: cópia do `CARGO_HOME` com a raiz e os arquivos da raiz (`.global-cache`, `.package-cache`, `.package-cache-mutate`) sem escrita, e `registry` e `git` graváveis. É emulação: a montagem só leitura do sandbox dá "Read-only file system" (EROFS), e a emulação dá "Permission denied".
+  - `: >> $CH/config.toml` e `: >> $CH/.package-cache`: "Permission denied" (a escrita em `config.toml` falha, como se quer).
+  - `cargo build --offline --workspace` com esse `CARGO_HOME`: terminou (`Finished`).
+  - Baixar crate: removi `syn` do `registry` da cópia e rodei `cargo build --workspace` (com rede): baixou, extraiu e compilou. Confirmado por `ls` do `registry/cache` e `registry/src`.
+  - Custo: a IA não pode mais `cargo install` em `CARGO_HOME/bin`, e as estatísticas do `.global-cache` não são atualizadas. Os binários da imagem ficam em `/usr/local/cargo/bin` e não são afetados. Ainda não provado na imagem reconstruída: teste 36 do roteiro.
+
 ### Pendente
 
-Depois que o Marcelo aplicar os patches e reconstruir a imagem: repetir a S1, a S2 e a S3 e os testes 23 a 28; rodar a S1b (hook colocado pelo Marcelo no host, com `allowManagedHooksOnly` ligado); rodar os testes 29 a 35 do roteiro; push num branch descartável com um erro de formatação (N7), que o Marcelo apaga depois.
+Depois que o Marcelo aplicar os patches e reconstruir a imagem: repetir a S1, a S2 e a S3 e os testes 23 a 28; rodar a S1b (hook e `statusLine` com `touch refs/.sonda-status`, colocados pelo Marcelo no host, com `allowManagedHooksOnly` ligado); rodar os testes 29 a 35 do roteiro; push num branch descartável com um erro de formatação (N7), que o Marcelo apaga depois.
