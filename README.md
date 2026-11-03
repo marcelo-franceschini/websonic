@@ -96,6 +96,18 @@ sh hooks/instalar.sh
 
 Bloqueiam ROM por extensão, tamanho e hash, no commit e no push. Detalhes e limites em `docs/conhecimento/hooks.md`. Teste sintético: `sh .devcontainer/testes/hooks.sh`.
 
+## Código e comandos
+
+Dentro do contêiner (ou na imagem):
+
+```sh
+cargo test --workspace
+cargo xtask site        # monta dist/
+cargo xtask anti-rom    # procura ROM no repositório
+```
+
+Estrutura e decisões em `docs/conhecimento/esqueleto.md`.
+
 ## Como congelar um item
 
 Para congelar arquivos contra edição da IA:

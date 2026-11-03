@@ -5,7 +5,7 @@ Documento de acompanhamento do progresso das etapas.
 ## Etapa atual
 
 - Etapa: 0 (Esqueleto do repositório).
-- Sub-etapa: 0.3 (Hooks do git), concluída. Próxima: 0.4, aguardando aprovação do plano.
+- Sub-etapa: 0.4 (Esqueleto Rust e site), implementada. Falta a conferência do site no navegador pelo Marcelo.
 - Status: a 0.1b e a 0.2 estão commitadas e provadas. Nada aguarda verificação do Marcelo, exceto o push.
 
 ## Histórico de etapas
@@ -21,7 +21,7 @@ Documento de acompanhamento do progresso das etapas.
   - `claude doctor` no contêiner (sem login) não acusa erro de configuração. Isso não prova que o `managed-settings.json` foi aceito.
 - Sub-etapa 0.2 (Validação dentro do contêiner): rede provada (19 de 19, no contêiner real do devcontainer). Rodada 1 das permissões: Read e Edit recusam como esperado, mas o Bash não rodava (bwrap sem user namespace). Corrigido com `.devcontainer/seccomp-userns.json`. Rodada 2 em 03/11/2026: o Bash roda e nenhum teste de leitura da ROM nem de edição do arquivo travado passou. Rodada 3 em 03/11/2026: os testes 8, 9, 14, 15 e 20 foram barrados pelo sandbox, sem o classificador, e o commit da IA funcionou (teste 19). Restam as verificações do Marcelo (ver `docs/conhecimento/ambiente.md`).
 - Sub-etapa 0.3 (Hooks do git): `hooks/` com `pre-commit`, `pre-push`, `lib.sh` e `instalar.sh`. `sh .devcontainer/testes/hooks.sh`: 14 de 14 num repositório descartável com arquivos sintéticos (ver `docs/conhecimento/hooks.md`). Verificada pelo Marcelo em 03/11/2026: hooks ativos, ROM real bloqueada com o hash reconhecido, 14 de 14 também no contêiner.
-- Sub-etapa 0.4 (Esqueleto Rust e site): não iniciada.
+- Sub-etapa 0.4 (Esqueleto Rust e site): workspace com `sonic1-core`, `sonic1-rom`, `sonic1-web` e `xtask`, site em `site/`. Fmt, clippy `-D warnings` e testes nativos e `wasm32-wasip1` passam na imagem. Lints do núcleo provados com violações plantadas. `cargo xtask anti-rom` pega ROM no histórico. Ver `docs/conhecimento/esqueleto.md`.
 - Sub-etapa 0.5 (CI e publicação): não iniciada.
 - Sub-etapa 0.6 (Fechamento): não iniciada.
 
@@ -40,4 +40,5 @@ Documento de acompanhamento do progresso das etapas.
 - Rodada 3 das permissões: feita. O `denyWrite` de `docs/requisitos.md`, `.git/config` e `.git/hooks` está provado no sandbox, e a IA faz commit local. A sessão estava em modo automático, mas nenhum comando foi barrado pelo classificador (ver `docs/conhecimento/ambiente.md`).
 - Testes 21 e 22 do roteiro: passaram em 03/11/2026 (ROM existe, sem marcadores sobrando).
 - `/status` e `claude doctor` no contêiner: managed settings aceito, sem entradas rejeitadas. Avisos de PATH e método de instalação, sem efeito na segurança, a tratar na 0.6.
+- Verificação do Marcelo: `cargo xtask site`, servir `dist/` por HTTP e testar no navegador um arquivo qualquer (recusa) e a ROM REV01 (aceite).
 - Sem push. O push é do Marcelo. Os commits locais até 5264427 ainda não foram publicados.
