@@ -1,0 +1,19 @@
+#!/bin/sh
+# Antes do push: repete a verificacao em TUDO o que seria enviado.
+# Cobre o historico: um arquivo apagado num commit posterior continua no historico.
+# Esta e a barreira contra --no-verify, porque roda no push do Marcelo.
+. "$(dirname "$0")/lib.sh"
+
+zero=0000000000000000000000000000000000000000
+
+# Entrada do git: "<ref local> <id local> <ref remota> <id remoto>" por linha.
+problemas=$(
+    while read -r ref_local id_local ref_remota id_remoto; do
+        [ "$id_local" = "$zero" ] && continue   # apagar branch nao envia objetos
+        # Objetos alcancaveis do que sobe e ainda nao estao em nenhuma ref remota.
+        git rev-list --objects "$id_local" --not --remotes
+    done | verificar_objetos
+)
+
+[ -z "$problemas" ] || recusar "push" "$problemas"
+exit 0

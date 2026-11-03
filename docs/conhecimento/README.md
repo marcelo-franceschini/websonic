@@ -5,3 +5,4 @@
 ## Índice
 
 - [ambiente.md](ambiente.md): provas do contêiner, da rede e das permissões, com comando e resultado.
+- [hooks.md](hooks.md): hooks do git, regras de bloqueio da ROM, ativação, limites e testes.
