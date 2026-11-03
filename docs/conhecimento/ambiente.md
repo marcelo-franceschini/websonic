@@ -303,3 +303,5 @@ Conclusão da rodada 4:
 - Nenhum teste de escrita num item congelado passou: `CLAUDE.md`, `.gitignore`, `hooks/`, `refs/`, `.github/` e `.devcontainer/` estão travados pela permissão (Edit) e pelo sandbox (Bash), inclusive para arquivos novos.
 - A edição de `docs/estado.md` e o commit local continuam funcionando.
 - Pendência do Marcelo: rodar `claude doctor` no terminal do contêiner, fora do Claude, para confirmar os 2 avisos sem as entradas "Invalid settings" causadas pelo sandbox.
+
+`claude doctor` no terminal do contêiner, fora do Claude (Marcelo, 03/11/2026): versão 2.1.317, caminho `/usr/local/bin/claude`, 2 avisos benignos (lançador não criado pelo instalador e método de instalação "unknown"), sem nenhuma entrada rejeitada do managed settings. As entradas `/dev/null` vistas dentro do sandbox na rodada 4 vêm só do Bash do Claude.
