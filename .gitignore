@@ -1,0 +1,40 @@
+# Compilacao e builds
+target/
+dist/
+
+# ROMs e formatos de cartucho
+*.bin
+*.gen
+*.smd
+*.iso
+
+# Imagens e arquivos compactados
+*.zip
+*.7z
+*.rar
+*.tar
+*.gz
+*.bz2
+*.xz
+
+# Estados de emulador, saves e traces
+*.sav
+*.srm
+*.state*
+*.trace
+*.gst
+
+# Midia e capturas brutas
+*.wav
+*.mp3
+*.ogg
+*.flac
+*.vgm
+
+# Arquivos temporarios de ambiente e editores
+.DS_Store
+*.swp
+*.tmp
+*~
+.idea/
+.vscode/

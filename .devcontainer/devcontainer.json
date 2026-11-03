@@ -1,0 +1,41 @@
+{
+  "name": "sonic1-dev",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "workspaceFolder": "/workspaces/sonic1",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/sonic1,type=bind",
+  "mounts": [
+    "source=${localEnv:SONIC1_ROM_DIR},target=/mnt/rom,type=bind,readonly",
+    "source=${localEnv:SONIC1_DISASM_DIR},target=/mnt/disasm,type=bind,readonly",
+    "source=${localEnv:SONIC1_DISASM_TEXTO_DIR},target=/mnt/disasm-texto,type=bind,readonly",
+    "source=${localEnv:SONIC1_TRABALHO_DIR},target=/mnt/trabalho,type=bind",
+    "source=sonic1-claude-config,target=/home/dev/.claude,type=volume"
+  ],
+  "containerUser": "dev",
+  "capAdd": [
+    "NET_ADMIN",
+    "NET_RAW"
+  ],
+  "containerEnv": {
+    "DISABLE_AUTOUPDATER": "1",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "CLAUDE_CONFIG_DIR": "/home/dev/.claude",
+    "GIT_AUTHOR_NAME": "Claude Code",
+    "GIT_AUTHOR_EMAIL": "claude-code@local",
+    "GIT_COMMITTER_NAME": "Claude Code",
+    "GIT_COMMITTER_EMAIL": "claude-code@local",
+    "SSH_AUTH_SOCK": "",
+    "GIT_ASKPASS": "",
+    "GIT_TERMINAL_PROMPT": "0",
+    "GIT_CONFIG_PARAMETERS": "'credential.helper='"
+  },
+  "remoteEnv": {
+    "VSCODE_IPC_HOOK_CLI": "",
+    "VSCODE_GIT_IPC_HANDLE": "",
+    "GIT_ASKPASS": "",
+    "SSH_AUTH_SOCK": ""
+  },
+  "postStartCommand": "sudo /usr/local/bin/init-firewall.sh"
+}

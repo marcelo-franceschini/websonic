@@ -1,0 +1,2 @@
+# Arquivos isentos do bloqueio por extensao ou tamanho
+# Um caminho relativo por linha

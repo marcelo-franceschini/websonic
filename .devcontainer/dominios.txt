@@ -1,0 +1,30 @@
+# Dominios autorizados para o firewall e para o sandbox do Claude Code
+
+# Claude
+api.anthropic.com
+claude.ai
+platform.claude.com
+
+# Rust e Crates
+index.crates.io
+static.crates.io
+docs.rs
+doc.rust-lang.org
+
+# GitHub (apenas leitura)
+github.com
+api.github.com
+codeload.github.com
+raw.githubusercontent.com
+objects.githubusercontent.com
+
+# Fontes e documentacao de referencia
+tasvideos.org
+openggf-webzone.pages.dev
+clownacy.wordpress.com
+retrodev.com
+tildearrow.org
+info.sonicretro.org
+docs.wasmer.io
+code.claude.com
+en.wikipedia.org

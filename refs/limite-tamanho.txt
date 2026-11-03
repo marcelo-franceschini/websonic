@@ -1,0 +1,2 @@
+# Limite maximo em bytes para arquivos no repositorio (512 KB = 524288 bytes)
+max_bytes: 524288
