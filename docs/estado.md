@@ -39,7 +39,7 @@ Documento de acompanhamento do progresso das etapas.
 - Aviso ao chat de planejamento: a cópia de `docs/requisitos.md` não traz o número da revisão, só a data. A D1 muda quem roda os testes de fidelidade.
 - Rodada 3 das permissões: feita. O `denyWrite` de `docs/requisitos.md`, `.git/config` e `.git/hooks` está provado no sandbox, e a IA faz commit local. A sessão estava em modo automático, mas nenhum comando foi barrado pelo classificador (ver `docs/conhecimento/ambiente.md`).
 - Testes 21 e 22 do roteiro: passaram em 03/11/2026 (ROM existe, sem marcadores sobrando).
-- `/status` e `claude doctor` no contêiner: managed settings aceito, sem entradas rejeitadas. Avisos de PATH e método de instalação, sem efeito na segurança, a tratar na 0.6.
+- `/status` e `claude doctor` no contêiner: managed settings aceito, sem entradas rejeitadas. Os avisos de PATH foram tratados na 0.6 (link do `claude` na imagem).
 - Verificação do Marcelo: escolher a ROM REV01 no site publicado e, se quiser, ativar a proteção de branch em `main`.
 - Testes 23 a 28 do roteiro (rodada 4, 03/11/2026): nenhuma escrita em item congelado passou (permissão e sandbox), e o commit local continua funcionando. A sessão estava em modo automático, mas nenhum comando foi barrado pelo classificador. Falta o Marcelo rodar `claude doctor` fora do Claude, porque dentro do sandbox ele acusa os `/dev/null` montados (ver `docs/conhecimento/ambiente.md`).
 - Sem push. O push é do Marcelo. Tudo até o commit 548e997 foi publicado.
