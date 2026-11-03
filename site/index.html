@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Só código do próprio site e WebAssembly. Nada de rede, nada de script de fora. -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self'">
+  <title>Sonic 1 em Rust</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; }
+    code { word-break: break-all; }
+    #resultado { margin-top: 1rem; padding: 1rem; border: 2px solid #888; border-radius: .5rem; }
+    #resultado.ok { border-color: #1a7f37; }
+    #resultado.erro { border-color: #b3261e; }
+  </style>
+</head>
+<body>
+  <h1>Sonic 1 em Rust</h1>
+  <p>Escolha a sua ROM do Sonic the Hedgehog (REV01). Ela é conferida aqui, no seu navegador.
+     O arquivo não é enviado nem guardado.</p>
+  <input type="file" id="arquivo" disabled>
+  <div id="resultado" hidden>
+    <p id="veredito"></p>
+    <p>SHA-1: <code id="sha1"></code></p>
+    <p>Tamanho: <span id="tamanho"></span> bytes</p>
+  </div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

@@ -5,4 +5,5 @@
 ## Índice
 
 - [ambiente.md](ambiente.md): provas do contêiner, da rede e das permissões, com comando e resultado.
+- [esqueleto.md](esqueleto.md): workspace Rust, lints do núcleo, crate `rom`, site e `cargo xtask`, com evidência.
 - [hooks.md](hooks.md): hooks do git, regras de bloqueio da ROM, ativação, limites e testes.
