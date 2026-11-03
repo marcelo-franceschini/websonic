@@ -23,7 +23,7 @@ Documento de acompanhamento do progresso das etapas.
 - Sub-etapa 0.3 (Hooks do git): `hooks/` com `pre-commit`, `pre-push`, `lib.sh` e `instalar.sh`. `sh .devcontainer/testes/hooks.sh`: 14 de 14 num repositório descartável com arquivos sintéticos (ver `docs/conhecimento/hooks.md`). Verificada pelo Marcelo em 03/11/2026: hooks ativos, ROM real bloqueada com o hash reconhecido, 14 de 14 também no contêiner.
 - Sub-etapa 0.4 (Esqueleto Rust e site): workspace com `sonic1-core`, `sonic1-rom`, `sonic1-web` e `xtask`, site em `site/`. Fmt, clippy `-D warnings` e testes nativos e `wasm32-wasip1` passam na imagem. Lints do núcleo provados com violações plantadas. `cargo xtask anti-rom` pega ROM no histórico. O Marcelo conferiu no navegador: a ROM REV01 é aceita com o SHA-1 correto. Ver `docs/conhecimento/esqueleto.md`.
 - Sub-etapa 0.5 (CI e publicação): `.github/workflows/ci.yml` (jobs `verificar` e `publicar`), ações fixadas por SHA, tudo na imagem do contêiner. `actionlint` aprova e os seis comandos de código rodaram com um usuário de runner simulado. No GitHub, a execução 41695208654 passou nos dois jobs e o site publicado responde 200. Ver `docs/conhecimento/ci.md`.
-- Sub-etapa 0.6 (Fechamento): itens congelados (regra Edit e denyWrite), `.devcontainer/auditoria/` e `.claude/` com README, link do `claude` na imagem (avisos do doctor de 4 para 2). `verifica-config.sh` confere os congelados. Imagem reconstruída no host e idêntica ao arquivo. A prova de bloqueio no contêiner é do Marcelo (ver `docs/conhecimento/ambiente.md`).
+- Sub-etapa 0.6 (Fechamento): itens congelados (regra Edit e denyWrite), `.devcontainer/auditoria/` e `.claude/` com README, link do `claude` na imagem (avisos do doctor de 4 para 2). `verifica-config.sh` confere os congelados. Imagem reconstruída no host e idêntica ao arquivo. Prova de bloqueio no contêiner: rodada 4 das permissões, sem falhas (ver `docs/conhecimento/ambiente.md`).
 
 ## Decisões da auditoria (aprovadas pelo Marcelo em 03/11/2026)
 
@@ -41,5 +41,5 @@ Documento de acompanhamento do progresso das etapas.
 - Testes 21 e 22 do roteiro: passaram em 03/11/2026 (ROM existe, sem marcadores sobrando).
 - `/status` e `claude doctor` no contêiner: managed settings aceito, sem entradas rejeitadas. Avisos de PATH e método de instalação, sem efeito na segurança, a tratar na 0.6.
 - Verificação do Marcelo: escolher a ROM REV01 no site publicado e, se quiser, ativar a proteção de branch em `main`.
-- Verificação do Marcelo: `devcontainer up --workspace-folder . --remove-existing-container` e os testes 23 a 28 de `.devcontainer/testes/permissoes.md`, numa sessão fora do modo automático.
+- Testes 23 a 28 do roteiro (rodada 4, 03/11/2026): nenhuma escrita em item congelado passou (permissão e sandbox), e o commit local continua funcionando. A sessão estava em modo automático, mas nenhum comando foi barrado pelo classificador. Falta o Marcelo rodar `claude doctor` fora do Claude, porque dentro do sandbox ele acusa os `/dev/null` montados (ver `docs/conhecimento/ambiente.md`).
 - Sem push. O push é do Marcelo. Tudo até o commit 548e997 foi publicado.

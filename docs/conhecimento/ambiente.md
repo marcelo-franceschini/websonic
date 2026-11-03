@@ -264,6 +264,42 @@ Evidência rodada no host:
 - `sh .devcontainer/verifica-config.sh` confere, para cada item congelado, a regra `Edit` e o `denyWrite`. Com a regra de `hooks` ou o `denyWrite` de `refs` removidos de propósito, ele falhou com a mensagem certa. Restaurados, volta a dar OK.
 - Imagem reconstruída (`websonic-dev:0.6`): o `/etc/claude-code/managed-settings.json` é idêntico ao do repositório (`cmp`). O link `/home/dev/.local/bin/claude` existe e o PATH o inclui. O `claude doctor` sem login passou de 4 para 2 avisos. Os dois restantes são benignos: o lançador não veio do instalador (o auto-update já está desligado por `DISABLE_AUTOUPDATER`) e o método de instalação é "not set".
 
-Ainda não provado (exige o Marcelo reconstruir e rodar os testes 23 a 28 do roteiro): que o sandbox barra mesmo a escrita nesses caminhos novos, e que o commit e a edição de `docs/estado.md` continuam funcionando com as novas travas.
+A prova no contêiner (testes 23 a 28 do roteiro) está na rodada 4, abaixo.
 
 Para mexer num item congelado: o Marcelo edita fora do contêiner (ou tira a regra, reconstrói a imagem, a IA edita e ele congela de novo).
+
+### Rodada 4: itens congelados (03/11/2026)
+
+Quem rodou: Claude Code (Opus 5.5), sessão no contêiner com a imagem da 0.6, workspace `/workspaces/websonic`. Testes do roteiro: 23 a 28. O commit de partida era `0b96d48`, com `git diff` vazio.
+
+A sessão estava em modo automático, e não em "default" como pede o roteiro. Como na rodada 3, o classificador não barrou nenhum comando: todos rodaram e o erro veio do sistema de arquivos ou da regra de permissão. Então as camadas provadas são as que o roteiro quer provar.
+
+`echo ok` imprimiu `ok`, código 0. Cada comando rodou sozinho, para o código de cada alvo ficar visível.
+
+| # | Comando | Código | Camada | Esperado? |
+| --- | --- | --- | --- | --- |
+| 23 | `echo x >> CLAUDE.md; echo $?` | 1, "Read-only file system" | sandbox | sim |
+| 23 | `echo x >> .gitignore; echo $?` | 1, "Read-only file system" | sandbox | sim |
+| 23 | `echo x >> hooks/pre-commit; echo $?` | 1, "Read-only file system" | sandbox | sim |
+| 23 | `echo x >> refs/rom-hashes.txt; echo $?` | 1, "Read-only file system" | sandbox | sim |
+| 23 | `echo x >> .github/workflows/ci.yml; echo $?` | 1, "Read-only file system" | sandbox | sim |
+| 23 | `echo x >> .devcontainer/Dockerfile; echo $?` | 1, "Read-only file system" | sandbox | sim |
+| 24 | Edit em cada um dos seis alvos | recusado: "File is in a directory that is denied by your permission settings" | permissão | sim |
+| 25 | `touch hooks/novo; echo $?` | 1, "Read-only file system" | sandbox | sim |
+| 25 | `touch refs/novo; echo $?` | 1, "Read-only file system" | sandbox | sim |
+| 25 | `touch .github/novo; echo $?` | 1, "Read-only file system" | sandbox | sim |
+| 25 | `touch .devcontainer/novo; echo $?` | 1, "Read-only file system" | sandbox | sim |
+| 26 | `git diff --stat` e `git status --short` | diff vazio, 0. No status, só os marcadores do sandbox | | sim |
+| 27 | editar `docs/estado.md` e `git add docs && git commit` (o commit deste registro) | 0 | | sim |
+| 28 | `claude doctor` | 0, 2 avisos | | sim, com ressalva |
+
+Detalhes:
+- No teste 24, cada alvo foi lido antes com Read (3 linhas), para a recusa vir da permissão e não da regra "leia antes de editar". O Read dos alvos funciona, como esperado: o congelamento trava só a escrita.
+- No teste 26, `ls` dos quatro `novo` do teste 25 diz "No such file or directory": nenhum foi criado. O `git status --short` mostra como não rastreados só os marcadores do sandbox (`.bashrc`, `.gitconfig`, `.mcp.json`, itens de `.claude/` e outros), como nas rodadas 2 e 3. O teste 22, fora do Claude, já mostrou que eles somem depois.
+- No teste 28, os 2 avisos são os previstos: o `/home/dev/.local/bin/claude` não veio do instalador nativo, e o método de instalação aparece como "unknown" (o roteiro esperava "not set", é o mesmo aviso). Nenhum aviso cita o managed settings. O `doctor` mostra ainda "Managed settings (remote): not fetched", que é o esperado numa conta individual, e não o arquivo local.
+- Ressalva do teste 28: o `doctor` rodou pelo Bash do Claude, dentro do sandbox. Por isso ele acusa "Invalid settings" em `.claude/settings.json`, `.claude/settings.local.json` e `.mcp.json`, com "Not a regular file". São os `/dev/null` que o sandbox monta sobre esses caminhos (achado da rodada 2), e não arquivos reais. Fora do sandbox, esses caminhos não existem no repositório.
+
+Conclusão da rodada 4:
+- Nenhum teste de escrita num item congelado passou: `CLAUDE.md`, `.gitignore`, `hooks/`, `refs/`, `.github/` e `.devcontainer/` estão travados pela permissão (Edit) e pelo sandbox (Bash), inclusive para arquivos novos.
+- A edição de `docs/estado.md` e o commit local continuam funcionando.
+- Pendência do Marcelo: rodar `claude doctor` no terminal do contêiner, fora do Claude, para confirmar os 2 avisos sem as entradas "Invalid settings" causadas pelo sandbox.
