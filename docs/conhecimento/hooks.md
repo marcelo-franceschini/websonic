@@ -40,3 +40,8 @@ No host, uma vez por clone: `sh hooks/instalar.sh`. Ele define `core.hooksPath =
 Rodada em 03/11/2026: 14 testes, 0 falhas (`hooks.sh`). Cobre arquivo limpo, `.gen`, maiúsculas, nome com espaços e colchetes, 262143 e 262144 bytes, hash com nome inocente, exceção que não libera o hash, exceção que libera outras regras, `refs/` ausente (falha fechada), push limpo, push com ROM no histórico e remoto sem receber nada.
 
 Um erro no primeiro teste do push veio do próprio teste: o conteúdo `x` já tinha sido enviado, e o git guarda por conteúdo. O teste passou a usar conteúdo único. O hook não mudou.
+
+Rodada do Marcelo em 03/11/2026, no host e no contêiner:
+- `sh hooks/instalar.sh`: `core.hooksPath = hooks`.
+- `hooks-rom-real.sh` com a ROM real: `jogo.gen` e `disfarce.txt` bloqueados, com o hash reconhecido.
+- `hooks.sh` dentro do contêiner (`devcontainer exec`): 14 testes, 0 falhas.
