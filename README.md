@@ -8,51 +8,58 @@ A fonte única de verdade é `docs/requisitos.md`. O andamento está em `docs/es
 
 Docker e a ferramenta `devcontainer` (ou VS Code/Cursor com a extensão Dev Containers).
 
-Defina as variáveis no perfil do shell:
+### Pasta externa
 
-```sh
-export SONIC1_ROM_DIR=~/sonic1-ext/rom
-export SONIC1_DISASM_DIR=~/sonic1-ext/disasm
-export SONIC1_DISASM_TEXTO_DIR=~/sonic1-ext/disasm-texto
-export SONIC1_TRABALHO_DIR=~/sonic1-ext/trabalho
+Tudo o que não pode entrar no git fica numa pasta fora do repositório, apontada por **uma** variável, `SONIC1_EXT_DIR`. O padrão do projeto é `~/sonic1-ext`.
+
+```text
+~/sonic1-ext/
+├─ rom/            a ROM REV01
+├─ disasm/         o s1disasm completo, no commit de refs/disasm-commit.txt
+├─ disasm-texto/   só os .asm do disassembly
+└─ trabalho/       traces e relatórios
 ```
 
-No fish, use `set -Ux` (o `-U` grava para todas as sessões, e o `-x` exporta):
+| Subpasta | No contêiner | Acesso | Conteúdo |
+| --- | --- | --- | --- |
+| `rom` | `/mnt/rom` | só leitura, bloqueada para a IA | A ROM REV01. |
+| `disasm` | `/mnt/disasm` | só leitura, bloqueada para a IA | O disassembly completo. Tem binários. |
+| `disasm-texto` | `/mnt/disasm-texto` | só leitura | Cópia só dos `.asm`. É o que a IA lê. |
+| `trabalho` | `/mnt/trabalho` | leitura e escrita | Traces e relatórios. Fica no disco, e não em `/tmp`, porque os relatórios e os hashes precisam sobreviver a reinícios. |
+
+Defina a variável no perfil do shell.
+
+sh, bash e zsh:
+
+```sh
+export SONIC1_EXT_DIR=~/sonic1-ext
+```
+
+fish (o `-U` grava para todas as sessões e o `-x` exporta):
 
 ```fish
-set -Ux SONIC1_ROM_DIR ~/sonic1-ext/rom
-set -Ux SONIC1_DISASM_DIR ~/sonic1-ext/disasm
-set -Ux SONIC1_DISASM_TEXTO_DIR ~/sonic1-ext/disasm-texto
-set -Ux SONIC1_TRABALHO_DIR ~/sonic1-ext/trabalho
+set -Ux SONIC1_EXT_DIR ~/sonic1-ext
 ```
 
-Os caminhos acima são exemplos. Use as pastas que você já tem. Abra um terminal novo (ou rode o `devcontainer` pelo mesmo terminal onde definiu as variáveis) para elas valerem.
+Abra um terminal novo, ou use o mesmo terminal onde definiu a variável, antes de subir o contêiner.
 
-Crie as quatro pastas (todas ficam fora do repositório):
+O script `.devcontainer/verifica-host.sh` roda sozinho antes de criar o contêiner. Ele:
+- recusa a montagem se a variável faltar ou não apontar para uma pasta;
+- recusa se a pasta externa estiver dentro do repositório;
+- cria `trabalho` se ela não existir;
+- recusa se faltar `rom`, `disasm` ou `disasm-texto`, para não montar uma pasta vazia por engano.
+
+Ele só testa se as pastas existem. Não lista nem lê o conteúdo.
+
+### Gerar a cópia só de texto
+
+Depois de colocar o disassembly em `disasm`, no commit fixado em `refs/disasm-commit.txt`, rode no host:
 
 ```sh
-mkdir -p "$SONIC1_ROM_DIR" "$SONIC1_DISASM_DIR" "$SONIC1_DISASM_TEXTO_DIR" "$SONIC1_TRABALHO_DIR"
+sh .devcontainer/gera-disasm-texto.sh
 ```
 
-O script `.devcontainer/verifica-host.sh` roda sozinho antes de criar o contêiner e recusa a montagem se alguma variável faltar ou não apontar para uma pasta.
-
-### O que é cada pasta
-
-| Pasta | Contêiner | Acesso | Conteúdo |
-| --- | --- | --- | --- |
-| `SONIC1_ROM_DIR` | `/mnt/rom` | só leitura, bloqueada para a IA | A ROM REV01. |
-| `SONIC1_DISASM_DIR` | `/mnt/disasm` | só leitura, bloqueada para a IA | O s1disasm completo, no commit de `refs/disasm-commit.txt`. Tem binários. |
-| `SONIC1_DISASM_TEXTO_DIR` | `/mnt/disasm-texto` | só leitura | Cópia só dos arquivos `.asm` do disassembly, sem binários. É o que a IA lê. |
-| `SONIC1_TRABALHO_DIR` | `/mnt/trabalho` | leitura e escrita | Traces e relatórios. |
-
-Como gerar a cópia só de texto (rode no host, depois de baixar o disassembly no commit fixado):
-
-```sh
-cd "$SONIC1_DISASM_DIR"
-find . -type f -name '*.asm' -exec cp --parents {} "$SONIC1_DISASM_TEXTO_DIR" \;
-```
-
-O comando copia só os arquivos terminados em `.asm`. Os arquivos `.asm` trazem alguns dados da ROM em texto, e o requisito de origem dos dados (cada tabela vem da ROM) continua valendo.
+O script recria `disasm-texto` do zero com os arquivos terminados em `.asm`, mantendo a estrutura de pastas. Os `.asm` trazem alguns dados da ROM em texto, e a regra de origem dos dados dos requisitos continua valendo.
 
 ## Como construir e abrir o contêiner de trabalho
 

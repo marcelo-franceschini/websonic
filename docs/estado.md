@@ -31,11 +31,12 @@ Documento de acompanhamento do progresso das etapas.
 - D2: rede mínima, a lista de `.devcontainer/dominios.txt`.
 - D3: o Marcelo valida o contêiner. As sessões só tocam arquivos de texto até a 0.2 passar.
 - D4: caminho único do workspace, `/workspaces/websonic`.
+- Pastas externas (03/11/2026): uma só variável, `SONIC1_EXT_DIR` (padrão `~/sonic1-ext`), com as subpastas `rom`, `disasm`, `disasm-texto` e `trabalho`. O `trabalho` fica no disco e não em `/tmp`, porque relatórios e hashes precisam sobreviver a reinícios.
 
 ## Bloqueios e pendências
 
 - Verificação do Marcelo: abrir o contêiner pelo `devcontainer.json`, entrar no Claude Code e rodar `/status` e `claude doctor`, que não podem listar entradas rejeitadas do managed settings.
-- Verificação do Marcelo: rodar `devcontainer up` com as quatro variáveis definidas e confirmar que o `verifica-host.sh` e o firewall (`postStartCommand`) passam.
+- Verificação do Marcelo: rodar `devcontainer up` com `SONIC1_EXT_DIR` definida e confirmar que o `verifica-host.sh` e o firewall (`postStartCommand`) passam.
 - Aviso ao chat de planejamento: a cópia de `docs/requisitos.md` não traz o número da revisão, só a data. A D1 muda quem roda os testes de fidelidade.
 - Verificação do Marcelo: rodar o roteiro `.devcontainer/testes/permissoes.md` numa sessão logada dentro do contêiner.
 - Sem push. O push é do Marcelo. O commit a5b0710 ainda não foi publicado.

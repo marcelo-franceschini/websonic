@@ -8,10 +8,10 @@
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/websonic,type=bind",
   "initializeCommand": "sh .devcontainer/verifica-host.sh",
   "mounts": [
-    "source=${localEnv:SONIC1_ROM_DIR},target=/mnt/rom,type=bind,readonly",
-    "source=${localEnv:SONIC1_DISASM_DIR},target=/mnt/disasm,type=bind,readonly",
-    "source=${localEnv:SONIC1_DISASM_TEXTO_DIR},target=/mnt/disasm-texto,type=bind,readonly",
-    "source=${localEnv:SONIC1_TRABALHO_DIR},target=/mnt/trabalho,type=bind",
+    "source=${localEnv:SONIC1_EXT_DIR}/rom,target=/mnt/rom,type=bind,readonly",
+    "source=${localEnv:SONIC1_EXT_DIR}/disasm,target=/mnt/disasm,type=bind,readonly",
+    "source=${localEnv:SONIC1_EXT_DIR}/disasm-texto,target=/mnt/disasm-texto,type=bind,readonly",
+    "source=${localEnv:SONIC1_EXT_DIR}/trabalho,target=/mnt/trabalho,type=bind",
     "source=websonic-claude-config,target=/home/dev/.claude,type=volume"
   ],
   "containerUser": "dev",

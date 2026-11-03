@@ -16,7 +16,7 @@ Anote qualquer erro ou aviso sobre o managed settings. Se houver, pare e traga d
 ## Regra do teste de leitura
 
 O `CLAUDE.md` permite a exceção só na 0.2: desvie a saída para `/dev/null` e avalie apenas o código de retorno.
-Nunca liste a pasta da ROM, nunca mostre o conteúdo. `ARQ` abaixo é o caminho do arquivo da ROM dentro de `/mnt/rom`, que o Marcelo informa.
+Nunca liste a pasta da ROM, nunca mostre o conteúdo. `ARQ` abaixo é `"/mnt/rom/Sonic The Hedgehog (W) (REV01) [!].gen"`. Use sempre as aspas, porque o nome tem espaços e colchetes.
 
 ## Testes de leitura (esperado: todos falham, ou seja, código de retorno diferente de 0)
 
