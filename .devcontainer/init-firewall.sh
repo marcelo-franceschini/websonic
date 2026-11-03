@@ -100,3 +100,4 @@ echo "Confirmado: dominio autorizado conectou com sucesso."
 
 echo "Firewall configurado e validado."
 exit 0
+

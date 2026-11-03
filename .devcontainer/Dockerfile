@@ -95,3 +95,4 @@ ENV USER=dev
 WORKDIR /workspaces/sonic1
 
 CMD ["/bin/bash"]
+

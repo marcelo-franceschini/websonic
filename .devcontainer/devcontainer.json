@@ -39,3 +39,4 @@
   },
   "postStartCommand": "sudo /usr/local/bin/init-firewall.sh"
 }
+

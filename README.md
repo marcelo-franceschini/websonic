@@ -39,3 +39,4 @@ Para congelar arquivos contra qualquer edição da IA:
 2. Adicione regras `Edit(caminho)` na lista `deny`.
 3. Reconstrua a imagem do contêiner (`devcontainer build --workspace-folder .`).
 4. As configurações gerenciadas em `/etc/claude-code/managed-settings.json` bloqueiam qualquer alteração, tanto pelas ferramentas da IA quanto por comandos de shell.
+

@@ -43,3 +43,4 @@ Este arquivo orienta a atuação da IA no repositório.
 - O crate `core` proíbe casts que possam causar truncamento silencioso.
 - O jogo não emula nem interpreta instruções do 68000 ou Z80. O núcleo espelha memória e rotinas com lógica nativa em Rust.
 - Regra de ouro: teste que falha se corrige no jogo, nunca no teste.
+

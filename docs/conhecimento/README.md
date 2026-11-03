@@ -5,3 +5,4 @@
 ## Índice
 
 - [ambiente.md](file:///ssd400/Repos/websonic/docs/conhecimento/ambiente.md): Registros de isolamento do contêiner, permissões do Claude Code, rede e testes de segurança.
+

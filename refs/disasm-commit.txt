@@ -1,3 +1,2 @@
 # Commit fixado do s1disasm (https://github.com/sonicretro/s1disasm)
-# O commit sera preenchido com o valor informado por Marcelo
-commit: PENDENTE
+commit: 89c0e0e06b51fd9ebac44d988e4a89bd643fd031
