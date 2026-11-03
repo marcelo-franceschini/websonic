@@ -17,6 +17,17 @@ export SONIC1_DISASM_TEXTO_DIR=~/sonic1-ext/disasm-texto
 export SONIC1_TRABALHO_DIR=~/sonic1-ext/trabalho
 ```
 
+No fish, use `set -Ux` (o `-U` grava para todas as sessões, e o `-x` exporta):
+
+```fish
+set -Ux SONIC1_ROM_DIR ~/sonic1-ext/rom
+set -Ux SONIC1_DISASM_DIR ~/sonic1-ext/disasm
+set -Ux SONIC1_DISASM_TEXTO_DIR ~/sonic1-ext/disasm-texto
+set -Ux SONIC1_TRABALHO_DIR ~/sonic1-ext/trabalho
+```
+
+Os caminhos acima são exemplos. Use as pastas que você já tem. Abra um terminal novo (ou rode o `devcontainer` pelo mesmo terminal onde definiu as variáveis) para elas valerem.
+
 Crie as quatro pastas (todas ficam fora do repositório):
 
 ```sh
