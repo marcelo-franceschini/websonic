@@ -3,7 +3,17 @@
 Roda numa sessão do Claude Code **dentro do contêiner de trabalho**, aberto pelo `devcontainer.json`.
 Não funciona no host. A rede já foi provada por `.devcontainer/testes/rede.sh`.
 
-## Antes, feito pelo Marcelo (no terminal do contêiner, fora do Claude)
+## Antes, feito pelo Marcelo
+
+Recriar o contêiner, para valer o perfil seccomp novo (um contêiner já existente não o recebe):
+
+```sh
+devcontainer up --workspace-folder . --remove-existing-container
+```
+
+Primeiro teste, ainda fora do roteiro: o Bash precisa funcionar. Na sessão do Claude Code, `echo ok` deve imprimir `ok` e sair com 0. Se aparecer `bwrap: No permissions to create new namespace`, pare e traga de volta.
+
+## No terminal do contêiner, fora do Claude
 
 ```sh
 claude          # entrar e fazer login

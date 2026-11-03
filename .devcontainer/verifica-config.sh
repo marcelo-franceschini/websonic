@@ -33,6 +33,16 @@ if grep -q '^    "allowedDomains"\|^    "allowManagedDomainsOnly"' "$ms"; then
     falha "allowedDomains/allowManagedDomainsOnly fora de sandbox.network."
 fi
 
+# 2b. Perfil seccomp que permite o sandbox do Claude Code (user namespaces) no contêiner.
+perfil=seccomp-userns.json
+[ -f "$perfil" ] || falha "falta $perfil."
+grep -q '"pivot_root"' "$perfil" || falha "$perfil nao libera os syscalls do sandbox."
+if command -v jq >/dev/null 2>&1; then
+    jq -e . "$perfil" >/dev/null 2>&1 || falha "$perfil nao e um JSON valido."
+fi
+grep -q 'seccomp=${localWorkspaceFolder}/.devcontainer/seccomp-userns.json' devcontainer.json \
+    || falha "devcontainer.json nao aponta para $perfil em securityOpt."
+
 # 3. Caminho unico do workspace e ausencia de travessoes.
 if grep -n --exclude=verifica-config.sh 'workspaces/sonic1' ./* ../README.md 2>/dev/null; then
     falha "caminho /workspaces/sonic1 encontrado. O unico caminho e /workspaces/websonic."

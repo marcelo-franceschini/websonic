@@ -17,6 +17,9 @@
   "containerUser": "dev",
   "remoteUser": "dev",
   "updateRemoteUserUID": true,
+  "securityOpt": [
+    "seccomp=${localWorkspaceFolder}/.devcontainer/seccomp-userns.json"
+  ],
   "capAdd": [
     "NET_ADMIN",
     "NET_RAW"

@@ -19,7 +19,7 @@ Documento de acompanhamento do progresso das etapas.
   - O firewall configura sem erro. `example.com` falha no DNS, em IPv4 e em IPv6. `index.crates.io` responde. DNS direto a um servidor externo é recusado.
   - `sh .devcontainer/verifica-config.sh` retorna 0.
   - `claude doctor` no contêiner (sem login) não acusa erro de configuração. Isso não prova que o `managed-settings.json` foi aceito.
-- Sub-etapa 0.2 (Validação dentro do contêiner): parte da rede provada em 03/11/2026 (19 de 19 testes, ver `docs/conhecimento/ambiente.md`). A parte das permissões espera uma sessão logada dentro do contêiner (roteiro em `.devcontainer/testes/permissoes.md`).
+- Sub-etapa 0.2 (Validação dentro do contêiner): rede provada (19 de 19, no contêiner real do devcontainer). Rodada 1 das permissões: Read e Edit recusam como esperado, mas o Bash não rodava (bwrap sem user namespace). Corrigido com `.devcontainer/seccomp-userns.json`. Rodada 2 pendente (ver `docs/conhecimento/ambiente.md`).
 - Sub-etapa 0.3 (Hooks do git): não iniciada.
 - Sub-etapa 0.4 (Esqueleto Rust e site): não iniciada.
 - Sub-etapa 0.5 (CI e publicação): não iniciada.
@@ -38,5 +38,5 @@ Documento de acompanhamento do progresso das etapas.
 - Verificação do Marcelo: dentro do contêiner, entrar no Claude Code (login) e rodar `/status` e `claude doctor`, que não podem listar entradas rejeitadas do managed settings.
 - `devcontainer up` verificado em 03/11/2026 (ver `docs/conhecimento/ambiente.md`).
 - Aviso ao chat de planejamento: a cópia de `docs/requisitos.md` não traz o número da revisão, só a data. A D1 muda quem roda os testes de fidelidade.
-- Verificação do Marcelo: rodar o roteiro `.devcontainer/testes/permissoes.md` numa sessão logada dentro do contêiner.
+- Verificação do Marcelo: recriar o contêiner (`devcontainer up --workspace-folder . --remove-existing-container`) e rodar de novo o roteiro `.devcontainer/testes/permissoes.md` (rodada 2).
 - Sem push. O push é do Marcelo. O commit a5b0710 ainda não foi publicado.
