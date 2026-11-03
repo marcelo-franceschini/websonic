@@ -5,8 +5,8 @@ Documento de acompanhamento do progresso das etapas.
 ## Etapa atual
 
 - Etapa: 0 (Esqueleto do repositório).
-- Sub-etapa: 0.1b (Correção do ambiente).
-- Status da sub-etapa: implementada e commitada localmente. Faltam duas verificações do Marcelo (ver Pendências).
+- Sub-etapa: 0.2 (Validação dentro do contêiner), parte das permissões pendente.
+- Status: a 0.1b está commitada. A 0.2 tem a rede provada e as permissões pendentes (ver Pendências).
 
 ## Histórico de etapas
 
@@ -19,7 +19,7 @@ Documento de acompanhamento do progresso das etapas.
   - O firewall configura sem erro. `example.com` falha no DNS, em IPv4 e em IPv6. `index.crates.io` responde. DNS direto a um servidor externo é recusado.
   - `sh .devcontainer/verifica-config.sh` retorna 0.
   - `claude doctor` no contêiner (sem login) não acusa erro de configuração. Isso não prova que o `managed-settings.json` foi aceito.
-- Sub-etapa 0.2 (Validação dentro do contêiner): não iniciada.
+- Sub-etapa 0.2 (Validação dentro do contêiner): parte da rede provada em 03/11/2026 (19 de 19 testes, ver `docs/conhecimento/ambiente.md`). A parte das permissões espera uma sessão logada dentro do contêiner (roteiro em `.devcontainer/testes/permissoes.md`).
 - Sub-etapa 0.3 (Hooks do git): não iniciada.
 - Sub-etapa 0.4 (Esqueleto Rust e site): não iniciada.
 - Sub-etapa 0.5 (CI e publicação): não iniciada.
@@ -37,4 +37,5 @@ Documento de acompanhamento do progresso das etapas.
 - Verificação do Marcelo: abrir o contêiner pelo `devcontainer.json`, entrar no Claude Code e rodar `/status` e `claude doctor`, que não podem listar entradas rejeitadas do managed settings.
 - Verificação do Marcelo: rodar `devcontainer up` com as quatro variáveis definidas e confirmar que o `verifica-host.sh` e o firewall (`postStartCommand`) passam.
 - Aviso ao chat de planejamento: a cópia de `docs/requisitos.md` não traz o número da revisão, só a data. A D1 muda quem roda os testes de fidelidade.
-- Sem push. O push é do Marcelo.
+- Verificação do Marcelo: rodar o roteiro `.devcontainer/testes/permissoes.md` numa sessão logada dentro do contêiner.
+- Sem push. O push é do Marcelo. O commit a5b0710 ainda não foi publicado.
