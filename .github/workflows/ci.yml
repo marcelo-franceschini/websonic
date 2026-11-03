@@ -1,0 +1,86 @@
+# CI e publicacao. Roda tudo dentro da MESMA imagem do contêiner de trabalho
+# (.devcontainer/Dockerfile), para as versoes serem identicas.
+#
+# As acoes de terceiros estao fixadas pelo SHA do commit (comentario: tag de origem).
+name: ci
+
+on:
+  push:
+  pull_request:
+
+# Padrao minimo. O job de deploy pede o que precisa.
+permissions:
+  contents: read
+
+jobs:
+  verificar:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Historico completo: a checagem anti-ROM olha todos os commits.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Construir a imagem de trabalho
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: .devcontainer/Dockerfile
+          load: true
+          tags: websonic-dev:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Primeiro a checagem anti-ROM: se falhar, nada mais importa.
+      - name: Anti-ROM
+        run: sh .github/rodar-na-imagem.sh cargo xtask anti-rom
+
+      - name: Formatacao
+        run: sh .github/rodar-na-imagem.sh cargo fmt --all --check
+
+      - name: Clippy
+        run: sh .github/rodar-na-imagem.sh cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Testes nativos
+        run: sh .github/rodar-na-imagem.sh cargo test --workspace
+
+      - name: Testes em WebAssembly (wasm32-wasip1)
+        run: sh .github/rodar-na-imagem.sh cargo test --target wasm32-wasip1 -p sonic1-core -p sonic1-rom
+
+      - name: Montar o site
+        run: sh .github/rodar-na-imagem.sh cargo xtask site
+
+      - name: Guardar o site (artefato do CI)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: site
+          path: dist
+          include-hidden-files: true
+          retention-days: 7
+
+      # So publica a partir do main. O artefato do Pages e outro, criado aqui.
+      - name: Preparar o artefato do Pages
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: dist
+
+  publicar:
+    needs: verificar
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

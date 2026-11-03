@@ -108,6 +108,10 @@ cargo xtask anti-rom    # procura ROM no repositório
 
 Estrutura e decisões em `docs/conhecimento/esqueleto.md`.
 
+## CI
+
+O GitHub Actions roda anti-ROM, formatação, clippy, testes (nativo e WebAssembly) e publica o site no Pages, tudo na imagem do contêiner. Detalhes em `docs/conhecimento/ci.md`.
+
 ## Como congelar um item
 
 Para congelar arquivos contra edição da IA:
