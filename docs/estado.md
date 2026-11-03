@@ -6,7 +6,7 @@ Documento de acompanhamento do progresso das etapas.
 
 - Etapa: 0 (Esqueleto do repositório).
 - Sub-etapa: 0.2 (Validação dentro do contêiner), concluída. Próxima: 0.3, aguardando aprovação do plano.
-- Status: a 0.1b está commitada. A 0.2 tem a rede e as permissões provadas pela IA. Faltam as verificações do Marcelo fora do Claude (ver Pendências).
+- Status: a 0.1b e a 0.2 estão commitadas e provadas. Nada aguarda verificação do Marcelo, exceto o push.
 
 ## Histórico de etapas
 
