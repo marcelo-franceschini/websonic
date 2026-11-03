@@ -248,3 +248,8 @@ Verificações fora do Claude (03/11/2026):
 - Teste 21: `test -f` no arquivo da ROM REV01, no host, devolveu 0. O arquivo existe com esse nome. Então o "No such file or directory" de dentro do sandbox vem de ele estar escondido.
 - Teste 22: `git status --short` no host, depois de fechar a sessão, saiu vazio. Nenhum marcador de 0 byte sobrou.
 - Falta só `/status` e `claude doctor` com login.
+- `/status` no contêiner (2.1.317): "Setting sources" cita "Enterprise managed settings (file)" e "Permission rules" mostra "Managed settings only (allowManagedPermissionRulesOnly)". O managed settings foi aceito. "MCP servers: 3 connected, 3 failed" é esperado, pois o firewall bloqueia domínios fora da D2.
+- `claude doctor` no contêiner: versão 2.1.317, caminho `/usr/local/bin/claude`, auto-update desligado por `DISABLE_AUTOUPDATER`. Quatro avisos, todos sobre `~/.local/bin` fora do PATH e método de instalação "unknown" (o binário foi copiado para `/usr/local/bin`). Nenhum cita o managed settings. Sem efeito na segurança. Possível ajuste na 0.6: symlink em `/home/dev/.local/bin/claude` e PATH no Dockerfile.
+- Um primeiro `claude doctor` colado era do Claude Code do host (pacman, 2.1.312) e foi descartado.
+
+Conclusão: a sub-etapa 0.2 está concluída (rede 19 de 19, leitura da ROM e do disassembly bloqueada, edição travada, commit local da IA, managed settings aceito).
