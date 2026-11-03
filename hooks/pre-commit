@@ -1,0 +1,19 @@
+#!/bin/sh
+# Antes do commit: bloqueia ROM por extensao, tamanho e hash (ver hooks/lib.sh).
+. "$(dirname "$0")/lib.sh"
+
+tab=$(printf '\t')
+
+# Lista o que foi adicionado, modificado ou trocado de tipo no indice.
+# Linha: ":modo_antigo modo_novo id_antigo id_novo status<TAB>caminho".
+problemas=$(
+    git diff --cached --raw --no-abbrev --no-renames --diff-filter=AMT |
+    while IFS="$tab" read -r meta caminho; do
+        set -- $meta
+        [ "$2" = 160000 ] && continue   # submodulo: nao tem conteudo proprio
+        printf '%s %s\n' "$4" "$caminho"
+    done | verificar_objetos
+)
+
+[ -z "$problemas" ] || recusar "commit" "$problemas"
+exit 0

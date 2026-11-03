@@ -86,6 +86,16 @@ sh .devcontainer/verifica-config.sh
 
 Confere se a lista de domínios do `managed-settings.json` coincide com `dominios.txt` e se as chaves estão no nível certo (uma chave no nível errado é ignorada em silêncio).
 
+## Hooks do git
+
+Ativam-se uma vez por clone, no host:
+
+```sh
+sh hooks/instalar.sh
+```
+
+Bloqueiam ROM por extensão, tamanho e hash, no commit e no push. Detalhes e limites em `docs/conhecimento/hooks.md`. Teste sintético: `sh .devcontainer/testes/hooks.sh`.
+
 ## Como congelar um item
 
 Para congelar arquivos contra edição da IA:
