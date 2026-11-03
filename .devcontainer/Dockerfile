@@ -36,8 +36,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Usuario dev (UID e GID 1000) e as pastas que o volume e o cargo precisam escrever.
 RUN groupadd -g 1000 dev && \
     useradd -u 1000 -g 1000 -m -s /bin/bash dev && \
-    mkdir -p /home/dev/.claude /home/dev/.cargo && \
-    chown dev:dev /home/dev/.claude /home/dev/.cargo
+    mkdir -p /home/dev/.claude /home/dev/.cargo/registry /home/dev/.cargo/git && \
+    chown -R dev:dev /home/dev/.claude /home/dev/.cargo
 
 # O sudo do dev vale so para o script de firewall.
 RUN echo "dev ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh" > /etc/sudoers.d/dev-firewall && \

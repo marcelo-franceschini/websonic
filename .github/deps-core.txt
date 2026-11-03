@@ -1,0 +1,3 @@
+# Lista fechada das dependencias do sonic1-core (normais, de dev e de build, em qualquer alvo).
+# Um nome por linha. Hoje o nucleo nao tem nenhuma. Acrescentar aqui exige a aprovacao do Marcelo.
+# Conferida por .github/checa-core.sh.

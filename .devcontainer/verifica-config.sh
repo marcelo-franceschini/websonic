@@ -41,11 +41,42 @@ fi
 
 # 2c. Itens congelados (0.6): cada um precisa da regra Edit E do denyWrite do sandbox.
 #     So o denyWrite vale para qualquer programa; so a regra Edit vale para as ferramentas.
-for item in CLAUDE.md .gitignore docs/requisitos.md hooks refs .github .devcontainer; do
+# 0.7: entram tambem a configuracao do Claude Code no projeto (.claude, .mcp.json, .vscode)
+#      e a configuracao do cargo (.cargo, rust-toolchain.toml).
+for item in CLAUDE.md .gitignore docs/requisitos.md hooks refs .github .devcontainer \
+    .claude .mcp.json .vscode .cargo rust-toolchain.toml; do
     base="//workspaces/websonic/$item"
     grep -q "\"Edit($base)\"\|\"Edit($base/\*\*)\"" "$ms" || falha "falta a regra Edit de $item."
     grep -q "\"/workspaces/websonic/$item\"" "$ms" || falha "falta o denyWrite de $item."
 done
+
+# 2d. Hooks e MCP (0.7). Sem estas chaves, um hook escrito em .claude/settings.json roda
+#     fora do sandbox, como dev (sonda S1). As tres ficam na raiz, e a lista de MCP fica vazia
+#     (lista vazia = nenhum servidor do usuario ou do projeto).
+grep -q '^  "allowManagedHooksOnly": true' "$ms" \
+    || falha "allowManagedHooksOnly deve ficar na raiz, ligado."
+grep -q '^  "allowManagedMcpServersOnly": true' "$ms" \
+    || falha "allowManagedMcpServersOnly deve ficar na raiz, ligado."
+grep -q '^  "allowedMcpServers": \[\],\?$' "$ms" \
+    || falha "allowedMcpServers deve ficar na raiz e vazio ([])."
+# Regras Edit que alcancam arquivos aninhados do cargo (config e toolchain em qualquer pasta).
+for regra in '**/.cargo/**' '**/rust-toolchain' '**/rust-toolchain.toml'; do
+    grep -qF "\"Edit(//workspaces/websonic/$regra)\"" "$ms" || falha "falta a regra Edit de $regra."
+done
+# O .claude.json do usuario fica em CLAUDE_CONFIG_DIR. Se a variavel mudar de lugar, a regra
+# Edit(//home/dev/.claude/**) deixa de cobri-lo.
+grep -q '"CLAUDE_CONFIG_DIR": "/home/dev/.claude"' devcontainer.json \
+    || falha "CLAUDE_CONFIG_DIR deve ser /home/dev/.claude (o .claude.json do usuario fica la)."
+grep -qF '"Edit(//home/dev/.claude/**)"' "$ms" || falha "falta a regra Edit de /home/dev/.claude/**."
+
+# 2e. C8 (0.7): o sandbox so grava em registry e git do CARGO_HOME, e nao no CARGO_HOME inteiro.
+#     Assim a IA nao escreve /home/dev/.cargo/config.toml (rustflags, [env], rustc-wrapper).
+#     O cargo continua baixando crates: .global-cache e .package-cache da raiz sao tolerados.
+grep -q '^        "/home/dev/.cargo/registry",' "$ms" || falha "falta allowWrite de /home/dev/.cargo/registry."
+grep -q '^        "/home/dev/.cargo/git"' "$ms" || falha "falta allowWrite de /home/dev/.cargo/git."
+if grep -q '^        "/home/dev/.cargo"' "$ms"; then
+    falha "allowWrite de /home/dev/.cargo inteiro. Use so registry e git."
+fi
 
 # 2b. Perfil seccomp que permite o sandbox do Claude Code (user namespaces) no contêiner.
 perfil=seccomp-userns.json

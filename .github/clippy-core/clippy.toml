@@ -1,0 +1,7 @@
+# Colecoes com ordem nao deterministica sao proibidas no nucleo.
+# Use BTreeMap, BTreeSet ou Vec.
+disallowed-types = [
+    { path = "std::collections::HashMap", reason = "ordem nao deterministica, use BTreeMap" },
+    { path = "std::collections::HashSet", reason = "ordem nao deterministica, use BTreeSet" },
+    { path = "std::collections::hash_map::RandomState", reason = "semente aleatoria" },
+]

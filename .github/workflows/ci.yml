@@ -22,6 +22,11 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # Anti-ROM em shell, ANTES de construir a imagem: nada do repositorio e construido ou
+      # executado ainda. Usa hooks/lib.sh e olha todo o historico (ver .github/anti-rom.sh).
+      - name: Anti-ROM (shell, antes da imagem)
+        run: sh .github/anti-rom.sh
+
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Construir a imagem de trabalho
@@ -33,6 +38,16 @@ jobs:
           tags: websonic-dev:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # Checagens do nucleo ANTES de qualquer passo que execute codigo do repositorio
+      # (xtask, build.rs, macros). O checkout fica montado so para leitura (MONTAGEM_RO=1) e o
+      # alvo do cargo vai para /tmp, para esses passos nao poderem reescrever os scripts.
+      - name: Checagens do nucleo
+        run: MONTAGEM_RO=1 sh .github/rodar-na-imagem.sh env CARGO_TARGET_DIR=/tmp/alvo-nucleo sh .github/checa-core.sh
+
+      # Lints do nucleo com -F, --all-features, --all-targets, nativo e WebAssembly.
+      - name: Lints do nucleo
+        run: MONTAGEM_RO=1 sh .github/rodar-na-imagem.sh env CARGO_TARGET_DIR=/tmp/alvo-nucleo sh .github/lints-core.sh
 
       # Primeiro a checagem anti-ROM: se falhar, nada mais importa.
       - name: Anti-ROM
