@@ -39,6 +39,15 @@ Verificada com `gh` no commit `548e997`, execução 41695208654 (branch `main`):
 - O Pages está em modo `workflow`, com HTTPS forçado.
 - `https://marcelo-franceschini.github.io/websonic/` responde 200 com o título "Sonic 1 em Rust", e `pkg/sonic1_web_bg.wasm` responde 200 (32846 bytes).
 
+## Endurecimento da 0.7 (patches preparados, ainda não aplicados)
+
+Patches em `/mnt/trabalho/0.7/patches/`, para o Marcelo aplicar no host. Mudam o fluxo assim:
+1. Logo depois do checkout, **antes** de construir a imagem: `sh .github/anti-rom.sh` (shell puro, usa `hooks/lib.sh`). Reprova extensão, tamanho a partir de 262144, blob com o id da ROM, arquivo só no histórico e clone raso.
+2. Depois do clippy geral: `sh .github/rodar-na-imagem.sh sh .github/checa-core.sh` (configuração do cargo, dependências e fontes do núcleo) e `sh .github/rodar-na-imagem.sh sh .github/lints-core.sh` (clippy do núcleo com `-F`, `--all-features`, `--all-targets`, em nativo, `wasm32-unknown-unknown` e `wasm32-wasip1`).
+3. `rodar-na-imagem.sh` passa `RUSTFLAGS=-Dwarnings` e wrappers vazios: o `RUSTFLAGS` vale mais que `rustflags` de qualquer `.cargo/config.toml`. Os passos antigos (clippy geral, testes nativos e em WebAssembly, site) foram repetidos com esse `RUSTFLAGS` na imagem e passam.
+
+Provas rodadas no contêiner (cópia limpa do `HEAD` com os patches): `testes/anti-rom.sh` 8 de 8, `checa-core.sh` OK, `lints-core.sh` OK nos três alvos, e a tabela do C5 em `ambiente.md`. Falta `actionlint` no `ci.yml` e a execução no GitHub.
+
 ## Ainda não provado
 
 - O aceite da REV01 no site publicado (o Marcelo escolhe a ROM nele).

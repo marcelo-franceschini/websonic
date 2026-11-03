@@ -24,6 +24,16 @@ Exceções por caminho (só extensão e tamanho) ficam em `refs/excecoes-extenso
 
 No host, uma vez por clone: `sh hooks/instalar.sh`. Ele define `core.hooksPath = hooks`. O repositório é o mesmo no host e no contêiner, então vale nos dois. A IA não consegue rodar isso, porque não pode alterar a configuração do git.
 
+## O pre-commit no contêiner não é barreira contra a IA
+
+Sub-etapa 0.7. A IA roda no contêiner, e lá o `pre-commit` pode ser pulado ou desligado: `--no-verify`, `core.hooksPath` por `-c` ou por `GIT_CONFIG_COUNT`. (Escrever em `.git/hooks` e `.git/config` é barrado pelo sandbox, provado na rodada 3.) As regras de texto do `managed-settings.json` (`*--no-verify*`, `*core.hooksPath*`, `git -c *`) barram só a forma literal. A sonda S3 só chegou até aí: as regras de texto negaram as duas formas antes de rodar, e não ficou provado se os hooks resistem a uma configuração por outro caminho (ver `ambiente.md`).
+
+As barreiras reais são duas, e nenhuma depende do contêiner:
+1. O `pre-push` no computador do Marcelo, que olha todos os objetos que sobem.
+2. O anti-ROM em shell do CI (`.github/anti-rom.sh`), que roda logo depois do checkout e antes de construir a imagem, com a mesma `hooks/lib.sh`. Olha todo o histórico (`git rev-list --objects --all`) e reprova clone raso.
+
+O `pre-commit` no contêiner continua útil como aviso cedo, mas o resultado dele não conta como proteção.
+
 ## Limites conhecidos
 
 - `git commit --no-verify` pula o `pre-commit`. O `pre-push` do Marcelo e o CI pegam o que escapar. Uma regra de texto do Claude Code não é barreira técnica.
