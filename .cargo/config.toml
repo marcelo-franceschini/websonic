@@ -1,0 +1,3 @@
+# Executor dos testes em WebAssembly. Vale no contêiner e no host.
+[target.wasm32-wasip1]
+runner = "wasmtime"

@@ -1,6 +1,6 @@
 [toolchain]
-channel = "1.85.0"
+# Mesma versao do Dockerfile (ARG RUST_VERSION).
+channel = "1.99.1"
 components = ["rustfmt", "clippy"]
 targets = ["wasm32-unknown-unknown", "wasm32-wasip1"]
 profile = "minimal"
-

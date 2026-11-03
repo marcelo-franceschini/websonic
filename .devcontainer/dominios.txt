@@ -1,31 +1,19 @@
-# Dominios autorizados para o firewall e para o sandbox do Claude Code
+# Dominios que a rede do contêiner de trabalho alcança (fonte unica).
+# O managed-settings.json repete esta lista. O script verifica-config.sh confere se coincidem.
+# Qualquer mudanca exige aprovacao do Marcelo.
 
-# Claude
+# API do Claude e autenticacao
 api.anthropic.com
 claude.ai
 platform.claude.com
 
-# Rust e Crates
+# Pacotes do Rust
 index.crates.io
 static.crates.io
-docs.rs
-doc.rust-lang.org
 
-# GitHub (apenas leitura)
+# GitHub (a rede nao impede escrita por HTTPS, so a falta de credenciais impede)
 github.com
 api.github.com
 codeload.github.com
 raw.githubusercontent.com
 objects.githubusercontent.com
-
-# Fontes e documentacao de referencia
-tasvideos.org
-openggf-webzone.pages.dev
-clownacy.wordpress.com
-retrodev.com
-tildearrow.org
-info.sonicretro.org
-docs.wasmer.io
-code.claude.com
-en.wikipedia.org
-

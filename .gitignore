@@ -6,6 +6,9 @@ dist/
 *.bin
 *.gen
 *.smd
+*.rom
+*.32x
+*.sms
 *.iso
 
 # Imagens e arquivos compactados
@@ -39,3 +42,10 @@ dist/
 .idea/
 .vscode/
 
+
+# Pastas de ROM, disassembly e trabalho, caso alguem as crie dentro do repositorio
+/rom/
+/roms/
+/disasm/
+/disasm-texto/
+/trabalho/

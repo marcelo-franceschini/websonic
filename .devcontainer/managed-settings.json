@@ -1,26 +1,25 @@
 {
+  "allowManagedPermissionRulesOnly": true,
   "permissions": {
-    "allowManagedPermissionRulesOnly": true,
     "disableBypassPermissionsMode": "disable",
     "deny": [
       "Read(//mnt/rom/**)",
       "Read(//mnt/rom)",
       "Read(//mnt/disasm/**)",
       "Read(//mnt/disasm)",
-      "Read(//mnt/trabalho/restrito/**)",
-      "Read(//mnt/trabalho/restrito)",
-      "Edit(docs/requisitos.md)",
       "Edit(//workspaces/websonic/docs/requisitos.md)",
-      "Edit(//workspaces/sonic1/docs/requisitos.md)",
+      "Edit(//workspaces/websonic/.git/**)",
       "Edit(//home/dev/.claude/**)",
-      "Edit(/home/dev/.claude/**)",
-      "Bash(git push *)",
       "Bash(git push)",
+      "Bash(git push *)",
+      "Bash(git * push *)",
+      "Bash(git config *)",
+      "Bash(git * config *)",
+      "Bash(git -c *)",
       "Bash(*--no-verify*)",
-      "Bash(*git commit -n*)",
-      "Bash(*git -c*)",
-      "Bash(sudo *)",
-      "Bash(sudo)"
+      "Bash(*core.hooksPath*)",
+      "Bash(sudo)",
+      "Bash(sudo *)"
     ],
     "additionalDirectories": [
       "/mnt/disasm-texto",
@@ -32,37 +31,36 @@
     "failIfUnavailable": true,
     "allowUnsandboxedCommands": false,
     "enableWeakerNestedSandbox": true,
-    "allowManagedDomainsOnly": true,
-    "allowedDomains": [
-      "api.anthropic.com",
-      "claude.ai",
-      "platform.claude.com",
-      "index.crates.io",
-      "static.crates.io",
-      "docs.rs",
-      "doc.rust-lang.org",
-      "github.com",
-      "api.github.com",
-      "codeload.github.com",
-      "raw.githubusercontent.com",
-      "objects.githubusercontent.com",
-      "tasvideos.org",
-      "openggf-webzone.pages.dev",
-      "clownacy.wordpress.com",
-      "retrodev.com",
-      "tildearrow.org",
-      "info.sonicretro.org",
-      "docs.wasmer.io",
-      "code.claude.com",
-      "en.wikipedia.org"
-    ],
+    "excludedCommands": [],
+    "network": {
+      "allowManagedDomainsOnly": true,
+      "allowedDomains": [
+        "api.anthropic.com",
+        "claude.ai",
+        "platform.claude.com",
+        "index.crates.io",
+        "static.crates.io",
+        "github.com",
+        "api.github.com",
+        "codeload.github.com",
+        "raw.githubusercontent.com",
+        "objects.githubusercontent.com"
+      ]
+    },
     "filesystem": {
       "allowWrite": [
         "/mnt/trabalho",
         "/home/dev/.cargo"
+      ],
+      "denyRead": [
+        "/mnt/rom",
+        "/mnt/disasm"
+      ],
+      "denyWrite": [
+        "/workspaces/websonic/docs/requisitos.md",
+        "/workspaces/websonic/.git/config",
+        "/workspaces/websonic/.git/hooks"
       ]
-    },
-    "excludedCommands": []
+    }
   }
 }
-

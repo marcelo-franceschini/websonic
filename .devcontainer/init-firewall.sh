@@ -1,103 +1,119 @@
 #!/bin/sh
+# Firewall do contêiner de trabalho. Roda como root (sudo) no postStartCommand.
+#
+# Desenho, adaptado do init-firewall.sh de referencia do Claude Code:
+# - Politica padrao DROP em IPv4 e IPv6 (a referencia so cobre IPv4).
+# - O dnsmasq local (127.0.0.1) e o unico resolvedor. Ele so resolve os dominios da lista
+#   e, a cada resposta, grava os IPs no ipset. Assim os IPs de CDN acompanham o DNS.
+# - Nomes fora da lista recebem REFUSED, e so o root alcanca o resolvedor do contêiner.
+#   Isso fecha o DNS como canal de vazamento.
+# - A tabela nat nao e tocada, para nao apagar as regras do DNS embutido do Docker (127.0.0.11).
 set -eu
 
-# Script de inicializacao do firewall estrito
-# Politica padrao: bloqueia todo o trafego de entrada e saida.
-# Permite apenas loopback, DNS e conexoes HTTPS/HTTP para os dominios autorizados.
+DOMINIOS=/etc/firewall/dominios.txt
+UPSTREAM_SALVO=/etc/firewall/resolvedor-original
+DNSMASQ_CONF=/etc/firewall/dnsmasq.conf
+DNSMASQ_PID=/run/dnsmasq-sonic.pid
 
-DOMINIOS_FILE=""
-if [ -f "/etc/firewall/dominios.txt" ]; then
-    DOMINIOS_FILE="/etc/firewall/dominios.txt"
-elif [ -f "$(dirname "$0")/dominios.txt" ]; then
-    DOMINIOS_FILE="$(dirname "$0")/dominios.txt"
-elif [ -f "/workspaces/websonic/.devcontainer/dominios.txt" ]; then
-    DOMINIOS_FILE="/workspaces/websonic/.devcontainer/dominios.txt"
-elif [ -f "/workspaces/sonic1/.devcontainer/dominios.txt" ]; then
-    DOMINIOS_FILE="/workspaces/sonic1/.devcontainer/dominios.txt"
-fi
-
-if [ -z "$DOMINIOS_FILE" ] || [ ! -f "$DOMINIOS_FILE" ]; then
-    echo "Erro: arquivo dominios.txt nao encontrado." >&2
+erro() {
+    echo "Erro: $*" >&2
     exit 1
+}
+
+[ "$(id -u)" -eq 0 ] || erro "execute como root."
+[ -r "$DOMINIOS" ] || erro "$DOMINIOS nao encontrado."
+
+# Resolvedor original do contêiner. Num reinicio o resolv.conf ja aponta para 127.0.0.1,
+# entao o valor anterior fica guardado em UPSTREAM_SALVO.
+atual=$(awk '/^nameserver/ {print $2; exit}' /etc/resolv.conf)
+if [ -n "$atual" ] && [ "$atual" != "127.0.0.1" ]; then
+    echo "$atual" > "$UPSTREAM_SALVO"
 fi
+[ -s "$UPSTREAM_SALVO" ] || erro "resolvedor original desconhecido."
+UPSTREAM=$(cat "$UPSTREAM_SALVO")
+echo "Resolvedor original: $UPSTREAM"
 
-echo "Iniciando configuracao do firewall com base em $DOMINIOS_FILE..."
+# Lista de dominios, sem comentarios nem linhas vazias.
+lista=$(sed -e 's/#.*//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$DOMINIOS" | sed '/^$/d')
+[ -n "$lista" ] || erro "lista de dominios vazia."
 
-# Cria o conjunto de IPs no ipset para acomodar IPs de CDNs e servicos
-ipset create allowed-hosts hash:ip family inet -exist
-ipset flush allowed-hosts
+# Regras IPv4 (tabela filter). O ipset e preenchido pelo dnsmasq.
+ipset create allowed4 hash:ip family inet -exist
+ipset flush allowed4
 
-# Configura regras basicas no iptables
 iptables -F
 iptables -X
-iptables -t nat -F
-iptables -t nat -X
-
-# Politica padrao restritiva
 iptables -P INPUT DROP
 iptables -P FORWARD DROP
 iptables -P OUTPUT DROP
-
-# Permite trafego local em loopback
 iptables -A INPUT -i lo -j ACCEPT
 iptables -A OUTPUT -o lo -j ACCEPT
-
-# Permite conexoes ja estabelecidas e relacionadas
 iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+# DNS: so o root (o dnsmasq) fala com o resolvedor do contêiner.
+iptables -A OUTPUT -p udp -d "$UPSTREAM" --dport 53 -m owner --uid-owner 0 -j ACCEPT
+iptables -A OUTPUT -p tcp -d "$UPSTREAM" --dport 53 -m owner --uid-owner 0 -j ACCEPT
+# HTTPS so para os IPs que o DNS filtrado devolveu.
+iptables -A OUTPUT -p tcp --dport 443 -m set --match-set allowed4 dst -j ACCEPT
+# Falha rapida, em vez de esperar o tempo limite.
+iptables -A OUTPUT -j REJECT --reject-with icmp-admin-prohibited
 
-# Permite saida para resolucao DNS nas portas 53 (UDP e TCP)
-iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
-iptables -A OUTPUT -p tcp --dport 53 -j ACCEPT
+# Regras IPv6: nada sai, so o loopback. Sem ip6tables a falha e fatal (fecha por padrao).
+ip6tables -F
+ip6tables -X
+ip6tables -P INPUT DROP
+ip6tables -P FORWARD DROP
+ip6tables -P OUTPUT DROP
+ip6tables -A INPUT -i lo -j ACCEPT
+ip6tables -A OUTPUT -o lo -j ACCEPT
+ip6tables -A OUTPUT -j REJECT --reject-with icmp6-adm-prohibited
 
-# Permite conexoes de saida HTTP e HTTPS apenas para os IPs do ipset
-iptables -A OUTPUT -p tcp -m multiport --dports 80,443 -m set --match-set allowed-hosts dst -j ACCEPT
-
-# Configura dnsmasq para manter o ipset atualizado dinamicamente com respostas DNS de CDNs
-DNSMASQ_CONF="/etc/dnsmasq.d/sonic-firewall.conf"
-mkdir -p /etc/dnsmasq.d
-rm -f "$DNSMASQ_CONF"
-touch "$DNSMASQ_CONF"
-
-# Adiciona cada dominio de dominios.txt no dnsmasq e resolve o IP inicial
-while IFS= read -r linha || [ -n "$linha" ]; do
-    # Remove espacos em branco e ignora linhas vazias ou comentarios
-    dominio=$(echo "$linha" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-    case "$dominio" in
-        \#*|"") continue ;;
-    esac
-
-    echo "ipset=/$dominio/allowed-hosts" >> "$DNSMASQ_CONF"
-
-    # Resolucao inicial para popular o ipset de imediato
-    for ip in $(getent ahostsv4 "$dominio" 2>/dev/null | awk '{print $1}' | sort -u); do
-        ipset add allowed-hosts "$ip" -exist
+# dnsmasq: sem resolvedor padrao (no-resolv), so os dominios da lista tem servidor.
+{
+    echo "no-resolv"
+    echo "no-hosts"
+    echo "user=root"
+    echo "listen-address=127.0.0.1"
+    echo "bind-interfaces"
+    echo "pid-file=$DNSMASQ_PID"
+    for dominio in $lista; do
+        echo "server=/$dominio/$UPSTREAM"
+        echo "ipset=/$dominio/allowed4"
     done
-done < "$DOMINIOS_FILE"
+} > "$DNSMASQ_CONF"
 
-# Inicia ou reinicia o servico dnsmasq se instalado
-if command -v dnsmasq >/dev/null 2>&1; then
-    service dnsmasq restart 2>/dev/null || dnsmasq --conf-file=/etc/dnsmasq.conf --conf-dir=/etc/dnsmasq.d 2>/dev/null || true
+if [ -s "$DNSMASQ_PID" ]; then
+    kill "$(cat "$DNSMASQ_PID")" 2>/dev/null || true
+    sleep 1
 fi
+dnsmasq --conf-file="$DNSMASQ_CONF" || erro "dnsmasq nao iniciou."
 
-echo "Verificando integridade das regras de isolamento..."
+# O contêiner passa a usar o dnsmasq. (cat >, porque o Docker monta o arquivo.)
+printf 'nameserver 127.0.0.1\n' > /etc/resolv.conf
 
-# Teste 1: Um dominio fora da lista deve falhar obrigatoriamente
-if curl --connect-timeout 3 --max-time 5 -sI https://example.com >/dev/null 2>&1; then
-    echo "Falha de seguranca: dominio nao autorizado (example.com) conseguiu conexao." >&2
-    exit 1
+echo "Verificando as regras..."
+
+# 1. Politicas DROP nos dois protocolos.
+iptables -S OUTPUT | grep -q '^-P OUTPUT DROP' || erro "IPv4 OUTPUT sem DROP."
+ip6tables -S OUTPUT | grep -q '^-P OUTPUT DROP' || erro "IPv6 OUTPUT sem DROP."
+
+# 2. Dominio fora da lista: o DNS recusa e a conexao falha.
+if getent hosts example.com >/dev/null 2>&1; then
+    erro "o DNS resolveu example.com, que nao esta na lista."
 fi
-echo "Confirmado: dominio nao autorizado bloqueado com sucesso."
-
-# Teste 2: Um dominio da lista autorizada deve responder com sucesso
-if ! curl --connect-timeout 5 --max-time 10 -sI https://index.crates.io >/dev/null 2>&1; then
-    if ! curl --connect-timeout 5 --max-time 10 -sI https://api.anthropic.com >/dev/null 2>&1; then
-        echo "Falha de rede: dominios autorizados nao responderam." >&2
-        exit 1
-    fi
+if curl -4 --connect-timeout 3 --max-time 5 -s -o /dev/null https://example.com; then
+    erro "example.com conectou por IPv4."
 fi
-echo "Confirmado: dominio autorizado conectou com sucesso."
+if curl -6 --connect-timeout 3 --max-time 5 -s -o /dev/null https://example.com; then
+    erro "example.com conectou por IPv6."
+fi
+echo "OK: dominio fora da lista bloqueado (DNS, IPv4 e IPv6)."
 
-echo "Firewall configurado e validado."
-exit 0
+# 3. Dominios da lista: todos os testados precisam responder (sem ||).
+for url in https://api.anthropic.com https://index.crates.io https://api.github.com; do
+    curl -4 --connect-timeout 5 --max-time 15 -s -o /dev/null "$url" \
+        || erro "dominio autorizado nao respondeu: $url"
+done
+echo "OK: dominios autorizados conectam."
 
+echo "Firewall configurado."

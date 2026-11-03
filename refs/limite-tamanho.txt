@@ -1,3 +1,6 @@
-# Limite maximo em bytes para arquivos no repositorio (512 KB = 524288 bytes)
-max_bytes: 524288
-
+# Tamanho maximo, em bytes, de um arquivo no repositorio.
+# O hook rejeita todo arquivo com tamanho MAIOR OU IGUAL a este valor (comparacao ">=").
+# 262144 (256 KB) fica abaixo dos 524288 bytes (512 KB) da ROM REV01. Assim a ROM, mesmo
+# alterada, nunca passa pelo filtro de tamanho. Arquivos maiores so entram por excecao
+# listada em excecoes-extensoes.txt, com aprovacao do Marcelo.
+max_bytes: 262144

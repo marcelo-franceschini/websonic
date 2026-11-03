@@ -4,5 +4,4 @@
 
 ## Índice
 
-- [ambiente.md](file:///ssd400/Repos/websonic/docs/conhecimento/ambiente.md): Registros de isolamento do contêiner, permissões do Claude Code, rede e testes de segurança.
-
+Ainda não há arquivos. O primeiro, `ambiente.md`, nasce na sub-etapa 0.2 com as provas de isolamento do contêiner, das permissões e da rede.

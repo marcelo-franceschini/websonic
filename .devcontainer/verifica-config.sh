@@ -1,0 +1,47 @@
+#!/bin/sh
+# Confere a configuracao do contêiner sem precisar do Docker. Pode rodar no host ou no contêiner.
+# 1. A lista de dominios do managed-settings.json coincide com a de dominios.txt.
+# 2. As chaves que so valem em certo nivel estao no nivel certo (chave no lugar errado e ignorada).
+# 3. O caminho do workspace e unico e nao ha travessoes nos arquivos de configuracao.
+set -eu
+
+cd "$(dirname "$0")"
+ms=managed-settings.json
+falhou=0
+falha() {
+    echo "FALHA: $*" >&2
+    falhou=1
+}
+
+# 1. Dominios: os do JSON (entre "allowedDomains": [ e ]) contra os de dominios.txt.
+json=$(sed -n '/"allowedDomains": \[/,/\]/p' "$ms" | grep -o '"[a-z0-9.-]*\.[a-z]*"' | tr -d '"' | sort)
+txt=$(sed -e 's/#.*//' -e 's/[[:space:]]//g' dominios.txt | sed '/^$/d' | sort)
+[ -n "$json" ] || falha "nenhum dominio lido do $ms."
+[ "$json" = "$txt" ] || falha "a lista de dominios do $ms difere de dominios.txt."
+
+# 2. Niveis das chaves. O arquivo usa 2 espacos por nivel.
+grep -q '^  "allowManagedPermissionRulesOnly": true' "$ms" \
+    || falha "allowManagedPermissionRulesOnly deve ficar na raiz."
+grep -q '^    "disableBypassPermissionsMode": "disable"' "$ms" \
+    || falha "disableBypassPermissionsMode deve ficar em permissions."
+grep -q '^      "allowManagedDomainsOnly": true' "$ms" \
+    || falha "allowManagedDomainsOnly deve ficar em sandbox.network."
+grep -q '^    "network": {' "$ms" || falha "falta sandbox.network."
+grep -q '^    "filesystem": {' "$ms" || falha "falta sandbox.filesystem."
+grep -q '^    "failIfUnavailable": true' "$ms" || falha "falta sandbox.failIfUnavailable."
+if grep -q '^    "allowedDomains"\|^    "allowManagedDomainsOnly"' "$ms"; then
+    falha "allowedDomains/allowManagedDomainsOnly fora de sandbox.network."
+fi
+
+# 3. Caminho unico do workspace e ausencia de travessoes.
+if grep -n --exclude=verifica-config.sh 'workspaces/sonic1' ./* ../README.md 2>/dev/null; then
+    falha "caminho /workspaces/sonic1 encontrado. O unico caminho e /workspaces/websonic."
+fi
+if grep -n -P --exclude=verifica-config.sh '[\x{2013}\x{2014}]' ./* 2>/dev/null; then
+    falha "travessao encontrado."
+fi
+
+if [ "$falhou" -eq 0 ]; then
+    echo "OK: configuracao consistente."
+fi
+exit "$falhou"

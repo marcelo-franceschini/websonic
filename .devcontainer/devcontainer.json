@@ -1,19 +1,22 @@
 {
-  "name": "sonic1-dev",
+  "name": "websonic-dev",
   "build": {
     "dockerfile": "Dockerfile",
     "context": ".."
   },
-  "workspaceFolder": "/workspaces/sonic1",
-  "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/sonic1,type=bind",
+  "workspaceFolder": "/workspaces/websonic",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/websonic,type=bind",
+  "initializeCommand": "sh .devcontainer/verifica-host.sh",
   "mounts": [
     "source=${localEnv:SONIC1_ROM_DIR},target=/mnt/rom,type=bind,readonly",
     "source=${localEnv:SONIC1_DISASM_DIR},target=/mnt/disasm,type=bind,readonly",
     "source=${localEnv:SONIC1_DISASM_TEXTO_DIR},target=/mnt/disasm-texto,type=bind,readonly",
     "source=${localEnv:SONIC1_TRABALHO_DIR},target=/mnt/trabalho,type=bind",
-    "source=sonic1-claude-config,target=/home/dev/.claude,type=volume"
+    "source=websonic-claude-config,target=/home/dev/.claude,type=volume"
   ],
   "containerUser": "dev",
+  "remoteUser": "dev",
+  "updateRemoteUserUID": true,
   "capAdd": [
     "NET_ADMIN",
     "NET_RAW"
@@ -37,6 +40,6 @@
     "GIT_ASKPASS": "",
     "SSH_AUTH_SOCK": ""
   },
-  "postStartCommand": "sudo /usr/local/bin/init-firewall.sh"
+  "postStartCommand": "sudo /usr/local/bin/init-firewall.sh",
+  "waitFor": "postStartCommand"
 }
-
