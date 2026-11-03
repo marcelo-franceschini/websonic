@@ -32,15 +32,21 @@ Os comandos passam por `.github/rodar-na-imagem.sh`, que roda `docker run` com o
 - `actionlint` 1.7.12 (imagem `rhysd/actionlint`, só como ferramenta de verificação) aceita o workflow. Um workflow plantado com `github.evnt.name` foi recusado, então o linter está ativo.
 - Os seis comandos de código do CI rodaram com `rodar-na-imagem.sh` numa cópia do repositório com o usuário 12345 (como um runner, sem ser o `dev`): todos com código 0, e o `dist/` saiu com `app.js`, `index.html` e `pkg/`.
 
-## Não provado (só dá para provar no GitHub)
+## Execução real no GitHub (03/11/2026)
 
-- A construção da imagem no Actions com o cache `gha`.
-- A execução real do workflow, o `upload-pages-artifact` e o `deploy-pages`.
-- O site publicado. Fica com o Marcelo depois do push.
+Verificada com `gh` no commit `548e997`, execução 41695208654 (branch `main`):
+- Os jobs `verificar` e `publicar` terminaram com sucesso. Todos os passos passaram: construção da imagem, anti-ROM, formatação, clippy, testes nativos, testes em WebAssembly, montagem do site, artefatos e deploy.
+- O Pages está em modo `workflow`, com HTTPS forçado.
+- `https://marcelo-franceschini.github.io/websonic/` responde 200 com o título "Sonic 1 em Rust", e `pkg/sonic1_web_bg.wasm` responde 200 (32846 bytes).
+
+## Ainda não provado
+
+- O aceite da REV01 no site publicado (o Marcelo escolhe a ROM nele).
+- A proteção de branch em `main`, que é configuração do GitHub.
+- Que o CI **falha** quando deveria. A prova é um push de teste com um arquivo proibido, num branch descartável.
 
 ## Para o Marcelo
 
-1. `git push`.
-2. No GitHub: Settings, Pages, Source "GitHub Actions".
-3. Conferir o CI verde, abrir o site publicado e escolher a ROM REV01.
-4. Depois do primeiro CI verde, exigir o job `verificar` em `main` (proteção de branch).
+1. Feito: push, Pages em "GitHub Actions" e CI verde.
+2. Abrir o site publicado e escolher a ROM REV01.
+3. Exigir o job `verificar` em `main` (proteção de branch).
