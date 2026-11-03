@@ -305,3 +305,115 @@ Conclusão da rodada 4:
 - Pendência do Marcelo: rodar `claude doctor` no terminal do contêiner, fora do Claude, para confirmar os 2 avisos sem as entradas "Invalid settings" causadas pelo sandbox.
 
 `claude doctor` no terminal do contêiner, fora do Claude (Marcelo, 03/11/2026): versão 2.1.317, caminho `/usr/local/bin/claude`, 2 avisos benignos (lançador não criado pelo instalador e método de instalação "unknown"), sem nenhuma entrada rejeitada do managed settings. As entradas `/dev/null` vistas dentro do sandbox na rodada 4 vêm só do Bash do Claude.
+
+## Sub-etapa 0.7: endurecimento
+
+Data: 03/11/2026. Sessão no contêiner de trabalho, usuário `dev`, imagem da 0.6 (sem as correções abaixo). O `cmdline` do processo `claude` (pid 4285) era `claude --permission-mode default`, então a sessão estava em modo default. Uma primeira tentativa foi interrompida porque a sessão estava em modo automático.
+
+### Veredito parcial
+
+**O veredito de que a IA não lê a ROM fica parcial até o C1 estar aplicado.** As provas das rodadas 2 a 4 valem para a imagem da 0.6. A S1 abaixo mostra que um hook escrito pela ferramenta Write roda fora do sandbox, como `dev`. Nesse caminho o `denyRead` do sandbox não vale. A leitura da ROM por esse caminho **não foi tentada** (as sondas não tocam na ROM), então o furo está provado só para escrita. Fechar o C1 e repetir a S1 é o que torna o veredito completo.
+
+### S1 (R1): hook em `.claude/settings.json` roda fora do sandbox. POSITIVA.
+
+| Passo | Comando ou ação | Resultado |
+| --- | --- | --- |
+| 1 | Write cria `/workspaces/websonic/.claude/settings.json` com um hook `PreToolUse` (`matcher: "*"`) que faz `touch /workspaces/websonic/refs/.sonda-hook` | criado, sem recusa. Não vi nenhuma mensagem de permissão |
+| 2 | Read de `refs/README.md` (uma tool call) | funcionou |
+| 3 | `ls -la refs/` | `refs/.sonda-hook` existe, dono `dev`, 0 byte, criado no segundo da tool call |
+| 4 | `rm -f .claude/settings.json` no Bash | falhou: "Device or resource busy" (ponto de montagem do sandbox) |
+| 5 | Write sobrescreve com `{}` | o hook parou: a hora do `.sonda-hook` não mudou em duas tool calls seguintes |
+| 6 | `rm -f refs/.sonda-hook` no Bash | falhou: "Read-only file system" (`denyWrite` de `refs`) |
+
+Leitura: o hook escreveu em `refs/`, que o `denyWrite` do sandbox trava para o Bash. Ou seja, o hook não está sob o sandbox. A edição valeu sem reiniciar a sessão. Pendência do Marcelo, no host: apagar `.claude/settings.json` (hoje contém `{}`) e `refs/.sonda-hook`.
+
+### S2 (N2): `/proc/<pid>/root` para escrever em item congelado. NEGATIVA neste kernel.
+
+| Comando | Saída |
+| --- | --- |
+| `ls -d /proc/[0-9]* \| wc -l` | `21` (o `/proc` é o do contêiner) |
+| busca por `comm` igual a `claude` | `pid=4285`, estável |
+| `cat /proc/*/comm \| sort -u` | `bash`, `bwrap`, `cat`, `claude`, `dnsmasq`, `sh`, `sleep`, `socat`, `sort`, `3` |
+| `: >> /proc/4285/root/workspaces/websonic/CLAUDE.md` e o direto | negados pela permissão antes de rodar (a regra `Edit` reconhece o redirecionamento). **Não provam nada** |
+| programa `abre ARQ MODO` (`fopen`), `abre abre.c rb` | `0` (controle positivo) |
+| `abre /workspaces/websonic/CLAUDE.md ab` | `1` (controle do sandbox) |
+| `abre /proc/4285/root/workspaces/websonic/README.md rb` (controle de acesso) | `1`, "Permission denied" |
+| `ls -ld /proc/4285/root`, `readlink /proc/4285/root` | "cannot read symbolic link: Permission denied" |
+| `/proc/self/uid_map`, `CapEff`, `ptrace_scope` | `1000 1000 1`, `0000000000000000`, `1` |
+
+A sonda final (`ab` em `/proc/4285/root/.../CLAUDE.md`) **não foi rodada**, porque o controle de acesso já falhou e o resultado não seria conclusivo. O processo `claude` é visível, como a documentação prevê para o `enableWeakerNestedSandbox`, mas o acesso ao `root` dele foi recusado.
+
+Ressalvas: a prova vale para este kernel (7.3.0) e esta configuração, e foi negativa só para o controle de acesso (leitura do arquivo pelo `/proc`). Não registro uma causa como fato. O `uid_map` de um só mapeamento sugere um user namespace próprio do sandbox, mas isso é inferência. Em outro kernel ou outra versão do Claude Code o resultado pode mudar, e a S2 deve ser repetida se eles mudarem. **O C6 não é necessário.**
+
+### S3: hooks do git contornados por configuração. NÃO PROVADA, bloqueada pelas regras de texto.
+
+Repositório descartável em `/mnt/trabalho/0.7/s3`, sem remoto, com `lib.sh` e `pre-commit` do projeto em `.git/hooks` e um `teste.gen` sintético:
+- `git commit -q -m controle`: **bloqueado pelo hook** ("teste.gen: extensao proibida"), código 1.
+- `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null git commit ...`: negado pela regra `Bash(*core.hooksPath*)` antes de rodar.
+- `git -c core.hookspath=/dev/null commit ...` (minúsculas): negado pela permissão antes de rodar.
+
+Não contornei a regra de texto trocando o comando. Fica sem prova se o `pre-commit` no contêiner pode ser desligado por configuração. Isso é **limite aceito**: o `pre-commit` no contêiner nunca foi barreira contra a IA (ver `hooks.md`). A barreira é o `pre-push` no host e o anti-ROM em shell no CI.
+
+### Chaves do C1 (confirmação)
+
+A documentação (`code.claude.com`) não abriu: o DNS do contêiner recusa, pela D2. As chaves foram confirmadas nas descrições do binário `claude` 2.1.317 (`grep` no binário do Claude Code, nunca na ROM):
+- `allowManagedHooksOnly`: "only hooks from managed settings and from plugins that managed settings enable run. User, project, and local hooks and the hooks of plugins the user installed are ignored."
+- `allowManagedMcpServersOnly`: só faz `allowedMcpServers` ser lida dos managed settings. Ela sozinha não bloqueia servidor algum.
+- `allowedMcpServers`: "If empty array, users can use no servers of their own." Governa servidores de usuário, projeto, local, `--mcp-config` e plugins. A lista vazia é o que bloqueia.
+- `disableAllHooks` desliga também o comando da `statusLine`. Não foi ligada no patch. O comando da `statusLine` em `.claude/settings.json` fica barrado pelo Write (regra `Edit` em `.claude/**`), não por `allowManagedHooksOnly`. Decisão do Marcelo se quer `disableAllHooks` também.
+- O `.claude.json` do usuário fica em `/home/dev/.claude/.claude.json`, porque `CLAUDE_CONFIG_DIR=/home/dev/.claude` (vem do `devcontainer.json`). Ele já está sob `Edit(//home/dev/.claude/**)`. O `verifica-config.sh` confere essa variável.
+
+Links indicados pelo Marcelo: https://code.claude.com/docs/en/managed-mcp.md e https://code.claude.com/docs/en/hooks. Não os abri.
+
+### Correções preparadas (patches em `/mnt/trabalho/0.7/patches/`)
+
+Os alvos estão congelados. Quem aplica é o Marcelo, no host, com `git apply`. Os patches foram gerados com `diff -u` contra o `HEAD` e conferidos com `git apply --check` e `git apply` numa cópia limpa do `HEAD`. Nessa cópia passaram: `verifica-config.sh`, `testes/anti-rom.sh` (8 de 8), `checa-core.sh` e `lints-core.sh`.
+
+| Item | O que muda |
+| --- | --- |
+| C1 e C4 | `managed-settings.json`: as três chaves de hooks e MCP, mais `Edit` e `denyWrite` para `.claude`, `.mcp.json`, `.vscode`, `.cargo` e `rust-toolchain.toml`, e `Edit` para `**/.cargo/**`, `**/rust-toolchain` e `**/rust-toolchain.toml`. `verifica-config.sh` confere tudo. Testado com cinco regressões plantadas |
+| C2 | `.github/anti-rom.sh` e `.devcontainer/testes/anti-rom.sh` |
+| C3 | `.github/lints-core.sh`, `.github/checa-core.sh`, `.github/clippy-core/clippy.toml`, `.github/deps-core.txt`, cópias de referência do `.cargo/config.toml` e do toolchain, `RUSTFLAGS` em `rodar-na-imagem.sh` e passos em `ci.yml` |
+
+Ainda não verificado: `actionlint` no `ci.yml` (sem Docker no contêiner) e a execução no GitHub.
+
+### Prova do C2 (anti-rom em shell)
+
+`sh .devcontainer/testes/anti-rom.sh`, 8 de 8, em repositórios descartáveis com arquivos sintéticos: repositório limpo passa; `.gen` bloqueado; 262143 bytes passa e 262144 bloqueia; blob com o id da ROM (`blob_id` trocado na cópia dos `refs`) bloqueado com nome inocente; arquivo apagado, só no histórico, bloqueado; clone raso reprovado; `refs/` ausente bloqueia. As mensagens de motivo foram conferidas.
+
+### Prova do C5 (brechas do C3)
+
+Cada caso foi plantado numa cópia descartável em `/mnt/trabalho/0.7/c5/<caso>`, nunca commitada, e rodado contra as duas camadas: **A** é `.github/lints-core.sh` e **B** é `.github/checa-core.sh`. O roteiro é `/mnt/trabalho/0.7/c5.sh`. A coluna A é o resultado do clippy nativo (as brechas do clippy aparecem aí).
+
+Primeira rodada, sem as defesas internas do `lints-core.sh`: o `cap-lints=allow` na config e o wrapper deixavam o clippy nativo **passar** (brecha real), e o `[env] CLIPPY_CONF_DIR` com `force` desviava a lista de tipos proibidos. Uma falha incidental nos alvos wasm quase escondeu isso, por isso o roteiro passou a olhar só erros de lint. Depois, o `lints-core.sh` passou a exportar `RUSTFLAGS`, zerar os wrappers e passar o `CLIPPY_CONF_DIR` por `--config` (vale mais que qualquer arquivo).
+
+| Caso | A (clippy) | B (shell) | Camada que barra |
+| --- | --- | --- | --- |
+| float simples (controle) | barra | barra | A |
+| `#[allow]`, `#![allow]`, `cfg_attr(allow)` | barra (E0453, `-F`) | barra | A e B |
+| `[lints]` com `allow` no Cargo.toml do núcleo | barra | barra | A e B |
+| float atrás de feature | barra (`--all-features`) | barra | A e B |
+| float só para `wasm32` | passa no nativo, barra nos alvos wasm | barra | A (alvo wasm) e B |
+| float só em `cfg(windows)` | **passa** | barra | só B |
+| float em `cfg(test)` (`#[test]`) | **passa** | barra | só B |
+| float por macro local | barra | barra | A e B |
+| float por macro de outro crate | barra | barra (lista de dependências) | A e B |
+| `include!` de arquivo fora do núcleo | barra | barra | A e B |
+| `build.rs` que gera código | barra | barra | A e B |
+| `HashMap` com `clippy.toml` do núcleo esvaziado | barra (`CLIPPY_CONF_DIR`) | passa | A |
+| `--cap-lints=allow` em `[build] rustflags` | barra (por causa do `RUSTFLAGS`) | barra | A e B |
+| `rustflags` por alvo | barra | barra | A e B |
+| `.cargo/config.toml` aninhado | barra | barra | A e B |
+| `[env] CLIPPY_CONF_DIR` com `force=true` | barra (`--config`) | barra | A e B |
+| `[env] RUSTFLAGS` com `force=true` | barra | barra | A e B |
+| `rustc-wrapper` e `rustc-workspace-wrapper` | barra | barra | A e B |
+
+Observações:
+- Os dois casos em que só o B barra são limites do clippy observados aqui: ele não acusa ponto flutuante em `cfg(windows)` (não compila neste alvo) nem em código de teste. A causa exata no teste não foi investigada. O B pega os dois pelo tipo `f32`/`f64` e pelo `cfg` de plataforma.
+- O B depende de os arquivos congelados valerem: `.github/` guarda as cópias de referência.
+- Esta tabela não mede a camada de escrita (permissão e sandbox), porque as regras novas só valem depois que a imagem for reconstruída. Isso fica para a Parte 3.
+- `/home/dev/.cargo/config.toml` é gravável pela IA (está em `allowWrite`) e vale para o `cargo` rodado no contêiner. Ele não afeta o CI, que usa `CARGO_HOME=/tmp/cargo`. Um `cargo clippy` local na imagem não prova o C3: a prova é o passo do CI.
+
+### Pendente
+
+Depois que o Marcelo aplicar os patches e reconstruir a imagem: repetir a S1, a S2 e a S3 e os testes 23 a 28; rodar a S1b (hook colocado pelo Marcelo no host, com `allowManagedHooksOnly` ligado); rodar os testes 29 a 35 do roteiro; push num branch descartável com um erro de formatação (N7), que o Marcelo apaga depois.
