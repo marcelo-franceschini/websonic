@@ -40,4 +40,4 @@ Documento de acompanhamento do progresso das etapas.
 - Aviso ao chat de planejamento: a cópia de `docs/requisitos.md` não traz o número da revisão, só a data. A D1 muda quem roda os testes de fidelidade.
 - Rodada 3 das permissões: feita. O `denyWrite` de `docs/requisitos.md`, `.git/config` e `.git/hooks` está provado no sandbox, e a IA faz commit local. A sessão estava em modo automático, mas nenhum comando foi barrado pelo classificador (ver `docs/conhecimento/ambiente.md`).
 - Verificação do Marcelo, fora do Claude, no terminal do contêiner: testes 21 e 22 do roteiro, mais `/status` e `claude doctor`.
-- Sem push. O push é do Marcelo. O commit a5b0710 ainda não foi publicado.
+- Sem push. O push é do Marcelo. Os commits locais até 5264427 ainda não foram publicados.
