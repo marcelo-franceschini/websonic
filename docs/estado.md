@@ -6,7 +6,7 @@ Documento de acompanhamento do progresso das etapas.
 
 - Etapa: 0 (Esqueleto do repositório), finalizada em 03/11/2026.
 - Próxima: Etapa 1 (Oráculo), aguardando o plano e a aprovação do Marcelo.
-- Status: todas as sub-etapas da Etapa 0 estão provadas. Resta o push dos commits locais (do Marcelo).
+- Status: todas as sub-etapas da Etapa 0 estão provadas. A sub-etapa 0.7 (Endurecimento) está concluída. O push é do Marcelo.
 
 ## Histórico de etapas
 
@@ -44,7 +44,7 @@ Documento de acompanhamento do progresso das etapas.
 - `/status` e `claude doctor` no contêiner: managed settings aceito, sem entradas rejeitadas. Os avisos de PATH foram tratados na 0.6 (link do `claude` na imagem).
 - Verificação do Marcelo: escolher a ROM REV01 no site publicado e, se quiser, ativar a proteção de branch em `main`.
 - Testes 23 a 28 do roteiro (rodada 4, 03/11/2026): nenhuma escrita em item congelado passou (permissão e sandbox), e o commit local continua funcionando. A sessão estava em modo automático, mas nenhum comando foi barrado pelo classificador. O `claude doctor` rodado pelo Marcelo fora do Claude mostrou só os 2 avisos benignos. Dentro do sandbox ele acusa os `/dev/null` montados, que não são arquivos reais.
-- Sem push. O push é do Marcelo. Tudo até o commit 548e997 foi publicado.
+- Tudo foi publicado até o commit 05576b5 (HEAD de origin/main, conferido no host pelo Marcelo). CI do main verde (run 41756764106 no commit b539528, jobs verificar e publicar, site 200). O commit 05576b5 só mudou o roteiro `permissoes.md` (run 41757996134 em andamento quando foi escrito; o Marcelo confere). O push é do Marcelo.
 - Pendências que restam da 0.7: push do `main` (do Marcelo); N8 (checksums do Dockerfile); N3 (`cargo` rodado fora do sandbox com `/mnt/rom` montado); N4 (quem monta o disassembly).
 - Parte 3 da 0.7 (rodada 5, 04/11/2026, feita): imagem com os patches e o C8 (commit d402937). N7 provado no GitHub (run 41732218921 verde, run 41733743755 vermelho só em "Formatacao"; o run 41732222178 falhou na imagem por falha transitória do instalador). S1b e S1 passaram, S2 negativa de novo, S3 não rodou (regras de texto negaram a instalação dos hooks no repositório descartável, limite aceito). Testes 23 a 36: nenhuma escrita em item congelado passou e nenhum `.sonda-*` apareceu em `refs/`. Ressalvas: o `claude doctor` mostra 3 avisos (o terceiro é sobre globs de Edit ignorados no sandbox do Linux), a camada do Bash em `crates/core/.cargo` não foi observada (regra de texto negou antes) e o `cargo test --offline` só funciona depois de um build online. O veredito de que a IA não lê a ROM volta a **provado** para o caminho do hook e da `statusLine`. Detalhes em `docs/conhecimento/ambiente.md`.
 - Status da 0.7: concluída do lado da IA. O `claude doctor` fora do Claude foi rodado em 04/11/2026 (3 avisos, ver `docs/conhecimento/ambiente.md`). A S1b com hook em `/home/dev/.claude/settings.json` não foi feita (risco de estragar o settings do volume). Falta ao Marcelo, no host: apagar o `.claude/settings.json` da sonda, conferir `refs/` e `git status`, rodar `/status` e `/mcp` fora do Claude, e ajustar o roteiro `permissoes.md` para esperar 3 avisos.
