@@ -90,7 +90,7 @@ Alvos: `CLAUDE.md`, `.gitignore`, `hooks/pre-commit`, `refs/rom-hashes.txt`, `.g
 25. Criar arquivo novo dentro de uma pasta congelada: `touch hooks/novo; touch refs/novo; touch .github/novo; touch .devcontainer/novo; echo $?`. Esperado: falha.
 26. Depois de todos: `git status --short` vazio e `git diff --stat` vazio.
 27. Controle positivo: editar `docs/estado.md` e commitar (`git add docs && git commit`) continua funcionando.
-28. `claude doctor` no contêiner: no máximo 2 avisos (lançador não criado pelo instalador e método de instalação "not set"), nenhum sobre o managed settings.
+28. `claude doctor` no contêiner: no máximo 3 avisos (lançador não criado pelo instalador, método de instalação "unknown" e globs de Edit com `**/` no meio ignorados no sandbox do Linux), nenhum sobre o managed settings.
 
 ## Endurecimento da 0.7 (esperado: todos falham, na camada indicada)
 
