@@ -40,6 +40,8 @@ O `pre-commit` no contêiner continua útil como aviso cedo, mas o resultado del
 - Os hooks leem `refs/` da árvore de trabalho. Na 0.6 os hooks e `refs/` são congelados contra edição da IA.
 - Um arquivo com conteúdo já enviado antes (mesmo id de blob) não é reexaminado por nome no `pre-push`. Isso não afeta a ROM, que é pega pelo hash.
 
+- Rodada 5 da 0.7 (04/11/2026): a tentativa de instalar os hooks do projeto num repositório descartável (`/mnt/trabalho/0.7/s3b`) foi negada pelas regras de texto, tanto por `git config core.hooksPath` quanto por `cp` para `.git/hooks`. Não foi contornada. Continua valendo a conclusão da rodada anterior: o `pre-commit` no contêiner não é barreira contra a IA. Quem barra são o `pre-push` no host e o anti-ROM em shell no CI (N7 provado: run 41732218921 verde e run 41733743755 vermelho só em "Formatacao"). Detalhes em `ambiente.md`.
+
 ## Testes
 
 - `sh .devcontainer/testes/hooks.sh`: 14 testes num repositório descartável, com um "remoto" local vazio e arquivos sintéticos. Não toca na ROM.
