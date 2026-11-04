@@ -515,4 +515,20 @@ Nenhum teste de escrita num item congelado passou e nenhum arquivo de sonda apar
   - N8: checksums no Dockerfile.
   - N3: rodar `cargo` no contêiner, fora do sandbox, com `/mnt/rom` montado.
   - N4: definir quem monta o disassembly.
-  - Marcelo: apagar o `.claude/settings.json` da sonda, conferir `refs/` e `git status`, rodar `/status`, `/mcp` e `claude doctor` fora do Claude, repetir a S1b com o hook em `/home/dev/.claude/settings.json`, e fazer o push do `main`.
+  - Marcelo: apagar o `.claude/settings.json` da sonda, conferir `refs/` e `git status`, rodar `/status` e `/mcp` fora do Claude, ajustar o roteiro `permissoes.md` (3 avisos) e fazer o push do `main`.
+
+#### `claude doctor` fora do Claude (Marcelo, 04/11/2026)
+
+Rodado pelo Marcelo, fora do Claude. Resultado: 3 avisos.
+
+- Os dois de sempre: lançador não criado pelo instalador e método de instalação "unknown". Benignos.
+- Um novo: "Glob patterns in sandbox permission rules are not fully supported on Linux". Cita 3 padrões:
+  - `Edit(//workspaces/websonic/**/.cargo/**)`
+  - `Edit(//workspaces/websonic/**/rust-toolchain)`
+  - `Edit(//workspaces/websonic/**/rust-toolchain.toml)`
+
+**Limite aceito:** no Linux, esses globs só valem na camada de permissão (o Write foi recusado, teste 33). O Bash, fora da camada de permissão, não é barrado pelo sandbox nesses caminhos aninhados. Quem cobre isso é o `.github/checa-core.sh` no CI.
+
+Consequências:
+- O roteiro `permissoes.md` (congelado) deve passar a esperar 3 avisos. O Marcelo ajusta no host.
+- A S1b com o hook em `/home/dev/.claude/settings.json` não foi feita. Ela usaria a mesma chave `allowManagedHooksOnly` já provada pela S1b do projeto, e havia risco de estragar o settings do volume.
