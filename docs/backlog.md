@@ -12,3 +12,8 @@ Uma linha por item: o que é, dono, etapa-alvo. Só entra aqui o que não bloque
 - Licença dos TAS do TASVideos não verificada. Dono: Marcelo. Etapa-alvo: 2 (antes do primeiro download).
 - Comparar eventos e ciclos exatos com o segundo oráculo (nível 2). Dono: IA. Etapa-alvo: 15.
 - Confirmar o formato GMV e BK2 e a API do crate `age` na documentação. Dono: IA. Etapa-alvo: 2 (2.3 e 2.8).
+- Confirmar a especificação dos três formatos em fonte primária (Sonic Retro bloqueou o acesso automático). Dono: Marcelo e IA. Etapa-alvo: 4 (só se o relatório da Etapa 3 mostrar `DIFERE`).
+- Provar `NemDec` (porta da VDP) além de `NemDecToRAM`: só a escrita da linha muda. Dono: IA. Etapa-alvo: 5.
+- Passos exatos do Nemesis por quadro (fila de arte e `v_plc_*`). Dono: IA. Etapa-alvo: 5.
+- Rodar `cargo test --target wasm32-wasip1 -p sonic1-core -p sonic1-teste-descompressao` na imagem. Dono: Marcelo. Etapa-alvo: 5.
+- Comparar a saída dos descompressores com o segundo oráculo. Dono: IA. Etapa-alvo: 2.

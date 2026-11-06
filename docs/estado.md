@@ -7,6 +7,13 @@ Documento de acompanhamento do progresso das etapas.
 - Etapa: 1 (Oráculo), plano aprovado pelo Marcelo em 06/11/2026.
 - Status: sub-etapas 1.1 a 1.9 feitas (1.8 e 1.9 rodadas pelo Marcelo em 06/11/2026). Congelamento aplicado e commitado (c188a83). **Defeito achado no `refs/rotulos.txt`** (base 10 em vez de 16; inferência, a provar na 2.0). Falta a revisão da Etapa 1, com a lista R1 a R13 em `docs/conhecimento/oraculo.md`.
 - Etapa 2: plano escrito em `docs/plano-etapa-2.md`, **aguardando aprovação do Marcelo**. Nada implementado.
+- Etapa 3 (Descompressores): 3.1 a 3.4 feitas pela IA (06/11/2026, dados sintéticos). 3.0 e 3.5 dependem de comandos do Marcelo (abaixo). Ver `docs/conhecimento/descompressao.md` e `docs/plano-etapa-3.md`. Decisões Q1 a Q3, D3 e D6 tomadas por padrão (recomendações do plano).
+
+### Etapa 3: o que o Marcelo precisa rodar (host, fora do Claude)
+
+1. Mapa de rótulos na base 16 (3.0): `sh oracle/scripts/monta-disasm.sh montar s1built.bin sonic.lst 16`. Esperado: `IDENTICA`, `variaveis` na casa das centenas.
+2. Patch do oráculo: `patch -p1 < docs/pedidos/descomprimir-oraculo.patch && sh oracle/scripts/testa.sh`. Esperado: 14 testes.
+3. Prova (3.5): `sh descompressao/prova.sh "$HOME/sonic1-ext/rom/Sonic The Hedgehog (W) (REV01) [!].gen"`. Cole o relatório (só rótulos, hashes e vereditos).
 - A Etapa 0 está finalizada (03/11/2026). O push é do Marcelo.
 
 ## Histórico de etapas
