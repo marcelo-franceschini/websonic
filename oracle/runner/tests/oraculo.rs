@@ -370,3 +370,57 @@ fn para_em_rotulo_resolvido_pelo_mapa() {
     assert_eq!(motivo, MotivoParada::Parada(Parada::Pc68(0x400)));
     assert_eq!(o.emulador().oracle_pc68(), 0x400);
 }
+
+/// ROM sintetica com rotinas falsas no lugar de `KosDec`, `EniDec` e `NemDecToRAM`, e blocos
+/// de dados. As rotinas so copiam bytes ou gravam o tile, o bastante para provar os
+/// registradores de entrada, a medida do tamanho e o formato da saida.
+#[test]
+fn descomprimir_chama_a_rotina_certa_e_mede_o_tamanho() {
+    use websonic_oracle::descompressao::descomprimir_lote;
+    let mut rom = RomSintetica::nova(SSP, 0x200);
+    rom.palavras(0x200, &[0x60FE]);
+    // KosDec falso: copia 4 bytes de (a0) para (a1) e volta.
+    rom.palavras(0x500, &[0x12D8, 0x12D8, 0x12D8, 0x12D8, 0x4E75]);
+    // EniDec falso: grava d0 (2 bytes) em (a1) e volta.
+    rom.palavras(0x520, &[0x32C0, 0x4E75]);
+    // NemDecToRAM falso: copia 2 bytes de (a0) para (a4).
+    rom.palavras(0x540, &[0x18D8, 0x18D8, 0x4E75]);
+    // Dados dos blocos.
+    rom.palavras(0x600, &[0x1122, 0x3344]);
+    rom.palavras(0x610, &[0x0000, 0x0000]); // saida toda zero: o tamanho ainda e 4
+    rom.palavras(0x620, &[0xFFFF, 0xAABB]);
+    let rom = rom.finalizar();
+    let rotulos = "KosDec\trotina\t500\nEniDec\trotina\t520\nNemDecToRAM\trotina\t540\n\
+                   Dados\trotina\t600\nZeros\trotina\t610\nDadosNem\trotina\t620\n";
+    let manifesto = "Dados\tkosinski\t-\nZeros\tkosinski\t-\nDados\tenigma\t0000,2345\n\
+                     DadosNem\tnemesis\t-\nSumiu\tkosinski\t-\n";
+    let saida = descomprimir_lote(rom.clone(), rotulos, manifesto).unwrap();
+    let hash = |b: &[u8]| sonic1_fidelidade::hash::em_hex(&sonic1_fidelidade::hash::sha1(b));
+    let linhas: Vec<&str> = saida.lines().filter(|l| !l.starts_with('#')).collect();
+    assert_eq!(
+        linhas[0],
+        format!(
+            "Dados\tkosinski\t-\t600\t4\t{}",
+            hash(&[0x11, 0x22, 0x33, 0x44])
+        )
+    );
+    assert_eq!(
+        linhas[1],
+        format!("Zeros\tkosinski\t-\t610\t4\t{}", hash(&[0, 0, 0, 0]))
+    );
+    assert_eq!(
+        linhas[2],
+        format!("Dados\tenigma\t0000\t600\t2\t{}", hash(&[0, 0]))
+    );
+    assert_eq!(
+        linhas[3],
+        format!("Dados\tenigma\t2345\t600\t2\t{}", hash(&[0x23, 0x45]))
+    );
+    assert_eq!(
+        linhas[4],
+        format!("DadosNem\tnemesis\t-\t620\t2\t{}", hash(&[0xFF, 0xFF]))
+    );
+    assert_eq!(linhas[5], "Sumiu\tkosinski\t-\tERRO\trotulo ausente");
+    // Determinismo: a mesma chamada de novo da o mesmo texto.
+    assert_eq!(saida, descomprimir_lote(rom, rotulos, manifesto).unwrap());
+}

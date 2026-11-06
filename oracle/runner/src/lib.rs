@@ -2,6 +2,7 @@
 //!
 //! Licenca GPLv3, como o jgenesis. Este crate nunca entra no build do site nem do `core`.
 
+pub mod descompressao;
 pub mod entradas;
 pub mod oraculo;
 pub mod rom_sintetica;

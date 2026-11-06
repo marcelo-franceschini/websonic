@@ -4,6 +4,7 @@
 //! oraculo rodar --rom ARQ --quadros N --saida ARQ [--entradas ARQ] [--rotulos ARQ --parar-em NOME]
 //!               [--salvar-estado ARQ]
 //! oraculo comparar TRACE_A TRACE_B
+//! oraculo descomprimir --rom ARQ --rotulos ARQ --manifesto ARQ [--saida ARQ]
 //! ```
 //!
 //! A saida no terminal tem so hashes, contagens e nomes. Nunca imprime memoria, nem eventos.
@@ -22,6 +23,7 @@ fn main() -> ExitCode {
     let resultado = match args.first().map(String::as_str) {
         Some("rodar") => rodar(&args[1..]),
         Some("comparar") => comparar(&args[1..]),
+        Some("descomprimir") => descomprimir(&args[1..]),
         Some("rom-sintetica") => rom_sintetica(&args[1..]),
         _ => Err(
             "uso: oraculo rodar --rom ARQ --quadros N --saida ARQ [...] | oraculo comparar A B"
@@ -174,5 +176,26 @@ fn rom_sintetica(args: &[String]) -> Result<ExitCode, String> {
         _ => return Err("tipo desconhecido".into()),
     };
     std::fs::write(saida, rom).map_err(|e| e.to_string())?;
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Chama `KosDec`, `EniDec` e `NemDecToRAM` para cada bloco do manifesto e imprime so
+/// rotulo, formato, tile, endereco, tamanho e SHA-1 da saida.
+fn descomprimir(args: &[String]) -> Result<ExitCode, String> {
+    let rom = std::fs::read(opcao(args, "--rom").ok_or("falta --rom")?)
+        .map_err(|e| format!("nao li a ROM: {e}"))?;
+    let ler = |nome: &str| -> Result<String, String> {
+        let c = opcao(args, nome).ok_or(format!("falta {nome}"))?;
+        std::fs::read_to_string(c).map_err(|e| format!("{c}: {e}"))
+    };
+    let texto = websonic_oracle::descompressao::descomprimir_lote(
+        rom,
+        &ler("--rotulos")?,
+        &ler("--manifesto")?,
+    )?;
+    if let Some(saida) = opcao(args, "--saida") {
+        std::fs::write(saida, &texto).map_err(|e| e.to_string())?;
+    }
+    print!("{texto}");
     Ok(ExitCode::SUCCESS)
 }
