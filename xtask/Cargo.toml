@@ -8,3 +8,6 @@ license.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+sonic1-fidelidade = { path = "../crates/fidelidade" }

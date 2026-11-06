@@ -7,12 +7,14 @@
 //! Regras de determinismo do formato:
 //! - tamanho fixo por registro, ordem de bytes little-endian;
 //! - sem relogio de parede, sem ponteiros, sem ordem de hash;
-//! - eventos ordenados por (mclk, seq) dentro do quadro.
+//! - eventos na ordem em que o oraculo os emitiu (`seq`, a partir de zero em cada quadro).
+//!   O `mclk` e informativo: eventos do Z80 e do 68000 usam relogios diferentes.
 
 pub mod comparar;
 pub mod evento;
 pub mod formato;
 pub mod hash;
+pub mod rotulos;
 
 pub use comparar::{Divergencia, Onde, comparar_leitores, comparar_quadros};
 pub use evento::{Evento, Origem, TAMANHO_EVENTO, Tipo};

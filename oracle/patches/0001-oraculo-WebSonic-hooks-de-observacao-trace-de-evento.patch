@@ -1,0 +1,890 @@
+From 00762cadaefa5e3a0105d51a2583abf5043fe458 Mon Sep 17 00:00:00 2001
+From: Claude Code <claude-code@local>
+Date: Fri, 6 Nov 2026 19:22:16 -0300
+Subject: [PATCH] oraculo WebSonic: hooks de observacao (trace de eventos e
+ acessores)
+
+---
+ Cargo.lock                                    |   7 +
+ Cargo.toml                                    |   1 +
+ backend/genesis-components/src/vdp.rs         |  22 ++
+ backend/genesis-core/Cargo.toml               |   1 +
+ backend/genesis-core/src/api.rs               |  20 +-
+ backend/genesis-core/src/api/oracle.rs        | 102 ++++++++++
+ backend/genesis-core/src/bus.rs               |  29 ++-
+ backend/genesis-core/src/timing.rs            |   8 +
+ common/oracle-trace/Cargo.toml                |  11 +
+ common/oracle-trace/src/lib.rs                | 191 ++++++++++++++++++
+ cpu/m68000-emu/Cargo.toml                     |   1 +
+ cpu/m68000-emu/src/core.rs                    |   9 +
+ cpu/m68000-emu/src/core/instructions.rs       |   1 +
+ .../src/core/instructions/controlflow.rs      |  17 ++
+ cpu/z80-emu/Cargo.toml                        |   1 +
+ cpu/z80-emu/src/core/instructions.rs          |  13 +-
+ cpu/z80-emu/src/core/instructions/jump.rs     |  18 ++
+ 17 files changed, 447 insertions(+), 5 deletions(-)
+ create mode 100644 backend/genesis-core/src/api/oracle.rs
+ create mode 100644 common/oracle-trace/Cargo.toml
+ create mode 100644 common/oracle-trace/src/lib.rs
+
+diff --git a/Cargo.lock b/Cargo.lock
+index 54ea63be..cd0d441b 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -1711,6 +1711,7 @@ dependencies = [
+  "jgenesis-proc-macros",
+  "log",
+  "m68000-emu",
++ "oracle-trace",
+  "s32x-core",
+  "segacd-core",
+  "sh2-emu",
+@@ -2629,6 +2630,7 @@ dependencies = [
+  "jgenesis-common",
+  "jgenesis-proc-macros",
+  "log",
++ "oracle-trace",
+ ]
+ 
+ [[package]]
+@@ -3462,6 +3464,10 @@ version = "0.2.0"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
+ 
++[[package]]
++name = "oracle-trace"
++version = "0.14.1"
++
+ [[package]]
+ name = "orbclient"
+ version = "0.3.55"
+@@ -6401,6 +6407,7 @@ dependencies = [
+  "bincode",
+  "jgenesis-common",
+  "log",
++ "oracle-trace",
+  "rand 0.10.3",
+ ]
+ 
+diff --git a/Cargo.toml b/Cargo.toml
+index 47b5a155..148f261a 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -86,6 +86,7 @@ type-map = "0.5"
+ cdrom = { path = "common/cdrom" }
+ dsp = { path = "common/dsp" }
+ jgenesis-common = { path = "common/jgenesis-common" }
++oracle-trace = { path = "common/oracle-trace" }
+ jgenesis-proc-macros = { path = "common/jgenesis-proc-macros" }
+ 
+ # Workspace CPU libraries
+diff --git a/backend/genesis-components/src/vdp.rs b/backend/genesis-components/src/vdp.rs
+index 137b14aa..a7034472 100644
+--- a/backend/genesis-components/src/vdp.rs
++++ b/backend/genesis-components/src/vdp.rs
+@@ -2054,6 +2054,28 @@ impl Vdp {
+         self.state.scanline_mclk_cycles
+     }
+ 
++    // Acessores de leitura do oraculo WebSonic. Nao mudam o estado.
++    #[must_use]
++    pub fn oracle_vram(&self) -> &[u8] {
++        &self.vram[..]
++    }
++
++    #[must_use]
++    pub fn oracle_cram(&self) -> &[u16] {
++        &self.cram[..]
++    }
++
++    #[must_use]
++    pub fn oracle_vsram(&self) -> &[u16] {
++        &self.vsram[..]
++    }
++
++    /// Registradores e estado de controle em texto estavel (Debug derivado), para o hash.
++    #[must_use]
++    pub fn oracle_registradores(&self) -> String {
++        format!("{:?}|{:?}", self.registers, self.control_port)
++    }
++
+     #[inline]
+     #[must_use]
+     pub fn timing_mode(&self) -> TimingMode {
+diff --git a/backend/genesis-core/Cargo.toml b/backend/genesis-core/Cargo.toml
+index 9e835543..ec6e4295 100644
+--- a/backend/genesis-core/Cargo.toml
++++ b/backend/genesis-core/Cargo.toml
+@@ -9,6 +9,7 @@ edition = "2024"
+ cdrom = { workspace = true }
+ dsp = { workspace = true }
+ jgenesis-common = { workspace = true }
++oracle-trace = { workspace = true }
+ jgenesis-proc-macros = { workspace = true }
+ 
+ genesis-config = { workspace = true }
+diff --git a/backend/genesis-core/src/api.rs b/backend/genesis-core/src/api.rs
+index 14972487..293c0d80 100644
+--- a/backend/genesis-core/src/api.rs
++++ b/backend/genesis-core/src/api.rs
+@@ -1,6 +1,7 @@
+ //! Genesis public interface and main loop
+ 
+ pub mod debug;
++pub mod oracle;
+ 
+ use crate::api::debug::GenesisDebugger;
+ use crate::audio::GenesisAudioResampler;
+@@ -242,10 +243,18 @@ impl GenesisEmulator {
+         self.bus.input.set_inputs(*input_poller.poll());
+         self.bus.m68k_opcode = self.m68k.next_opcode();
+ 
++        // Contexto de tempo dos eventos do oraculo: inicio da instrucao do 68000.
++        let oraculo_mclk = self.bus.cycles.m68k_mclk_cycles;
++        let oraculo_linha = self.bus.vdp.scanline();
++        let oraculo_coluna = self.bus.vdp.scanline_mclk() as u16;
++        oracle_trace::set_ctx(oraculo_mclk, oracle_trace::src::CPU68, oraculo_linha, oraculo_coluna);
++
+         let m68k_pc = self.m68k.pc();
+         let m68k_wait = self.bus.cycles.m68k_wait_cpu_cycles != 0;
+         let m68k_cycles = if m68k_wait {
+-            self.bus.cycles.take_m68k_wait_cpu_cycles()
++            let espera = self.bus.cycles.take_m68k_wait_cpu_cycles();
++            oracle_trace::emit(oracle_trace::kind::ESPERA_CONSUMIDA, espera, 0, 0, 0);
++            espera
+         } else if DEBUG && let Some(debugger) = &mut debugger {
+             let mut debug_bus = Debug68000Bus::new(&mut self.bus, &mut self.z80, debugger);
+             self.m68k.execute_instruction(&mut debug_bus)
+@@ -261,6 +270,12 @@ impl GenesisEmulator {
+         );
+ 
+         while self.bus.cycles.should_tick_z80() {
++            oracle_trace::set_ctx(
++                self.bus.cycles.z80_mclk_cycles,
++                oracle_trace::src::Z80,
++                self.bus.vdp.scanline(),
++                self.bus.vdp.scanline_mclk() as u16,
++            );
+             if !self.bus.cycles.z80_halt {
+                 if DEBUG && let Some(debugger) = &mut debugger {
+                     let mut debug_bus = DebugZ80Bus::new(&mut self.bus, &mut self.m68k, debugger);
+@@ -272,6 +287,9 @@ impl GenesisEmulator {
+             self.bus.cycles.z80_cycle();
+         }
+ 
++        // As escritas pendentes do 68000 sao aplicadas em tick_components: volta ao contexto do 68000.
++        oracle_trace::set_ctx(oraculo_mclk, oracle_trace::src::CPU68, oraculo_linha, oraculo_coluna);
++
+         let vdp_tick_effect = self.bus.tick_components::<DEBUG>(
+             m68k_cycles,
+             elapsed_mclk_cycles,
+diff --git a/backend/genesis-core/src/api/oracle.rs b/backend/genesis-core/src/api/oracle.rs
+new file mode 100644
+index 00000000..0f036f4a
+--- /dev/null
++++ b/backend/genesis-core/src/api/oracle.rs
+@@ -0,0 +1,102 @@
++//! Acessores de leitura e escrita do oraculo WebSonic (GPLv3, como o jgenesis).
++//!
++//! Estes metodos ficam aqui porque os campos de `GenesisEmulator` sao privados. Eles nao mudam a
++//! emulacao: leem estado, e as escritas so servem para montar o estado inicial de um teste.
++
++use super::GenesisEmulator;
++use bincode::{Decode, Encode};
++
++/// Registradores do 68000 para ler e escrever.
++#[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode)]
++pub struct Regs68 {
++    pub d: [u32; 8],
++    pub a: [u32; 7],
++    pub usp: u32,
++    pub ssp: u32,
++    pub sr: u16,
++    pub pc: u32,
++}
++
++impl GenesisEmulator {
++    /// Endereco da proxima instrucao do 68000.
++    #[must_use]
++    pub fn oracle_pc68(&self) -> u32 {
++        self.m68k.pc()
++    }
++
++    /// Endereco da proxima instrucao do Z80.
++    #[must_use]
++    pub fn oracle_pc80(&self) -> u16 {
++        self.z80.pc()
++    }
++
++    /// Relogio mestre desde o ligar, no inicio da proxima instrucao do 68000.
++    #[must_use]
++    pub fn oracle_mclk(&self) -> u64 {
++        self.bus.cycles.m68k_mclk_cycles
++    }
++
++    /// Linha da VDP e ciclos mestres desde o inicio da linha.
++    #[must_use]
++    pub fn oracle_posicao_vdp(&self) -> (u16, u64) {
++        (self.bus.vdp.scanline(), self.bus.vdp.scanline_mclk())
++    }
++
++    #[must_use]
++    pub fn oracle_regs68(&self) -> Regs68 {
++        Regs68 {
++            d: self.m68k.data_registers(),
++            a: self.m68k.address_registers(),
++            usp: self.m68k.user_stack_pointer(),
++            ssp: self.m68k.supervisor_stack_pointer(),
++            sr: self.m68k.status_register(),
++            pc: self.m68k.pc(),
++        }
++    }
++
++    /// Define os registradores do 68000 e recarrega o prefetch no PC dado.
++    pub fn oracle_definir_regs68(&mut self, regs: &Regs68) {
++        self.m68k.set_data_registers(regs.d);
++        self.m68k.set_address_registers(regs.a, regs.usp, regs.ssp);
++        self.m68k.set_status_register(regs.sr);
++        self.m68k.set_pc(regs.pc, &mut self.bus);
++    }
++
++    #[must_use]
++    pub fn oracle_ram68k_byte(&self, endereco: u32) -> u8 {
++        self.bus.memory.read_main_ram_byte(endereco)
++    }
++
++    pub fn oracle_escrever_ram68k_byte(&mut self, endereco: u32, valor: u8) {
++        self.bus.memory.write_main_ram::<false>(endereco, valor.into());
++    }
++
++    #[must_use]
++    pub fn oracle_ram_z80_byte(&self, endereco: u16) -> u8 {
++        self.bus.memory.read_audio_ram(endereco)
++    }
++
++    pub fn oracle_escrever_ram_z80_byte(&mut self, endereco: u16, valor: u8) {
++        self.bus.memory.write_audio_ram(endereco, valor);
++    }
++
++    #[must_use]
++    pub fn oracle_vram(&self) -> &[u8] {
++        self.bus.vdp.oracle_vram()
++    }
++
++    #[must_use]
++    pub fn oracle_cram(&self) -> &[u16] {
++        self.bus.vdp.oracle_cram()
++    }
++
++    #[must_use]
++    pub fn oracle_vsram(&self) -> &[u16] {
++        self.bus.vdp.oracle_vsram()
++    }
++
++    #[must_use]
++    pub fn oracle_registradores_vdp(&self) -> String {
++        self.bus.vdp.oracle_registradores()
++    }
++}
+diff --git a/backend/genesis-core/src/bus.rs b/backend/genesis-core/src/bus.rs
+index 14bb3fa2..2d33423e 100644
+--- a/backend/genesis-core/src/bus.rs
++++ b/backend/genesis-core/src/bus.rs
+@@ -466,6 +466,7 @@ impl GenesisBus {
+             0xA11100 => {
+                 // Bit 8 is Z80 BUSACK (active low), other bits are unused
+                 let busack_bit = u16::from(!self.z80_signals.busack()) << 8;
++                oracle_trace::emit(oracle_trace::kind::LEITURA_BUSACK, busack_bit.into(), 0, 0, 0);
+ 
+                 // Unused bits should read open bus; Danny Sullivan's Indy Heat (Proto) and Time Killers
+                 // depend on this or they will fail to boot
+@@ -589,6 +590,13 @@ impl GenesisBus {
+             }
+             0xA11100 => {
+                 self.z80_signals.busreq = if WORD { value.bit(8) } else { value.bit(0) };
++                oracle_trace::emit(
++                    oracle_trace::kind::BARRAMENTO_Z80,
++                    0,
++                    self.z80_signals.busreq.into(),
++                    0,
++                    0,
++                );
+                 log::trace!("Set Z80 BUSREQ to {}", self.z80_signals.busreq);
+             }
+             0xA11200 => {
+@@ -688,16 +696,30 @@ impl GenesisBus {
+         // Byte-size VDP writes duplicate the byte into a word
+         let vdp_word = if WORD { value } else { (value & 0xFF) | (value << 8) };
+ 
++        let oraculo_linha = self.vdp.scanline();
++        let oraculo_coluna = self.vdp.scanline_mclk() as u16;
++        let oraculo_valor = if WORD { u32::from(value) } else { u32::from(value & 0xFF) };
++        let oraculo_tamanho = if WORD { 2 } else { 1 };
+         match address & 0x1F {
+-            0x00..=0x03 => self.vdp.write_data(vdp_word),
+-            0x04..=0x07 => self.vdp.write_control(vdp_word),
+-            0x10..=0x17 if WORD || address.bit(0) => self.psg.write(value as u8),
++            0x00..=0x03 => {
++                oracle_trace::emit_at(oracle_trace::kind::VDP, oraculo_linha, oraculo_coluna, 0, oraculo_valor, oraculo_tamanho, 0);
++                self.vdp.write_data(vdp_word);
++            }
++            0x04..=0x07 => {
++                oracle_trace::emit_at(oracle_trace::kind::VDP, oraculo_linha, oraculo_coluna, 1, oraculo_valor, oraculo_tamanho, 0);
++                self.vdp.write_control(vdp_word);
++            }
++            0x10..=0x17 if WORD || address.bit(0) => {
++                oracle_trace::emit_at(oracle_trace::kind::PSG, oraculo_linha, oraculo_coluna, u32::from(value as u8), 0, 0, 0);
++                self.psg.write(value as u8);
++            }
+             0x1C..=0x1D => self.vdp.write_debug_register(vdp_word),
+             _ => {}
+         }
+     }
+ 
+     fn set_z80_reset(&mut self, z80_reset: bool) {
++        oracle_trace::emit(oracle_trace::kind::BARRAMENTO_Z80, 1, z80_reset.into(), 0, 0);
+         if !self.z80_signals.reset && z80_reset {
+             // Z80 RESET also resets the YM2612
+             // Fantastic Dizzy depends on this or music will not mute correctly when you pause the game
+@@ -881,6 +903,7 @@ impl z80_emu::BusInterface for GenesisBus {
+             0x4000..=0x5FFF => {
+                 // YM2612 registers/ports (mirrored every 4 addresses)
+                 self.sync_ym2612();
++                oracle_trace::emit(oracle_trace::kind::YM, (address & 0x03).into(), value.into(), 0, 0);
+                 match address & 0x03 {
+                     0x00 => self.ym2612.write_address_1(value),
+                     0x02 => self.ym2612.write_address_2(value),
+diff --git a/backend/genesis-core/src/timing.rs b/backend/genesis-core/src/timing.rs
+index 193d15b8..47dbe529 100644
+--- a/backend/genesis-core/src/timing.rs
++++ b/backend/genesis-core/src/timing.rs
+@@ -159,6 +159,13 @@ impl CycleCounters {
+             // Not sure if it's accurate for this to be conditional, but adding this delay after
+             // a VDP DMA breaks some effects in Overdrive
+             self.m68k_wait_cpu_cycles += 9 + u32::from(self.m68k_wait_counter < 7);
++            oracle_trace::emit(
++                oracle_trace::kind::ESPERA_ACUMULADA,
++                2,
++                9 + u32::from(self.m68k_wait_counter < 7),
++                0,
++                0,
++            );
+             self.m68k_wait_counter += 1;
+             if self.m68k_wait_counter == 10 {
+                 self.m68k_wait_counter = 0;
+@@ -171,6 +178,7 @@ impl CycleCounters {
+         // Each time the 68K accesses the Z80 bus, the 68K is stalled for 1 CPU cycle
+         // Pac-Man 2: The New Adventures depends on this for its audio code to work correctly
+         self.m68k_wait_cpu_cycles += 1;
++        oracle_trace::emit(oracle_trace::kind::ESPERA_ACUMULADA, 1, 1, 0, 0);
+     }
+ 
+     #[inline]
+diff --git a/common/oracle-trace/Cargo.toml b/common/oracle-trace/Cargo.toml
+new file mode 100644
+index 00000000..e265eddd
+--- /dev/null
++++ b/common/oracle-trace/Cargo.toml
+@@ -0,0 +1,11 @@
++[package]
++name = "oracle-trace"
++version = { workspace = true }
++edition = "2024"
++
++# Hooks de observacao do oraculo WebSonic. GPLv3, como o jgenesis.
++
++[dependencies]
++
++[lints]
++workspace = true
+diff --git a/common/oracle-trace/src/lib.rs b/common/oracle-trace/src/lib.rs
+new file mode 100644
+index 00000000..2bc1ba5d
+--- /dev/null
++++ b/common/oracle-trace/src/lib.rs
+@@ -0,0 +1,191 @@
++//! Hooks de observacao do oraculo WebSonic (GPLv3, como o jgenesis).
++//!
++//! Este crate so observa. Nenhuma funcao daqui muda o estado da emulacao.
++//! Quando o registro esta desligado, cada hook custa uma leitura de `Cell<bool>`.
++//!
++//! O estado fica em `thread_local`, porque o oraculo roda em uma thread so. Os eventos nao fazem
++//! parte do savestate.
++
++use std::cell::{Cell, RefCell};
++
++/// Tipos de evento. Os numeros espelham `sonic1_fidelidade::Tipo`.
++pub mod kind {
++    pub const INT68: u8 = 1;
++    pub const DESVIO68: u8 = 2;
++    pub const INT80: u8 = 3;
++    pub const DESVIO80: u8 = 4;
++    pub const VDP: u8 = 5;
++    pub const YM: u8 = 6;
++    pub const PSG: u8 = 7;
++    pub const BARRAMENTO_Z80: u8 = 8;
++    pub const ESPERA_ACUMULADA: u8 = 9;
++    pub const ESPERA_CONSUMIDA: u8 = 10;
++    pub const LEITURA_BUSACK: u8 = 11;
++}
++
++/// Origem do evento. Os numeros espelham `sonic1_fidelidade::Origem`.
++pub mod src {
++    pub const CPU68: u8 = 0;
++    pub const Z80: u8 = 1;
++    pub const HARDWARE: u8 = 2;
++}
++
++/// Classes de desvio do 68000.
++pub mod classe68 {
++    pub const BRA: u32 = 1;
++    pub const BCC: u32 = 2;
++    pub const BSR: u32 = 3;
++    pub const DBCC: u32 = 4;
++    pub const JMP: u32 = 5;
++    pub const JSR: u32 = 6;
++    pub const RTS: u32 = 7;
++    pub const RTR: u32 = 8;
++    pub const RTE: u32 = 9;
++    pub const EXCECAO: u32 = 10;
++}
++
++/// Classes de desvio do Z80.
++pub mod classe80 {
++    pub const JR: u32 = 1;
++    pub const JR_CC: u32 = 2;
++    pub const DJNZ: u32 = 3;
++    pub const JP: u32 = 4;
++    pub const JP_CC: u32 = 5;
++    pub const JP_HL: u32 = 6;
++    pub const CALL: u32 = 7;
++    pub const CALL_CC: u32 = 8;
++    pub const RET: u32 = 9;
++    pub const RET_CC: u32 = 10;
++    pub const RETI: u32 = 11;
++    pub const RST: u32 = 12;
++}
++
++/// Evento bruto, ainda sem numero de sequencia.
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub struct Raw {
++    pub mclk: u64,
++    pub kind: u8,
++    pub src: u8,
++    pub line: u16,
++    pub col: u16,
++    pub a: u32,
++    pub b: u32,
++    pub c: u32,
++    pub d: u32,
++}
++
++#[derive(Clone, Copy, Default)]
++struct Ctx {
++    mclk: u64,
++    src: u8,
++    line: u16,
++    col: u16,
++    pc68: u32,
++    pc80: u32,
++}
++
++thread_local! {
++    static ENABLED: Cell<bool> = const { Cell::new(false) };
++    static CTX: Cell<Ctx> = const { Cell::new(Ctx { mclk: 0, src: 0, line: 0, col: 0, pc68: 0, pc80: 0 }) };
++    static BUF: RefCell<Vec<Raw>> = const { RefCell::new(Vec::new()) };
++}
++
++/// Liga ou desliga o registro.
++pub fn set_enabled(on: bool) {
++    ENABLED.with(|e| e.set(on));
++}
++
++#[inline]
++pub fn enabled() -> bool {
++    ENABLED.with(Cell::get)
++}
++
++/// Define o contexto de tempo e de origem dos proximos eventos.
++#[inline]
++pub fn set_ctx(mclk: u64, src: u8, line: u16, col: u16) {
++    if enabled() {
++        CTX.with(|c| {
++            let mut ctx = c.get();
++            ctx.mclk = mclk;
++            ctx.src = src;
++            ctx.line = line;
++            ctx.col = col;
++            c.set(ctx);
++        });
++    }
++}
++
++/// Endereco da instrucao do 68000 em execucao.
++#[inline]
++pub fn set_pc68(pc: u32) {
++    if enabled() {
++        CTX.with(|c| {
++            let mut ctx = c.get();
++            ctx.pc68 = pc;
++            c.set(ctx);
++        });
++    }
++}
++
++/// Endereco da instrucao do Z80 em execucao.
++#[inline]
++pub fn set_pc80(pc: u16) {
++    if enabled() {
++        CTX.with(|c| {
++            let mut ctx = c.get();
++            ctx.pc80 = pc.into();
++            c.set(ctx);
++        });
++    }
++}
++
++#[inline]
++fn push(raw: Raw) {
++    BUF.with(|b| b.borrow_mut().push(raw));
++}
++
++/// Registra um evento no contexto atual.
++#[inline]
++pub fn emit(kind: u8, a: u32, b: u32, c: u32, d: u32) {
++    if enabled() {
++        let ctx = CTX.with(Cell::get);
++        push(Raw { mclk: ctx.mclk, kind, src: ctx.src, line: ctx.line, col: ctx.col, a, b, c, d });
++    }
++}
++
++/// Registra um evento com a posicao da VDP dada (linha e coluna no momento da aplicacao).
++#[inline]
++pub fn emit_at(kind: u8, line: u16, col: u16, a: u32, b: u32, c: u32, d: u32) {
++    if enabled() {
++        let ctx = CTX.with(Cell::get);
++        push(Raw { mclk: ctx.mclk, kind, src: ctx.src, line, col, a, b, c, d });
++    }
++}
++
++/// Desvio do 68000. `destino` so vale se `tomado`.
++#[inline]
++pub fn desvio68(classe: u32, destino: u32, tomado: bool) {
++    if enabled() {
++        let pc = CTX.with(|c| c.get().pc68);
++        emit(kind::DESVIO68, pc, if tomado { destino } else { 0 }, classe, u32::from(tomado));
++    }
++}
++
++/// Desvio do Z80. `destino` so vale se `tomado`.
++#[inline]
++pub fn desvio80(classe: u32, destino: u32, tomado: bool) {
++    if enabled() {
++        let pc = CTX.with(|c| c.get().pc80);
++        emit(kind::DESVIO80, pc, if tomado { destino } else { 0 }, classe, u32::from(tomado));
++    }
++}
++
++/// Move os eventos acumulados para `saida`, na ordem em que ocorreram.
++pub fn drain(saida: &mut Vec<Raw>) {
++    BUF.with(|b| saida.append(&mut b.borrow_mut()));
++}
++
++/// Descarta os eventos acumulados.
++pub fn clear() {
++    BUF.with(|b| b.borrow_mut().clear());
++}
+diff --git a/cpu/m68000-emu/Cargo.toml b/cpu/m68000-emu/Cargo.toml
+index e9f2c366..4f7ca737 100644
+--- a/cpu/m68000-emu/Cargo.toml
++++ b/cpu/m68000-emu/Cargo.toml
+@@ -13,6 +13,7 @@ memorybus = []
+ [dependencies]
+ jgenesis-proc-macros = { workspace = true }
+ jgenesis-common = { workspace = true }
++oracle-trace = { workspace = true }
+ 
+ bincode = { workspace = true, optional = true }
+ log = { workspace = true }
+diff --git a/cpu/m68000-emu/src/core.rs b/cpu/m68000-emu/src/core.rs
+index cec4207e..f3c468cf 100644
+--- a/cpu/m68000-emu/src/core.rs
++++ b/cpu/m68000-emu/src/core.rs
+@@ -869,6 +869,7 @@ impl<'cpu, 'bus, B: BusInterface> InstructionExecutor<'cpu, 'bus, B> {
+ 
+         let new_pc = self.bus.read_long_word(vector * 4);
+         self.jump_to_address(new_pc)?;
++        oracle_trace::desvio68(oracle_trace::classe68::EXCECAO, new_pc, true);
+ 
+         Ok(())
+     }
+@@ -879,12 +880,20 @@ impl<'cpu, 'bus, B: BusInterface> InstructionExecutor<'cpu, 'bus, B> {
+         self.cpu.registers.supervisor_mode = true;
+         self.cpu.registers.interrupt_priority_mask = interrupt_level;
+ 
++        let pc_interrompido = self.cpu.registers.pc;
+         self.push_stack_u32(self.cpu.registers.pc)?;
+         self.push_stack_u16(sr)?;
+ 
+         let vector_addr = AUTO_VECTORED_INTERRUPT_BASE_ADDRESS + 4 * u32::from(interrupt_level);
+         let new_pc = self.bus.read_long_word(vector_addr);
+         self.jump_to_address(new_pc)?;
++        oracle_trace::emit(
++            oracle_trace::kind::INT68,
++            interrupt_level.into(),
++            pc_interrompido,
++            new_pc,
++            0,
++        );
+ 
+         // Auto-vectored interrupt handling takes 49-59 cycles instead of 44:
+         //   https://gendev.spritesmind.net/forum/viewtopic.php?t=2202
+diff --git a/cpu/m68000-emu/src/core/instructions.rs b/cpu/m68000-emu/src/core/instructions.rs
+index d02301be..1754581b 100644
+--- a/cpu/m68000-emu/src/core/instructions.rs
++++ b/cpu/m68000-emu/src/core/instructions.rs
+@@ -327,6 +327,7 @@ impl<B: BusInterface> InstructionExecutor<'_, '_, B> {
+         use Instruction::*;
+ 
+         let initial_pc = self.cpu.registers.pc;
++        oracle_trace::set_pc68(initial_pc);
+ 
+         self.bus.check_execute(initial_pc, self.cpu);
+ 
+diff --git a/cpu/m68000-emu/src/core/instructions/controlflow.rs b/cpu/m68000-emu/src/core/instructions/controlflow.rs
+index d463c938..ca14747b 100644
+--- a/cpu/m68000-emu/src/core/instructions/controlflow.rs
++++ b/cpu/m68000-emu/src/core/instructions/controlflow.rs
+@@ -41,6 +41,7 @@ impl<B: BusInterface> InstructionExecutor<'_, '_, B> {
+     pub(super) fn jmp(&mut self, source: AddressingMode) -> ExecuteResult<u32> {
+         let address = self.resolve_to_memory_address(source)?;
+         self.jump_to_address(address)?;
++        oracle_trace::desvio68(oracle_trace::classe68::JMP, address, true);
+ 
+         Ok(jump_cycles(source))
+     }
+@@ -50,6 +51,7 @@ impl<B: BusInterface> InstructionExecutor<'_, '_, B> {
+         let old_pc = self.cpu.registers.pc;
+         self.jump_to_address(address)?;
+         self.push_stack_u32(old_pc)?;
++        oracle_trace::desvio68(oracle_trace::classe68::JSR, address, true);
+ 
+         Ok(8 + jump_cycles(source))
+     }
+@@ -88,6 +90,8 @@ impl<B: BusInterface> InstructionExecutor<'_, '_, B> {
+ 
+         let pc = self.pop_stack_u32()?;
+         self.jump_to_address(pc)?;
++        let classe = if restore_ccr { oracle_trace::classe68::RTR } else { oracle_trace::classe68::RTS };
++        oracle_trace::desvio68(classe, pc, true);
+ 
+         Ok(if restore_ccr { 20 } else { 16 })
+     }
+@@ -102,6 +106,7 @@ impl<B: BusInterface> InstructionExecutor<'_, '_, B> {
+         let pc = self.pop_stack_u32()?;
+         self.cpu.registers.set_status_register(sr);
+         self.jump_to_address(pc)?;
++        oracle_trace::desvio68(oracle_trace::classe68::RTE, pc, true);
+ 
+         Ok(20)
+     }
+@@ -155,11 +160,19 @@ impl<B: BusInterface> InstructionExecutor<'_, '_, B> {
+         if condition.check(self.cpu.registers.ccr) {
+             let address = pc.wrapping_add(displacement as u32);
+             self.jump_to_address(address)?;
++            let classe = if matches!(condition, BranchCondition::True) {
++                oracle_trace::classe68::BRA
++            } else {
++                oracle_trace::classe68::BCC
++            };
++            oracle_trace::desvio68(classe, address, true);
+ 
+             Ok(10)
+         } else if fetched_extension {
++            oracle_trace::desvio68(oracle_trace::classe68::BCC, 0, false);
+             Ok(12)
+         } else {
++            oracle_trace::desvio68(oracle_trace::classe68::BCC, 0, false);
+             Ok(8)
+         }
+     }
+@@ -172,6 +185,7 @@ impl<B: BusInterface> InstructionExecutor<'_, '_, B> {
+ 
+         let address = pc.wrapping_add(displacement as u32);
+         self.jump_to_address(address)?;
++        oracle_trace::desvio68(oracle_trace::classe68::BSR, address, true);
+ 
+         Ok(18)
+     }
+@@ -191,12 +205,15 @@ impl<B: BusInterface> InstructionExecutor<'_, '_, B> {
+             if value != 0 {
+                 let address = pc.wrapping_add(displacement as u32);
+                 self.jump_to_address(address)?;
++                oracle_trace::desvio68(oracle_trace::classe68::DBCC, address, true);
+ 
+                 Ok(10)
+             } else {
++                oracle_trace::desvio68(oracle_trace::classe68::DBCC, 0, false);
+                 Ok(14)
+             }
+         } else {
++            oracle_trace::desvio68(oracle_trace::classe68::DBCC, 0, false);
+             Ok(12)
+         }
+     }
+diff --git a/cpu/z80-emu/Cargo.toml b/cpu/z80-emu/Cargo.toml
+index a82ebc98..d179ee69 100644
+--- a/cpu/z80-emu/Cargo.toml
++++ b/cpu/z80-emu/Cargo.toml
+@@ -11,6 +11,7 @@ bincode = ["dep:bincode"]
+ 
+ [dependencies]
+ jgenesis-common = { workspace = true }
++oracle-trace = { workspace = true }
+ 
+ bincode = { workspace = true, optional = true }
+ log = { workspace = true }
+diff --git a/cpu/z80-emu/src/core/instructions.rs b/cpu/z80-emu/src/core/instructions.rs
+index 35c43b76..e82ee315 100644
+--- a/cpu/z80-emu/src/core/instructions.rs
++++ b/cpu/z80-emu/src/core/instructions.rs
+@@ -352,13 +352,24 @@ impl<'cpu, 'bus, B: BusInterface> InstructionExecutor<'cpu, 'bus, B> {
+ 
+         if let Some(interrupt_type) = interrupt_type {
+             self.cpu.registers.increment_r();
+-            return self.interrupt_service_routine(interrupt_type);
++            let pc_interrompido = self.cpu.registers.pc;
++            let nmi = matches!(interrupt_type, InterruptType::Nmi);
++            let ciclos = self.interrupt_service_routine(interrupt_type);
++            oracle_trace::emit(
++                oracle_trace::kind::INT80,
++                u32::from(nmi),
++                pc_interrompido.into(),
++                self.cpu.registers.pc.into(),
++                0,
++            );
++            return ciclos;
+         }
+ 
+         if self.cpu.registers.halted {
+             return control::nop();
+         }
+ 
++        oracle_trace::set_pc80(self.cpu.registers.pc);
+         self.bus.check_execute(self.cpu.registers.pc, self.cpu);
+ 
+         let ParseResult { opcode, index_prefix: index, index_fetch_t_cycles } = self.parse_opcode();
+diff --git a/cpu/z80-emu/src/core/instructions/jump.rs b/cpu/z80-emu/src/core/instructions/jump.rs
+index 2f66d80b..26623033 100644
+--- a/cpu/z80-emu/src/core/instructions/jump.rs
++++ b/cpu/z80-emu/src/core/instructions/jump.rs
+@@ -49,6 +49,7 @@ macro_rules! impl_jr_op {
+             let offset = self.fetch_operand() as i8;
+ 
+             self.cpu.registers.pc = (i32::from(self.cpu.registers.pc) + i32::from(offset)) as u16;
++            oracle_trace::desvio80(oracle_trace::classe80::JR, self.cpu.registers.pc.into(), true);
+ 
+             12
+         }
+@@ -60,8 +61,10 @@ macro_rules! impl_jr_op {
+             if self.cpu.registers.f.$flag == $flag_value {
+                 self.cpu.registers.pc =
+                     (i32::from(self.cpu.registers.pc) + i32::from(offset)) as u16;
++                oracle_trace::desvio80(oracle_trace::classe80::JR_CC, self.cpu.registers.pc.into(), true);
+                 12
+             } else {
++                oracle_trace::desvio80(oracle_trace::classe80::JR_CC, 0, false);
+                 7
+             }
+         }
+@@ -78,6 +81,7 @@ impl<B: BusInterface> InstructionExecutor<'_, '_, B> {
+     pub(super) fn jp_nn(&mut self) -> u32 {
+         let address = self.fetch_operand_u16();
+         self.cpu.registers.pc = address;
++        oracle_trace::desvio80(oracle_trace::classe80::JP, address.into(), true);
+ 
+         10
+     }
+@@ -88,6 +92,9 @@ impl<B: BusInterface> InstructionExecutor<'_, '_, B> {
+ 
+         if condition.check(&self.cpu.registers) {
+             self.cpu.registers.pc = address;
++            oracle_trace::desvio80(oracle_trace::classe80::JP_CC, address.into(), true);
++        } else {
++            oracle_trace::desvio80(oracle_trace::classe80::JP_CC, 0, false);
+         }
+ 
+         10
+@@ -98,6 +105,7 @@ impl<B: BusInterface> InstructionExecutor<'_, '_, B> {
+         let address = register.read_from(&self.cpu.registers);
+ 
+         self.cpu.registers.pc = address;
++        oracle_trace::desvio80(oracle_trace::classe80::JP_HL, address.into(), true);
+ 
+         4
+     }
+@@ -110,8 +118,10 @@ impl<B: BusInterface> InstructionExecutor<'_, '_, B> {
+ 
+         if b != 1 {
+             self.cpu.registers.pc = (i32::from(self.cpu.registers.pc) + i32::from(offset)) as u16;
++            oracle_trace::desvio80(oracle_trace::classe80::DJNZ, self.cpu.registers.pc.into(), true);
+             13
+         } else {
++            oracle_trace::desvio80(oracle_trace::classe80::DJNZ, 0, false);
+             8
+         }
+     }
+@@ -121,6 +131,7 @@ impl<B: BusInterface> InstructionExecutor<'_, '_, B> {
+ 
+         self.push_stack(self.cpu.registers.pc);
+         self.cpu.registers.pc = address;
++        oracle_trace::desvio80(oracle_trace::classe80::CALL, address.into(), true);
+ 
+         17
+     }
+@@ -132,15 +143,18 @@ impl<B: BusInterface> InstructionExecutor<'_, '_, B> {
+         if condition.check(&self.cpu.registers) {
+             self.push_stack(self.cpu.registers.pc);
+             self.cpu.registers.pc = address;
++            oracle_trace::desvio80(oracle_trace::classe80::CALL_CC, address.into(), true);
+ 
+             17
+         } else {
++            oracle_trace::desvio80(oracle_trace::classe80::CALL_CC, 0, false);
+             10
+         }
+     }
+ 
+     pub(super) fn ret(&mut self) -> u32 {
+         self.cpu.registers.pc = self.pop_stack();
++        oracle_trace::desvio80(oracle_trace::classe80::RET, self.cpu.registers.pc.into(), true);
+ 
+         10
+     }
+@@ -150,8 +164,10 @@ impl<B: BusInterface> InstructionExecutor<'_, '_, B> {
+ 
+         if condition.check(&self.cpu.registers) {
+             self.cpu.registers.pc = self.pop_stack();
++            oracle_trace::desvio80(oracle_trace::classe80::RET_CC, self.cpu.registers.pc.into(), true);
+             11
+         } else {
++            oracle_trace::desvio80(oracle_trace::classe80::RET_CC, 0, false);
+             5
+         }
+     }
+@@ -159,6 +175,7 @@ impl<B: BusInterface> InstructionExecutor<'_, '_, B> {
+     // On systems that don't use the special RETI hardware line, RETI and RETN behave identically
+     pub(super) fn reti_retn(&mut self) -> u32 {
+         self.cpu.registers.pc = self.pop_stack();
++        oracle_trace::desvio80(oracle_trace::classe80::RETI, self.cpu.registers.pc.into(), true);
+         self.cpu.registers.iff1 = self.cpu.registers.iff2;
+ 
+         14
+@@ -169,6 +186,7 @@ impl<B: BusInterface> InstructionExecutor<'_, '_, B> {
+ 
+         self.push_stack(self.cpu.registers.pc);
+         self.cpu.registers.pc = address.into();
++        oracle_trace::desvio80(oracle_trace::classe80::RST, address.into(), true);
+ 
+         11
+     }

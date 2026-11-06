@@ -4,9 +4,9 @@ Documento de acompanhamento do progresso das etapas.
 
 ## Etapa atual
 
-- Etapa: 0 (Esqueleto do repositório), finalizada em 03/11/2026.
-- Próxima: Etapa 1 (Oráculo), aguardando o plano e a aprovação do Marcelo.
-- Status: todas as sub-etapas da Etapa 0 estão provadas. A sub-etapa 0.7 (Endurecimento) está concluída. O push é do Marcelo.
+- Etapa: 1 (Oráculo), plano aprovado pelo Marcelo em 06/11/2026.
+- Status: sub-etapas 1.1 a 1.7 feitas e provadas com ROMs sintéticas. A 1.8 (mapa de rótulos e ROM montada) e a 1.9 (prova com a ROM real) têm as ferramentas prontas e **dependem do Marcelo**, no host. Ver `docs/conhecimento/oraculo.md`.
+- A Etapa 0 está finalizada (03/11/2026). O push é do Marcelo.
 
 ## Histórico de etapas
 
@@ -48,3 +48,24 @@ Documento de acompanhamento do progresso das etapas.
 - Pendências que restam da 0.7: push do `main` (do Marcelo); N8 (checksums do Dockerfile); N3 (`cargo` rodado fora do sandbox com `/mnt/rom` montado); N4 (quem monta o disassembly).
 - Parte 3 da 0.7 (rodada 5, 04/11/2026, feita): imagem com os patches e o C8 (commit d402937). N7 provado no GitHub (run 41732218921 verde, run 41733743755 vermelho só em "Formatacao"; o run 41732222178 falhou na imagem por falha transitória do instalador). S1b e S1 passaram, S2 negativa de novo, S3 não rodou (regras de texto negaram a instalação dos hooks no repositório descartável, limite aceito). Testes 23 a 36: nenhuma escrita em item congelado passou e nenhum `.sonda-*` apareceu em `refs/`. Ressalvas: o `claude doctor` mostra 3 avisos (o terceiro é sobre globs de Edit ignorados no sandbox do Linux), a camada do Bash em `crates/core/.cargo` não foi observada (regra de texto negou antes) e o `cargo test --offline` só funciona depois de um build online. O veredito de que a IA não lê a ROM volta a **provado** para o caminho do hook e da `statusLine`. Detalhes em `docs/conhecimento/ambiente.md`.
 - Status da 0.7: concluída do lado da IA. O `claude doctor` fora do Claude foi rodado em 04/11/2026 (3 avisos, ver `docs/conhecimento/ambiente.md`). A S1b com hook em `/home/dev/.claude/settings.json` não foi feita (risco de estragar o settings do volume). Falta ao Marcelo, no host: apagar o `.claude/settings.json` da sonda, conferir `refs/` e `git status`, rodar `/status` e `/mcp` fora do Claude, e ajustar o roteiro `permissoes.md` para esperar 3 avisos.
+
+## Etapa 1: Oráculo (06/11/2026)
+
+Sessão no host (`/ssd400/Repos/websonic`), fora do contêiner e sem o `managed-settings.json`. A ROM e os binários do disassembly não foram lidos. O clone do jgenesis e os alvos de compilação ficam em `$SONIC1_EXT_DIR/trabalho/oracle`. Só se listou `disasm-texto` para achar nomes de rótulos (`EntryPoint`, `VBlank`, `HBlank`, `MainGameLoop`, `v_plc_ptrnemcode`).
+
+- 1.1 Viabilidade: GO com ressalvas (V1 a V10 em `docs/conhecimento/oraculo.md`). Ressalva principal: o ciclo de um evento é o do início da instrução. Criado `docs/backlog.md`.
+- 1.2 Formato do trace: `crates/fidelidade`, 19 testes. Commit 5da0d46.
+- 1.3 a 1.7 Oráculo: `oracle/` (patches sobre o jgenesis `386db855`, runner, scripts). `sh oracle/scripts/testa.sh`: 13 testes, fmt e clippy `-D warnings`. Cobre entradas, estados, paradas, interrupções, desvios (68000 e Z80), VDP com linha, YM e DAC, esperas pelo Z80, rotina isolada e determinismo. `sh oracle/scripts/roda-oraculo.sh` com ROM sintética: `cmp` idêntico e `IGUAIS`.
+- 1.8 Mapa de rótulos: `cargo xtask rotulos` e `oracle/scripts/monta-disasm.sh`, com testes sintéticos. **Falta o Marcelo montar o disassembly** e conferir o parser contra a listagem real (formato da tabela de símbolos é suposição).
+- 1.9 Prova com a ROM real: `oracle/scripts/roda-oraculo.sh`. **Falta o Marcelo rodar.**
+
+### O que o Marcelo precisa fazer (no host, fora do Claude)
+
+1. `sh oracle/scripts/monta-disasm.sh reconhecer`. Cole a saída (nomes e tamanhos). Depois `sh oracle/scripts/monta-disasm.sh montar ROM_RELATIVA LISTAGEM_RELATIVA [BASE]`. Esperado: `ROM montada: IDENTICA` e `refs/rotulos.txt` gerado.
+2. `sh oracle/scripts/roda-oraculo.sh "<caminho da ROM>" 600`. Esperado: `Prova de determinismo: PASSOU` e `hash_do_trace` igual nas duas execuções.
+3. Aplicar o patch de congelamento (`oracle/congelar.patch`) e as decisões de commit abaixo.
+4. Sessão nova de revisão, só do que a Etapa 1 mudou.
+
+### Decisões tomadas por padrão (recomendações do plano)
+
+N4 (montagem no host, em `privado`), N3 (nenhuma execução com a ROM real pela IA), traces reais fora de `trabalho`, `oracle/` em GPLv3 dentro do repositório com o código do jgenesis fora dele, mclk como unidade de tempo, SHA-1 nos hashes.

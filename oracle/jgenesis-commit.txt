@@ -1,0 +1,2 @@
+# Commit fixado do jgenesis (https://github.com/jsgroth/jgenesis), GPLv3
+commit: 386db855ec3aaa307df3321bb85df8b5cc20ac95

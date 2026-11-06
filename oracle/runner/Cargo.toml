@@ -1,0 +1,22 @@
+[package]
+name = "websonic-oracle"
+description = "Oraculo do WebSonic: jgenesis modificado, sem tela, com trace de eventos (GPLv3)"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "GPL-3.0-only"
+
+[dependencies]
+genesis-core = { path = "../../target/oracle-fonte/backend/genesis-core" }
+genesis-config = { path = "../../target/oracle-fonte/config/genesis-config" }
+jgenesis-common = { path = "../../target/oracle-fonte/common/jgenesis-common" }
+oracle-trace = { path = "../../target/oracle-fonte/common/oracle-trace" }
+bincode = "2"
+sonic1-fidelidade = { path = "../../crates/fidelidade" }
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+
+# O runner e a raiz do proprio workspace (separado do workspace do jogo). O link `target/oracle-fonte`
+# (jgenesis) tem workspace proprio, por isso a raiz fica aqui.
+[workspace]

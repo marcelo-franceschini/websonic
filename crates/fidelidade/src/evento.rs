@@ -100,7 +100,12 @@ impl Tipo {
             ],
             Self::Desvio80 => ["pc", "destino_se_tomado", "classe", "tomado"],
             Self::Vdp => ["porta(0=dados,1=controle)", "valor", "tamanho(1,2)", "-"],
-            Self::Ym => ["porta(0..3)", "valor", "-", "-"],
+            Self::Ym => [
+                "porta(0..3)",
+                "valor",
+                "registrador(so em dado)",
+                "dac(1 se registrador $2A)",
+            ],
             Self::Psg => ["valor", "-", "-", "-"],
             Self::BarramentoZ80 => ["sinal(0=busreq,1=reset)", "ativo(0,1)", "-", "-"],
             Self::EsperaAcumulada => ["causa(1=68k_z80,2=z80_68k)", "ciclos_68k", "-", "-"],
