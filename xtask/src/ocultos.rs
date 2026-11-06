@@ -11,7 +11,10 @@
 //!
 //! `decifrar` não existe de propósito: não há comando que deixe o texto claro em disco.
 //!
+//! `chaves` cria o par `age` (identidade em arquivo 0600).
+//!
 //! Uso:
+//! `cargo xtask ocultos chaves --publica refs/ocultos.pub --identidade ~/.config/websonic/ocultos.key`
 //! `cargo xtask ocultos cifrar --publica refs/ocultos.pub --entrada ARQ.s1in --pasta DIR --zona ghz --caso c1`
 //! `cargo xtask ocultos auditar --pasta DIR --identidade ARQ --sut COMANDO`
 use age::x25519::{Identity, Recipient};
@@ -110,8 +113,35 @@ pub fn executar(args: &[String]) -> Result<(), String> {
     match args.first().map(String::as_str) {
         Some("cifrar") => cifrar(&args[1..]),
         Some("auditar") => auditar_cli(&args[1..]),
+        Some("chaves") => chaves(&args[1..]),
         _ => Err("uso: cargo xtask ocultos <cifrar|auditar>".into()),
     }
+}
+
+/// Cria o par de chaves `age`. A identidade (privada) vai para um arquivo só do dono (0600) e
+/// nunca é impressa. Recusa sobrescrever. Só o Marcelo roda, no computador dele.
+fn chaves(args: &[String]) -> Result<(), String> {
+    use age::secrecy::ExposeSecret;
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let publica = opcao(args, "--publica").ok_or("falta --publica")?;
+    let identidade = opcao(args, "--identidade").ok_or("falta --identidade")?;
+    let i = Identity::generate();
+    if let Some(pai) = Path::new(identidade).parent() {
+        fs::create_dir_all(pai).map_err(|e| e.to_string())?;
+    }
+    let mut f = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(identidade)
+        .map_err(|e| format!("identidade: {e}"))?;
+    f.write_all(i.to_string().expose_secret().as_bytes())
+        .map_err(|e| e.to_string())?;
+    f.write_all(b"\n").map_err(|e| e.to_string())?;
+    fs::write(publica, format!("{}\n", i.to_public())).map_err(|e| e.to_string())?;
+    println!("chaves criadas (identidade em {identidade}, nunca versione esse arquivo)");
+    Ok(())
 }
 
 fn cifrar(args: &[String]) -> Result<(), String> {

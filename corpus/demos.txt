@@ -1,0 +1,2 @@
+# nome<TAB>quadros. Sem botoes: a sequencia do boot, da Sega e do titulo ate as demos, 120 s.
+boot-demos	7200
