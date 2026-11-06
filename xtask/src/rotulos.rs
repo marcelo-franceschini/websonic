@@ -34,14 +34,15 @@ pub fn executar(args: &[String]) -> Result<(), String> {
     let fontes = opcao(args, "--fontes").ok_or("falta --fontes")?;
     let saida = opcao(args, "--saida").ok_or("falta --saida")?;
     let base: u32 = match opcao(args, "--base") {
-        None | Some("10") => 10,
-        Some("16") => 16,
+        None | Some("16") => 16,
+        Some("10") => 10,
         Some(_) => return Err("--base deve ser 10 ou 16".into()),
     };
     let listagem = std::fs::read(entrada).map_err(|e| format!("nao li a listagem: {e}"))?;
     // A listagem pode ter bytes que nao sao UTF-8; so o texto da tabela de simbolos importa.
     let listagem = String::from_utf8_lossy(&listagem);
     let simbolos = extrair_simbolos(&listagem, base)?;
+    verificar_sanidade(&simbolos)?;
     let rotinas = nomes_de_rotinas(Path::new(fontes))?;
     let texto = montar_arquivo(&simbolos, &rotinas);
     // Garantia final: so metadado sai.
@@ -57,6 +58,20 @@ pub fn executar(args: &[String]) -> Result<(), String> {
         simbolos.len(),
         texto.len()
     );
+    Ok(())
+}
+
+/// Um mapa certo tem centenas de variaveis de RAM. O mapa lido na base errada tinha 2.
+const MINIMO_DE_VARIAVEIS: usize = 50;
+
+/// Recusa um mapa que parece lido na base errada.
+pub fn verificar_sanidade(simbolos: &[(String, u64)]) -> Result<(), String> {
+    let variaveis = simbolos.iter().filter(|(_, v)| *v >= INICIO_RAM).count();
+    if variaveis < MINIMO_DE_VARIAVEIS {
+        return Err(format!(
+            "so {variaveis} simbolos de RAM (minimo {MINIMO_DE_VARIAVEIS}): base errada? tente --base 16"
+        ));
+    }
     Ok(())
 }
 
@@ -191,13 +206,13 @@ mod testes {
   --------------------------\n\
 \n\
 *ARCHITECTURE :  \"x86_64\" - |\n\
- EntryPoint :                   512 C |  VBlank :                  1620 C |\n\
- v_framecount :            16776980 - |  f_pause :               $FFFFFE02 - |\n\
+  EntryPoint :                   200 C |  VBlank :                  654 C |\n\
+ v_framecount :              FFFFFE04 - |  f_pause :               $FFFFFE02 - |\n\
  Revision :                       1 - |\n";
 
     #[test]
     fn extrai_so_a_tabela() {
-        let s = extrair_simbolos(LISTAGEM, 10).unwrap();
+        let s = extrair_simbolos(LISTAGEM, 16).unwrap();
         let nomes: Vec<&str> = s.iter().map(|(n, _)| n.as_str()).collect();
         assert_eq!(
             nomes,
@@ -210,19 +225,20 @@ mod testes {
             ]
         );
         let valor = |n: &str| s.iter().find(|(x, _)| x == n).unwrap().1;
-        assert_eq!(valor("EntryPoint"), 512);
+        assert_eq!(valor("EntryPoint"), 0x200);
+        assert_eq!(valor("v_framecount"), 0xFFFF_FE04);
         assert_eq!(valor("f_pause"), 0xFFFF_FE02);
     }
 
     #[test]
     fn nada_antes_do_titulo_vira_simbolo() {
         // Sem o titulo, nao ha tabela: erro, sem tentar adivinhar.
-        assert!(extrair_simbolos("   2/       2 : 4E71                nop\n", 10).is_err());
+        assert!(extrair_simbolos("   2/       2 : 4E71                nop\n", 16).is_err());
     }
 
     #[test]
     fn monta_arquivo_valido_e_classifica() {
-        let s = extrair_simbolos(LISTAGEM, 10).unwrap();
+        let s = extrair_simbolos(LISTAGEM, 16).unwrap();
         let rotinas: BTreeSet<String> = ["EntryPoint", "VBlank"]
             .iter()
             .map(|s| (*s).to_owned())
@@ -232,7 +248,7 @@ mod testes {
         assert_eq!(r.tipo("EntryPoint"), Some(TipoRotulo::Rotina));
         assert_eq!(r.tipo("Revision"), Some(TipoRotulo::Constante));
         assert_eq!(r.tipo("v_framecount"), Some(TipoRotulo::Variavel));
-        assert_eq!(r.resolver("VBlank"), Some(1620));
+        assert_eq!(r.resolver("VBlank"), Some(0x654));
     }
 
     #[test]
@@ -244,5 +260,32 @@ mod testes {
         );
         assert_eq!(rotulo_no_inicio("\tmove.w\td0,d1"), None);
         assert_eq!(rotulo_no_inicio("; so comentario: aqui"), None);
+    }
+}
+
+#[cfg(test)]
+mod testes_base {
+    use super::*;
+
+    /// Prova do defeito da Etapa 1: valores em hexadecimal sem prefixo lidos como decimal.
+    #[test]
+    fn base_10_descarta_valor_com_letra_e_base_16_le_certo() {
+        let tabela = "Symbol Table\n GameProgram :  12C C |  v_x :  FFFFF600 - |\n";
+        // Na base 10 nenhum dos dois valores le: o erro e o sintoma que a Etapa 1 nao viu.
+        assert!(extrair_simbolos(tabela, 10).is_err());
+        let em_16 = extrair_simbolos(tabela, 16).unwrap();
+        let valor = |n: &str| em_16.iter().find(|(x, _)| x == n).unwrap().1;
+        assert_eq!(valor("GameProgram"), 0x12C);
+        assert_eq!(valor("v_x"), 0xFFFF_F600);
+    }
+
+    #[test]
+    fn mapa_com_poucas_variaveis_e_recusado() {
+        let poucos: Vec<(String, u64)> = vec![("a".into(), 0xFF_0000), ("b".into(), 0x200)];
+        assert!(verificar_sanidade(&poucos).is_err());
+        let muitos: Vec<(String, u64)> = (0..60u64)
+            .map(|i| (format!("v_{i}"), 0xFFFF_0000 + i))
+            .collect();
+        assert!(verificar_sanidade(&muitos).is_ok());
     }
 }

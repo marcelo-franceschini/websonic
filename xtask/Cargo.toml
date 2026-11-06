@@ -11,3 +11,8 @@ workspace = true
 
 [dependencies]
 sonic1-fidelidade = { path = "../crates/fidelidade" }
+sonic1-core = { path = "../crates/core" }
+sonic1-rom = { path = "../crates/rom" }
+
+[dev-dependencies]
+sonic1-teste-descompressao = { path = "../crates/teste-descompressao" }

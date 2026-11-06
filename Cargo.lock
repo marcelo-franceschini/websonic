@@ -60,6 +60,13 @@ name = "sonic1-rom"
 version = "0.0.0"
 
 [[package]]
+name = "sonic1-teste-descompressao"
+version = "0.0.0"
+dependencies = [
+ "sonic1-core",
+]
+
+[[package]]
 name = "sonic1-web"
 version = "0.0.0"
 dependencies = [
@@ -133,5 +140,8 @@ dependencies = [
 name = "xtask"
 version = "0.0.0"
 dependencies = [
+ "sonic1-core",
  "sonic1-fidelidade",
+ "sonic1-rom",
+ "sonic1-teste-descompressao",
 ]

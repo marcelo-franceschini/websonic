@@ -3,10 +3,12 @@
 //! - `site`: monta o site em `dist/`.
 //! - `anti-rom`: procura ROM no repositório (extensão, tamanho e hash).
 //! - `rotulos`: gera `refs/rotulos.txt` (só o Marcelo roda; ver `rotulos.rs`).
+//! - `descompressao-relatorio`: compara os descompressores com o oráculo (ver `descompressao.rs`).
 use std::path::PathBuf;
 use std::process::{Command, ExitCode};
 
 mod anti_rom;
+mod descompressao;
 mod rotulos;
 mod site;
 
@@ -36,8 +38,11 @@ fn main() -> ExitCode {
         Some("site") => site::montar(),
         Some("anti-rom") => anti_rom::executar(),
         Some("rotulos") => rotulos::executar(&std::env::args().skip(2).collect::<Vec<_>>()),
+        Some("descompressao-relatorio") => {
+            descompressao::executar(&std::env::args().skip(2).collect::<Vec<_>>())
+        }
         _ => {
-            eprintln!("uso: cargo xtask <site|anti-rom|rotulos>");
+            eprintln!("uso: cargo xtask <site|anti-rom|rotulos|descompressao-relatorio>");
             return ExitCode::from(2);
         }
     };
