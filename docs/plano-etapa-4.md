@@ -36,7 +36,7 @@ Tudo abaixo vem do `docs/inventario-hardware.md` (comando `cargo xtask inventari
 | Recurso | Evidência no inventário | Decisão |
 | --- | --- | --- |
 | Cor de 9 bits (registrador 0 = `0x04` em todas as 11 escritas) | visto | dentro |
-| Modo de 40 colunas, sem entrelaçamento, sem sombra/realce (registrador 12 = `0x81`, 2 escritas, bits 0 e 3 desligados nos dois valores... só o `0x81`) | visto | **H40 dentro; sombra, realce e entrelaçamento fora** |
+| Modo de 40 colunas, sem entrelaçamento, sem sombra/realce (registrador 12 = `0x81` em todas as 2 escritas: bits 7 e 0 ligados, que é H40; bit 3 da sombra e bits 2 e 1 do entrelaçamento desligados) | visto | **H40 dentro; sombra, realce e entrelaçamento fora** |
 | Altura de 28 células (224 linhas): registrador 1 com bit 3 desligado nos quatro valores vistos (`0x04`, `0x14`, `0x34`, `0x74`) | visto | V28 dentro; V30 fora |
 | Rolagem por linha: registrador 11 = `0x03` (6 escritas) e `0x00` (5 escritas) | visto | **rolagem de plano inteiro e por linha dentro**. Por célula e vertical por coluna: dentro por completude, sem evidência no corpus. Se o corpus ampliado não mostrar, sai da lista de provados e vai para o backlog |
 | Tamanho de plano 64x32 (registrador 16 = `0x01`, 8 escritas) | visto | dentro. Outros tamanhos: implementar (são tabelas), marcar "não provado" |
@@ -61,7 +61,7 @@ Para o que o oráculo faz de diferente da documentação, a regra é a do requis
 - Estado inicial: tudo zero (o do oráculo, R5).
 - O núcleo da VDP **não lê ROM nem arquivo**. Recebe só escritas e palavras.
 
-**Saída:** um quadro de 320 x 224 pontos, cada ponto um `u16` com a cor de 9 bits (`0b000_BBB_GGG_RRR_0`... guardado como valor de 0 a 511, formato de 3 bits por canal). Conversão para RGB acontece só na camada de apresentação.
+**Saída:** um quadro de 320 x 224 pontos, cada ponto um `u16` com a cor de 9 bits, valor de 0 a 511 (3 bits de azul, 3 de verde e 3 de vermelho, nessa ordem, do bit mais alto ao mais baixo). Conversão para RGB acontece só na camada de apresentação.
 
 **Hash da imagem:** SHA-1 dos 71680 valores em 2 bytes little-endian, na ordem de linhas. É o mesmo cálculo do oráculo (P6).
 
