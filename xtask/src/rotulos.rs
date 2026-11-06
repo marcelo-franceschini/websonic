@@ -122,10 +122,17 @@ fn nome_ok(nome: &str) -> bool {
 }
 
 fn valor_numerico(texto: &str, base: u32) -> Option<u64> {
-    if let Some(hex) = texto.strip_prefix('$').or_else(|| texto.strip_prefix("0x")) {
-        u64::from_str_radix(hex, 16).ok()
+    let v = if let Some(hex) = texto.strip_prefix('$').or_else(|| texto.strip_prefix("0x")) {
+        u64::from_str_radix(hex, 16).ok()?
     } else {
-        u64::from_str_radix(texto, base).ok()
+        u64::from_str_radix(texto, base).ok()?
+    };
+    // O assembler imprime endereco de RAM com extensao de sinal em 64 bits
+    // (FFFFFFFFFFFFF6E0). Os 32 bits altos todos ligados viram o endereco de 32 bits.
+    if v > MAIOR_VALOR && v.wrapping_shr(32) == 0xFFFF_FFFF {
+        Some(v & MAIOR_VALOR)
+    } else {
+        Some(v)
     }
 }
 
@@ -277,6 +284,17 @@ mod testes_base {
         let valor = |n: &str| em_16.iter().find(|(x, _)| x == n).unwrap().1;
         assert_eq!(valor("GameProgram"), 0x12C);
         assert_eq!(valor("v_x"), 0xFFFF_F600);
+    }
+
+    /// Formato real da tabela (visto em 06/11/2026): RAM com extensao de sinal em 64 bits.
+    #[test]
+    fn ram_com_extensao_de_sinal_vira_32_bits() {
+        let tabela = "Symbol Table\n v_plc_ptrnemcode :   FFFFFFFFFFFFF6E0 C |  GameProgram :  300 C |\n*v_x.y.z :  FFFFFFFFFFFFF2C3 C |\n";
+        let s = extrair_simbolos(tabela, 16).unwrap();
+        let valor = |n: &str| s.iter().find(|(x, _)| x == n).unwrap().1;
+        assert_eq!(valor("v_plc_ptrnemcode"), 0xFFFF_F6E0);
+        assert_eq!(valor("GameProgram"), 0x300);
+        assert_eq!(valor("v_x.y.z"), 0xFFFF_F2C3);
     }
 
     #[test]
