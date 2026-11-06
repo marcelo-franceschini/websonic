@@ -1,0 +1,13 @@
+[package]
+name = "sonic1-corpus"
+description = "Formato de entradas do corpus (.s1in), metadados (.meta) e conversor de GMV"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+sonic1-fidelidade = { path = "../fidelidade" }

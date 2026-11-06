@@ -3,11 +3,13 @@
 //! - `site`: monta o site em `dist/`.
 //! - `anti-rom`: procura ROM no repositório (extensão, tamanho e hash).
 //! - `rotulos`: gera `refs/rotulos.txt` (só o Marcelo roda; ver `rotulos.rs`).
+//! - `corpus-trace`: traces do corpus e prova de determinismo (ver `corpus.rs`).
 //! - `descompressao-relatorio`: compara os descompressores com o oráculo (ver `descompressao.rs`).
 use std::path::PathBuf;
 use std::process::{Command, ExitCode};
 
 mod anti_rom;
+mod corpus;
 mod descompressao;
 mod rotulos;
 mod site;
@@ -41,8 +43,11 @@ fn main() -> ExitCode {
         Some("descompressao-relatorio") => {
             descompressao::executar(&std::env::args().skip(2).collect::<Vec<_>>())
         }
+        Some("corpus-trace") => corpus::executar(&std::env::args().skip(2).collect::<Vec<_>>()),
         _ => {
-            eprintln!("uso: cargo xtask <site|anti-rom|rotulos|descompressao-relatorio>");
+            eprintln!(
+                "uso: cargo xtask <site|anti-rom|rotulos|descompressao-relatorio|corpus-trace>"
+            );
             return ExitCode::from(2);
         }
     };

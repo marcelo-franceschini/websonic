@@ -49,6 +49,13 @@ name = "sonic1-core"
 version = "0.0.0"
 
 [[package]]
+name = "sonic1-corpus"
+version = "0.0.0"
+dependencies = [
+ "sonic1-fidelidade",
+]
+
+[[package]]
 name = "sonic1-fidelidade"
 version = "0.0.0"
 dependencies = [
@@ -141,6 +148,7 @@ name = "xtask"
 version = "0.0.0"
 dependencies = [
  "sonic1-core",
+ "sonic1-corpus",
  "sonic1-fidelidade",
  "sonic1-rom",
  "sonic1-teste-descompressao",

@@ -17,3 +17,5 @@ Uma linha por item: o que é, dono, etapa-alvo. Só entra aqui o que não bloque
 - Passos exatos do Nemesis por quadro (fila de arte e `v_plc_*`). Dono: IA. Etapa-alvo: 5.
 - Rodar `cargo test --target wasm32-wasip1 -p sonic1-core -p sonic1-teste-descompressao` na imagem. Dono: Marcelo. Etapa-alvo: 5.
 - Comparar a saída dos descompressores com o segundo oráculo. Dono: IA. Etapa-alvo: 2.
+- Conversor de BK2: o formato (nome do log e ordem dos botoes do Mega Drive) nao foi confirmado em documentacao. Dono: IA. Etapa-alvo: 2 ou depois, so se houver TAS em BK2.
+- Mapa A/B/C do GMV so confere na pagina do TASVideos; confirmar com um TAS real (2.5). Dono: Marcelo e IA. Etapa-alvo: 2.
