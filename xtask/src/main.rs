@@ -3,6 +3,7 @@
 //! - `site`: monta o site em `dist/`.
 //! - `anti-rom`: procura ROM no repositório (extensão, tamanho e hash).
 //! - `rotulos`: gera `refs/rotulos.txt` (só o Marcelo roda; ver `rotulos.rs`).
+//! - `ocultos`: cifra e audita os testes ocultos (ver `ocultos.rs`).
 //! - `manifesto`: gera e verifica o manifesto assinado (ver `manifesto.rs`).
 //! - `corpus-trace`: traces do corpus e prova de determinismo (ver `corpus.rs`).
 //! - `descompressao-relatorio`: compara os descompressores com o oráculo (ver `descompressao.rs`).
@@ -13,6 +14,7 @@ mod anti_rom;
 mod corpus;
 mod descompressao;
 mod manifesto;
+mod ocultos;
 mod rotulos;
 mod sha256;
 mod site;
@@ -47,10 +49,11 @@ fn main() -> ExitCode {
             descompressao::executar(&std::env::args().skip(2).collect::<Vec<_>>())
         }
         Some("corpus-trace") => corpus::executar(&std::env::args().skip(2).collect::<Vec<_>>()),
+        Some("ocultos") => ocultos::executar(&std::env::args().skip(2).collect::<Vec<_>>()),
         Some("manifesto") => manifesto::executar(&std::env::args().skip(2).collect::<Vec<_>>()),
         _ => {
             eprintln!(
-                "uso: cargo xtask <site|anti-rom|rotulos|descompressao-relatorio|corpus-trace|manifesto>"
+                "uso: cargo xtask <site|anti-rom|rotulos|descompressao-relatorio|corpus-trace|manifesto|ocultos>"
             );
             return ExitCode::from(2);
         }
