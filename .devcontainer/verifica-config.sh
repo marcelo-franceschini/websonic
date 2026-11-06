@@ -43,8 +43,9 @@ fi
 #     So o denyWrite vale para qualquer programa; so a regra Edit vale para as ferramentas.
 # 0.7: entram tambem a configuracao do Claude Code no projeto (.claude, .mcp.json, .vscode)
 #      e a configuracao do cargo (.cargo, rust-toolchain.toml).
+# Etapa 1: entram o oraculo (oracle) e o formato do trace e comparador (crates/fidelidade).
 for item in CLAUDE.md .gitignore docs/requisitos.md hooks refs .github .devcontainer \
-    .claude .mcp.json .vscode .cargo rust-toolchain.toml; do
+    .claude .mcp.json .vscode .cargo rust-toolchain.toml oracle crates/fidelidade; do
     base="//workspaces/websonic/$item"
     grep -q "\"Edit($base)\"\|\"Edit($base/\*\*)\"" "$ms" || falha "falta a regra Edit de $item."
     grep -q "\"/workspaces/websonic/$item\"" "$ms" || falha "falta o denyWrite de $item."

@@ -22,6 +22,8 @@
       "Edit(//workspaces/websonic/.vscode/**)",
       "Edit(//workspaces/websonic/.cargo/**)",
       "Edit(//workspaces/websonic/**/.cargo/**)",
+      "Edit(//workspaces/websonic/oracle/**)",
+      "Edit(//workspaces/websonic/crates/fidelidade/**)",
       "Edit(//workspaces/websonic/rust-toolchain.toml)",
       "Edit(//workspaces/websonic/**/rust-toolchain)",
       "Edit(//workspaces/websonic/**/rust-toolchain.toml)",
@@ -89,6 +91,8 @@
         "/workspaces/websonic/.mcp.json",
         "/workspaces/websonic/.vscode",
         "/workspaces/websonic/.cargo",
+        "/workspaces/websonic/oracle",
+        "/workspaces/websonic/crates/fidelidade",
         "/workspaces/websonic/rust-toolchain.toml",
         "/workspaces/websonic/.git/config",
         "/workspaces/websonic/.git/hooks"

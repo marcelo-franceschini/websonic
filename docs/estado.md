@@ -5,7 +5,7 @@ Documento de acompanhamento do progresso das etapas.
 ## Etapa atual
 
 - Etapa: 1 (Oráculo), plano aprovado pelo Marcelo em 06/11/2026.
-- Status: sub-etapas 1.1 a 1.7 feitas e provadas com ROMs sintéticas. A 1.8 (mapa de rótulos e ROM montada) e a 1.9 (prova com a ROM real) têm as ferramentas prontas e **dependem do Marcelo**, no host. Ver `docs/conhecimento/oraculo.md`.
+- Status: sub-etapas 1.1 a 1.9 feitas e provadas (1.8 e 1.9 rodadas pelo Marcelo em 06/11/2026). Falta aplicar `oracle/congelar.patch`, o commit de `refs/rotulos.txt` e a revisão da Etapa 1. Ver `docs/conhecimento/oraculo.md`.
 - A Etapa 0 está finalizada (03/11/2026). O push é do Marcelo.
 
 ## Histórico de etapas
@@ -56,8 +56,8 @@ Sessão no host (`/ssd400/Repos/websonic`), fora do contêiner e sem o `managed-
 - 1.1 Viabilidade: GO com ressalvas (V1 a V10 em `docs/conhecimento/oraculo.md`). Ressalva principal: o ciclo de um evento é o do início da instrução. Criado `docs/backlog.md`.
 - 1.2 Formato do trace: `crates/fidelidade`, 19 testes. Commit 5da0d46.
 - 1.3 a 1.7 Oráculo: `oracle/` (patches sobre o jgenesis `386db855`, runner, scripts). `sh oracle/scripts/testa.sh`: 13 testes, fmt e clippy `-D warnings`. Cobre entradas, estados, paradas, interrupções, desvios (68000 e Z80), VDP com linha, YM e DAC, esperas pelo Z80, rotina isolada e determinismo. `sh oracle/scripts/roda-oraculo.sh` com ROM sintética: `cmp` idêntico e `IGUAIS`.
-- 1.8 Mapa de rótulos: `cargo xtask rotulos` e `oracle/scripts/monta-disasm.sh`, com testes sintéticos. **Falta o Marcelo montar o disassembly** e conferir o parser contra a listagem real (formato da tabela de símbolos é suposição).
-- 1.9 Prova com a ROM real: `oracle/scripts/roda-oraculo.sh`. **Falta o Marcelo rodar.**
+- 1.8 Mapa de rótulos: feita pelo Marcelo em 06/11/2026. `monta-disasm.sh montar s1built.bin sonic.lst`: ROM montada IDENTICA (sha1 `69e10285…`, md5 `09dadb50…`), disassembly no commit `89c0e0e0`. `refs/rotulos.txt`: símbolos=2849, rotinas=1586, variáveis=2, 90115 bytes, sha1 `f59878b6…`. Ressalva: variáveis=2 é baixo, ver `docs/backlog.md`.
+- 1.9 Prova com a ROM real: feita pelo Marcelo em 06/11/2026. `roda-oraculo.sh <ROM REV01> 600`: ROM conferida, `cmp` idêntico, `Prova de determinismo: PASSOU`, `hash_do_trace` `8eec1fb8178299a9d97ad65a7519771a2d3b101b` nas duas execuções, mclk_final 537521432, oráculo `jgenesis@386db855` com patches `751851c4`.
 
 ### O que o Marcelo precisa fazer (no host, fora do Claude)
 
