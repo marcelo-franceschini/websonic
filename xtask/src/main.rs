@@ -3,6 +3,7 @@
 //! - `site`: monta o site em `dist/`.
 //! - `anti-rom`: procura ROM no repositório (extensão, tamanho e hash).
 //! - `rotulos`: gera `refs/rotulos.txt` (só o Marcelo roda; ver `rotulos.rs`).
+//! - `inventario`: inventário de hardware a partir dos traces (ver `inventario.rs`).
 //! - `ocultos`: cifra e audita os testes ocultos (ver `ocultos.rs`).
 //! - `manifesto`: gera e verifica o manifesto assinado (ver `manifesto.rs`).
 //! - `corpus-trace`: traces do corpus e prova de determinismo (ver `corpus.rs`).
@@ -13,6 +14,7 @@ use std::process::{Command, ExitCode};
 mod anti_rom;
 mod corpus;
 mod descompressao;
+mod inventario;
 mod manifesto;
 mod ocultos;
 mod rotulos;
@@ -49,11 +51,12 @@ fn main() -> ExitCode {
             descompressao::executar(&std::env::args().skip(2).collect::<Vec<_>>())
         }
         Some("corpus-trace") => corpus::executar(&std::env::args().skip(2).collect::<Vec<_>>()),
+        Some("inventario") => inventario::executar(&std::env::args().skip(2).collect::<Vec<_>>()),
         Some("ocultos") => ocultos::executar(&std::env::args().skip(2).collect::<Vec<_>>()),
         Some("manifesto") => manifesto::executar(&std::env::args().skip(2).collect::<Vec<_>>()),
         _ => {
             eprintln!(
-                "uso: cargo xtask <site|anti-rom|rotulos|descompressao-relatorio|corpus-trace|manifesto|ocultos>"
+                "uso: cargo xtask <site|anti-rom|rotulos|descompressao-relatorio|corpus-trace|manifesto|ocultos|inventario>"
             );
             return ExitCode::from(2);
         }
