@@ -22,3 +22,10 @@
 - Mudanca no oraculo (congelado), entregue como patch: `docs/pedidos/estado-a-cada.patch` com `--estado-a-cada N`, `--carregar-estado ARQ` (`--quadros` vira o quadro final absoluto) e `--perfil-a-cada N` (imprime modo, zona, ato e demo, so numeros).
 - Evidencia (06/11/2026, ROM sintetica `vblank`, 45 quadros, K=10): `determinismo: PASSOU`, retomada sem divergencia. Testes: `cargo test -p xtask` (25), `comparar_cauda` com quadro plantado, trace curto e longo.
 - A evidencia com a ROM real ainda nao existe (so o Marcelo roda).
+
+## Manifesto, ocultos e inventario (2.6 a 2.8, lado da IA)
+
+- `cargo xtask manifesto gerar|verificar`: `arquivo/trace/zona/oculto/teste` com SHA-256 (implementacao propria, vetores do padrao conferidos com `sha256sum`). Assinatura SSHSIG por `ssh-keygen -Y`, namespace `websonic-manifesto`. Prova (06/11/2026, chave descartavel): `assinatura: OK`, `referencias: OK`, `testes: OK`; os casos plantados (assinatura adulterada ou ausente, arquivo mudado ou ausente, teste ignorado ou faltando, teste novo "nao assinado") estao em `cargo test -p xtask` (40 testes).
+- `cargo xtask ocultos cifrar|auditar|chaves`: crate `age` 0.12.1 (so a chave publica cifra). A auditoria decifra para `/dev/shm`, apaga e imprime so `zona: passou|falhou (N casos)`; erros viram `erro: E1|E2|E3`. Nao existe `decifrar` de proposito. A identidade e um arquivo 0600 sem senha (decisao: o crate so oferece senha com a feature `cli-common`; protecao em repouso fica por conta do disco do Marcelo). Custo: o xtask passou a ter ~340 crates na arvore de dependencias.
+- `cargo xtask inventario --traces DIR`: decodifica os eventos de VDP (registradores, comandos, DMA pelo reg 23), YM, PSG, nivel de interrupcao e BUSREQ/RESET. Nao cobre DMA como evento (R6) nem E/S do 68000 (P2). Teste: 4 casos sinteticos.
+- Casos de lag e DMA do VDP que o renderizador da Etapa 4 vai precisar: o trace so tem as escritas nas portas, nao o conteudo dos DMAs. Registrado para o plano da Etapa 4.
