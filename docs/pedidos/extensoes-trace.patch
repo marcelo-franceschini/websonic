@@ -1,0 +1,33 @@
+--- a/hooks/lib.sh	2026-11-06 19:54:17.286059238 -0300
++++ b/hooks/lib.sh	2026-11-06 19:54:17.306959663 -0300
+@@ -27,7 +27,7 @@
+     # O git cita caminhos com caracteres especiais; tira a aspa final.
+     ext=${ext%\"}
+     case $ext in
+-        gen|bin|smd|rom|32x|sms|iso|zip|7z|rar|tar|gz|bz2|xz|sav|srm|state*|trace|gst|wav|mp3|ogg|flac|vgm)
++        gen|bin|smd|rom|32x|sms|iso|zip|7z|rar|tar|gz|bz2|xz|sav|srm|state*|trace|gst|s1t|s1e|wav|mp3|ogg|flac|vgm)
+             return 0 ;;
+     esac
+     return 1
+--- a/.gitignore	2026-11-06 19:54:17.293132656 -0300
++++ b/.gitignore	2026-11-06 19:54:17.315319352 -0300
+@@ -26,6 +26,8 @@
+ *.state*
+ *.trace
+ *.gst
++*.s1t
++*.s1e
+ 
+ # Midia e capturas brutas
+ *.wav
+--- a/xtask/src/anti_rom.rs	2026-11-06 19:54:17.299887432 -0300
++++ b/xtask/src/anti_rom.rs	2026-11-06 19:54:17.310882398 -0300
+@@ -12,7 +12,7 @@
+ /// Um teste confere que esta lista é igual à de `hooks/lib.sh`.
+ const EXTENSOES: &[&str] = &[
+     "gen", "bin", "smd", "rom", "32x", "sms", "iso", "zip", "7z", "rar", "tar", "gz", "bz2", "xz",
+-    "sav", "srm", "state*", "trace", "gst", "wav", "mp3", "ogg", "flac", "vgm",
++    "sav", "srm", "state*", "trace", "gst", "s1t", "s1e", "wav", "mp3", "ogg", "flac", "vgm",
+ ];
+ 
+ fn extensao_proibida(caminho: &str) -> bool {

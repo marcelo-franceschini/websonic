@@ -5,7 +5,8 @@ Documento de acompanhamento do progresso das etapas.
 ## Etapa atual
 
 - Etapa: 1 (Oráculo), plano aprovado pelo Marcelo em 06/11/2026.
-- Status: sub-etapas 1.1 a 1.9 feitas e provadas (1.8 e 1.9 rodadas pelo Marcelo em 06/11/2026). Falta aplicar `oracle/congelar.patch`, o commit de `refs/rotulos.txt` e a revisão da Etapa 1. Ver `docs/conhecimento/oraculo.md`.
+- Status: sub-etapas 1.1 a 1.9 feitas (1.8 e 1.9 rodadas pelo Marcelo em 06/11/2026). Congelamento aplicado e commitado (c188a83). **Defeito achado no `refs/rotulos.txt`** (base 10 em vez de 16; inferência, a provar na 2.0). Falta a revisão da Etapa 1, com a lista R1 a R13 em `docs/conhecimento/oraculo.md`.
+- Etapa 2: plano escrito em `docs/plano-etapa-2.md`, **aguardando aprovação do Marcelo**. Nada implementado.
 - A Etapa 0 está finalizada (03/11/2026). O push é do Marcelo.
 
 ## Histórico de etapas

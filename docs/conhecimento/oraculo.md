@@ -59,16 +59,28 @@ Detalhes de uso:
 - A parada em endereço exige que o PC **chegue** ao endereço. O primeiro passo sempre executa.
 - A linha de comando só imprime hashes, contagens e nomes: `oraculo rodar`, `oraculo comparar`, `oraculo rom-sintetica`.
 
-## Mapa de rótulos e ROM montada (sub-etapa 1.8): ferramentas prontas, prova do Marcelo pendente
+## Mapa de rótulos e ROM montada (sub-etapa 1.8): ROM provada, mapa com DEFEITO a corrigir
 
 - `oracle/scripts/monta-disasm.sh` (host, pelo Marcelo). Modo `reconhecer` lista os arquivos que o build cria, só nome e tamanho. Modo `montar ROM LISTAGEM [BASE]` confere o SHA-1 e o MD5 contra `refs/rom-hashes.txt` e imprime `IDENTICA` ou `DIFERENTE`. Se for idêntica, roda `cargo xtask rotulos`.
+- **Prova da ROM (06/11/2026, Marcelo):** `reconhecer` achou `s1built.bin` (524288 bytes) e `sonic.lst` (10221274 bytes). `montar s1built.bin sonic.lst`: SHA-1 `69e102855d4389c3fd1a8f3dc7d193f8eee5fe5b` e MD5 `09dadb5071eb35050067a32462e39c5f`, ambos iguais à referência, com o disassembly no commit `89c0e0e06b51fd9ebac44d988e4a89bd643fd031`. A parte "ROM montada idêntica" do critério da Etapa 1 está provada.
+- **Defeito no mapa (achado em 06/11/2026 pela IA, ao ler `refs/rotulos.txt`, que é só metadado):** o `montar` foi rodado com a base padrão 10. A tabela de símbolos do assembler traz os valores em hexadecimal sem prefixo. Resultado: todo valor lido como decimal, e todo símbolo com letra de A a F no valor foi descartado. Indícios, todos em `refs/rotulos.txt`: `variaveis=2` (esperado centenas), nenhum `v_plc_ptrnemcode`, `v_ram_end` com valor 0, e `GameProgram` com valor 0x12C (300 decimal), quando a tabela traz "300". `EntryPoint` com 0xCE (206 decimal) segue o mesmo padrão. O endereço certo de um rótulo é o número impresso lido em hexadecimal. **Isto é inferência, ainda sem comando que a prove.** A prova é o item 2.0 do plano da Etapa 2: refazer com a base 16 e conferir `variaveis` na casa das centenas e a presença de `v_plc_ptrnemcode`.
+- Efeito: o `refs/rotulos.txt` commitado em c188a83 está errado. Nada consome o arquivo ainda (o oráculo só o usa em `--parar-em`), por isso nenhum teste da Etapa 1 quebrou.
 - `cargo xtask rotulos` (`xtask/src/rotulos.rs`): lê só a seção "Symbol Table" da listagem, extrai nome e valor, classifica (valor de RAM: variável; nome definido como rótulo nos `.asm` de texto: rotina; resto: constante) e grava `refs/rotulos.txt`. A saída passa por `Rotulos::analisar`, que rejeita qualquer linha que não seja metadado. Testes: `cargo test -p xtask` (4 novos, com listagem sintética).
-- **O formato da tabela de símbolos do assembler é uma suposição.** Não vi uma listagem real. Se o formato for outro, o comando falha com erro (nunca grava lixo) e o Marcelo cola algumas linhas da tabela de símbolos (são metadado) para eu ajustar o parser.
+- Lição: o formato da tabela foi suposto, e o teste sintético repetia a suposição. O parser aceita a base errada sem reclamar. Na Etapa 2, o item 2.0 troca o padrão para 16 e acrescenta uma checagem de sanidade (precisa existir pelo menos um símbolo de RAM e `v_ram_end`).
 - Política dos `.asm` (`/mnt/disasm-texto`): a IA lê só para achar nomes de rótulos. Nunca copia tabelas, código ou comentários. A montagem e a listagem ficam em `$SONIC1_EXT_DIR/privado/montagem`, que não é montada no contêiner.
 
-## Prova com a ROM real (sub-etapa 1.9): pendente do Marcelo
+## Prova com a ROM real (sub-etapa 1.9): PASSOU (06/11/2026, Marcelo)
 
-`sh oracle/scripts/roda-oraculo.sh ROM QUADROS [ENTRADAS]`, no host. Confere o SHA-1 da ROM, constrói o oráculo, roda duas vezes, compara com `cmp` e com o comparador, e imprime só resumos. As saídas brutas ficam em `$SONIC1_EXT_DIR/privado/oraculo`, fora do repositório e fora da pasta que a IA enxerga. O script recusa saída dentro do repositório ou de `trabalho`.
+Comando: `sh oracle/scripts/roda-oraculo.sh "$HOME/sonic1-ext/rom/Sonic The Hedgehog (W) (REV01) [!].gen" 600`. Confere o SHA-1 da ROM, constrói o oráculo, roda duas vezes, compara com `cmp` e com o comparador, e imprime só resumos. As saídas brutas ficam em `$SONIC1_EXT_DIR/privado/oraculo`, fora do repositório e fora da pasta que a IA enxerga.
+
+Resultado (as duas execuções deram valores idênticos): oráculo `jgenesis@386db855…` com patches `751851c4…`; 600 quadros; `mclk_final` 537521432; `hash_do_trace` `8eec1fb8178299a9d97ad65a7519771a2d3b101b`; `cmp: arquivos identicos`; `IGUAIS`; "Prova de determinismo: PASSOU".
+
+Contagens de eventos em 600 quadros, sem entrada (inicia com zeros): int68 293, desvio68 3511675, int80 0, desvio80 1441008, vdp 42999, ym 89738, psg 48, barramento_z80 1226, espera_acumulada 50271, espera_consumida 700674, leitura_busack 607.
+
+Leitura dos números, como hipótese a conferir (não é fato provado):
+- `mclk_final / 600` dá 895869, perto de 262 x 3420 = 896040 (um quadro NTSC de 262 linhas). Coerente com o NTSC.
+- `int68` 293 em 600 quadros: o VBlank deveria chegar uma vez por quadro. A diferença pode vir do VBlank mascarado ou desligado no começo do boot (verificação da ROM, voz SEGA). Conferir no item 2.0 com o mapa corrigido.
+- `int80` 0: o driver do Z80 pode não usar interrupção. Também a conferir.
 
 ## Formato do trace (sub-etapa 1.2)
 
@@ -98,3 +110,27 @@ Código: `crates/fidelidade` (`sonic1-fidelidade`). Não depende do jgenesis e n
 | 11 leitura_busack | bit lido | | | |
 
 Cada evento também leva `mclk`, `seq`, `origem` (0 68000, 1 Z80, 2 hardware), `linha` e `coluna`.
+
+## Revisão da Etapa 1: o que a sessão nova deve olhar
+
+Escopo: só o que a Etapa 1 mudou (commits 5da0d46, d88331b, c188a83). Não reauditar sandbox, hooks nem CI, exceto o que `.devcontainer/managed-settings.json`, `verifica-config.sh` e `oracle/` mudaram em c188a83 (congelamento de `oracle/` e `crates/fidelidade/`).
+
+Classe de cada ponto: BLOQUEIA, BACKLOG ou DESCARTADO.
+
+| # | O que olhar | Onde | Classe proposta |
+| --- | --- | --- | --- |
+| R1 | Mapa de rótulos com base errada (ver acima) | `refs/rotulos.txt`, `xtask/src/rotulos.rs` | BLOQUEIA a Etapa 2 (corrigido no item 2.0) |
+| R2 | Os patches só observam: nenhuma lógica de emulação alterada | `oracle/patches/0001-*.patch` contra `386db855` | revisar; BLOQUEIA se achar mudança de emulação |
+| R3 | Todos os testes do oráculo usam ROM sintética; a ROM real só passou na prova de determinismo | `oracle/runner/src/*.rs` | BACKLOG: provas da Etapa 2 usam a ROM real |
+| R4 | Tempo de um evento é o do início da instrução (V5) | seção "Limites" acima | BACKLOG: decide o nível 2 (Etapa 15) |
+| R5 | Estado inicial em zero; console real é indefinido | seção "Limites" | BACKLOG: o segundo oráculo mostra se importa |
+| R6 | Sem evento de DMA, só as escritas de controle da VDP | seção "Limites" | BACKLOG |
+| R7 | Sem acesso à memória por contexto (interrupção ou laço principal) | `oracle/` | BACKLOG para a Etapa 2: o inventário de memória compartilhada precisa disso (item 2.6) |
+| R8 | `cargo test --target wasm32-wasip1 -p sonic1-fidelidade` nunca rodou | seção "Limites" | BACKLOG: rodar na imagem, antes da Etapa 5 |
+| R9 | O trace não tem extensão bloqueada: `.s1t` não está no `.gitignore`, em `hooks/lib.sh` nem no `xtask`; só o limite de 262144 bytes protege | `.gitignore`, `hooks/lib.sh`, `xtask/src/anti_rom.rs` | BLOQUEIA a gravação de traces em `corpus/` ou perto do repositório; patch pronto no plano da Etapa 2 |
+| R10 | `crates/fidelidade` é MIT e `oracle/` é GPLv3: conferir que nada GPL entrou em `fidelidade` | `crates/fidelidade/Cargo.toml` | revisar |
+| R11 | Comparador acusa divergência plantada em cada categoria | `cargo test -p sonic1-fidelidade` (19 testes) | provado; só reler |
+| R12 | O oráculo foi construído no host (V1), não na imagem | seção V1 | BACKLOG |
+| R13 | `oracle/` fica congelado e a Etapa 2 precisa mudá-lo (estados a intervalos, acesso à memória, gravador) | managed-settings | pedidos de patch para o Marcelo, listados no plano |
+
+Provas que já têm comando e resultado e não se repetem: determinismo com a ROM real (acima), 13 testes do oráculo, 19 do comparador, ROM montada idêntica.
