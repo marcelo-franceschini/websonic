@@ -12,7 +12,7 @@ use std::process::{Command, Stdio};
 /// Um teste confere que esta lista é igual à de `hooks/lib.sh`.
 const EXTENSOES: &[&str] = &[
     "gen", "bin", "smd", "rom", "32x", "sms", "iso", "zip", "7z", "rar", "tar", "gz", "bz2", "xz",
-    "sav", "srm", "state*", "trace", "gst", "wav", "mp3", "ogg", "flac", "vgm",
+    "sav", "srm", "state*", "trace", "gst", "s1t", "s1e", "wav", "mp3", "ogg", "flac", "vgm",
 ];
 
 fn extensao_proibida(caminho: &str) -> bool {

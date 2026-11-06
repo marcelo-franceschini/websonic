@@ -29,3 +29,10 @@
 - `cargo xtask ocultos cifrar|auditar|chaves`: crate `age` 0.12.1 (so a chave publica cifra). A auditoria decifra para `/dev/shm`, apaga e imprime so `zona: passou|falhou (N casos)`; erros viram `erro: E1|E2|E3`. Nao existe `decifrar` de proposito. A identidade e um arquivo 0600 sem senha (decisao: o crate so oferece senha com a feature `cli-common`; protecao em repouso fica por conta do disco do Marcelo). Custo: o xtask passou a ter ~340 crates na arvore de dependencias.
 - `cargo xtask inventario --traces DIR`: decodifica os eventos de VDP (registradores, comandos, DMA pelo reg 23), YM, PSG, nivel de interrupcao e BUSREQ/RESET. Nao cobre DMA como evento (R6) nem E/S do 68000 (P2). Teste: 4 casos sinteticos.
 - Casos de lag e DMA do VDP que o renderizador da Etapa 4 vai precisar: o trace so tem as escritas nas portas, nao o conteudo dos DMAs. Registrado para o plano da Etapa 4.
+
+## Rodada do host (06/11/2026)
+
+- Perfil das demos do `boot-demos` (quadro: modo/zona): Sega 0 a 360, titulo 360 a 960, demo da zona 0 (GHZ) de 960 a 3000, titulo, demo da zona 2 (MZ) 3900 a 5940, titulo, demo da zona 4 (SYZ) 6900 a 8880, titulo, special stage (modo 16) 9840 a 11400. O caso atual (7200 quadros) cobre duas demos e o inicio da terceira. Cobrir as quatro pede 11700 quadros (trace de cerca de 3,4 GB), pendente.
+- `boot-demos`, 7200 quadros: `hash_do_trace` `d0acd7feb9e29c0688da54ce42b74c50bcbb81e9`, `determinismo: PASSOU` (duas execucoes e retomada do ultimo estado). Trace de 2,0 GB.
+- Inventario de hardware (`docs/inventario-hardware.md`): 47 pares registrador/valor da VDP; DMA da 68000 para a VDP 20617 vezes e preenchimento de VRAM 26; DAC com 796736 escritas; so interrupcao de nivel 6 (VBlank). **Nenhuma interrupcao de nivel 4 (HBlank) no corpus das demos**: a agua da Labyrinth e as mudancas de paleta no meio do quadro nao aparecem aqui. A Etapa 4 precisa de um caso na Labyrinth (partida gravada ou TAS) para provar o meio do quadro.
+- Manifesto assinado com ssh-keygen ed25519; `manifesto verificar`: assinatura OK, referencias OK, testes OK.

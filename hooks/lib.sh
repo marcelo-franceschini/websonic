@@ -27,7 +27,7 @@ extensao_proibida() {
     # O git cita caminhos com caracteres especiais; tira a aspa final.
     ext=${ext%\"}
     case $ext in
-        gen|bin|smd|rom|32x|sms|iso|zip|7z|rar|tar|gz|bz2|xz|sav|srm|state*|trace|gst|wav|mp3|ogg|flac|vgm)
+        gen|bin|smd|rom|32x|sms|iso|zip|7z|rar|tar|gz|bz2|xz|sav|srm|state*|trace|gst|s1t|s1e|wav|mp3|ogg|flac|vgm)
             return 0 ;;
     esac
     return 1

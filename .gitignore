@@ -26,6 +26,8 @@ dist/
 *.state*
 *.trace
 *.gst
+*.s1t
+*.s1e
 
 # Midia e capturas brutas
 *.wav

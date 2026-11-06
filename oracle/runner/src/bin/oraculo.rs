@@ -2,7 +2,8 @@
 //!
 //! ```text
 //! oraculo rodar --rom ARQ --quadros N --saida ARQ [--entradas ARQ] [--rotulos ARQ --parar-em NOME]
-//!               [--salvar-estado ARQ]
+//!               [--salvar-estado ARQ] [--estado-a-cada N] [--carregar-estado ARQ]
+//!               [--perfil-a-cada N]   (com --rotulos: imprime modo, zona, ato e demo)
 //! oraculo comparar TRACE_A TRACE_B
 //! oraculo descomprimir --rom ARQ --rotulos ARQ --manifesto ARQ [--saida ARQ]
 //! ```
@@ -67,11 +68,44 @@ fn rodar(args: &[String]) -> Result<ExitCode, String> {
             let endereco = rotulos.resolver(nome).ok_or("rotulo desconhecido")?;
             Some(Parada::Pc68(endereco))
         }
-        (None, None) => None,
+        (_, None) => None,
         _ => return Err("--rotulos e --parar-em andam juntos".into()),
     };
 
+    let perfil_a_cada: u32 = match opcao(args, "--perfil-a-cada") {
+        Some(n) => n
+            .parse()
+            .map_err(|_| "--perfil-a-cada deve ser um numero")?,
+        None => 0,
+    };
+    // Enderecos das variaveis do perfil (numeros de modo, zona, ato e demo; sao metadados).
+    let perfil_enderecos = if perfil_a_cada > 0 {
+        let arq = opcao(args, "--rotulos").ok_or("--perfil-a-cada exige --rotulos")?;
+        let rotulos = Rotulos::analisar(&std::fs::read_to_string(arq).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+        let mut v = Vec::new();
+        for nome in ["v_gamemode", "v_zone", "v_act", "v_demonum"] {
+            v.push(
+                rotulos
+                    .resolver(nome)
+                    .ok_or("variavel do perfil ausente no mapa")?,
+            );
+        }
+        v
+    } else {
+        Vec::new()
+    };
+    let estado_a_cada: u32 = match opcao(args, "--estado-a-cada") {
+        Some(n) => n
+            .parse()
+            .map_err(|_| "--estado-a-cada deve ser um numero")?,
+        None => 0,
+    };
     let mut oraculo = Oraculo::novo(rom, entradas)?;
+    if let Some(arq) = opcao(args, "--carregar-estado") {
+        let bytes = std::fs::read(arq).map_err(|e| format!("nao li o estado: {e}"))?;
+        oraculo.carregar_estado(&bytes)?;
+    }
     let cabecalho = oraculo.cabecalho().clone();
     let arquivo = BufWriter::new(File::create(saida).map_err(|e| e.to_string())?);
     let mut escritor = Escritor::novo(arquivo, &cabecalho).map_err(|e| e.to_string())?;
@@ -103,10 +137,26 @@ fn rodar(args: &[String]) -> Result<ExitCode, String> {
         }
         parou_em_endereco = motivo == MotivoParada::Parada(parada);
     } else {
-        for _ in 0..quadros {
+        while oraculo.quadro_atual() < quadros {
             let q = oraculo.executar_quadro()?;
             registrar(q, &mut escritor)?;
             fechados += 1;
+            let atual = oraculo.quadro_atual();
+            if estado_a_cada > 0 && atual % estado_a_cada == 0 && atual < quadros {
+                let base = std::path::Path::new(saida).with_extension("");
+                let nome = format!("{}.{atual}.s1e", base.display());
+                std::fs::write(&nome, oraculo.salvar_estado()?).map_err(|e| e.to_string())?;
+            }
+            if perfil_a_cada > 0 && atual % perfil_a_cada == 0 {
+                let v: Vec<u8> = perfil_enderecos
+                    .iter()
+                    .map(|e| oraculo.ler_byte_ram68k(*e))
+                    .collect();
+                println!(
+                    "perfil quadro={atual} modo={} zona={} ato={} demo={}",
+                    v[0], v[1], v[2], v[3]
+                );
+            }
         }
     }
     if let Some(arq) = opcao(args, "--salvar-estado") {
