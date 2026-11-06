@@ -45,3 +45,14 @@ O que **não** está confirmado em fonte primária: o valor 1 do terceiro byte n
 ## Limites
 
 Os compressores de teste e os descompressores foram escritos pela mesma sessão. Um mal-entendido do formato pode estar nos dois. Só o relatório contra o oráculo (ROM real, pelo Marcelo) fecha a fidelidade.
+
+## Prova com a ROM real (06/11/2026, Marcelo): 184 de 185 IGUAL
+
+Comandos: `sh oracle/scripts/monta-disasm.sh montar s1built.bin sonic.lst 16` (ROM montada `IDENTICA`, `simbolos=12437 rotinas=5512 variaveis=947`, `v_plc_ptrnemcode` em `fffff6e0`) e `sh descompressao/prova.sh <ROM REV01>`. Relatório com `sha1_do_relatorio` `4d43a48c4e2e68a5a107168080f5f61795d400f5`.
+
+- 191 itens: **184 IGUAL**, 6 AUSENTE (rótulos de ramos REV00: `Nem_Goggle`, `Nem_LzSonic`, `Nem_Smoke`, `Nem_SyzSparkle`, `Nem_UnkFire`, `Nem_Warp`), 1 falha.
+- IGUAL em todos os formatos: Nemesis (rotina `NemDecToRAM`), Enigma (tiles iniciais `0000` e `2345`, incluindo os blocos de 16x16 de cinco zonas e os layouts da special stage) e Kosinski (blocos de 256x256, flores do final e o programa do Z80). Tamanho e SHA-1 da saída iguais aos do oráculo em cada um. Isso resolve os três pontos que estavam sem fonte primária (terceiro byte 1 do Kosinski não apareceu, soma do tile também aos valores em linha, corridas do Nemesis): o resultado bate byte a byte, tanto no Enigma com tile 0 quanto com tile `2345`.
+- A única falha, `Nem_Burrobot`, tem hash e tamanho iguais ao do oráculo. Quem acusou foi a checagem secundária "não ler além do próximo rótulo": o mapa tem `PSG_Sample_Rate` (valor `369e9`) caindo no meio dos dados desse bloco. Era defeito da checagem, não do descompressor. Corrigido: o limite agora é o próximo bloco do manifesto. Não foi rodado de novo com a ROM; o resultado esperado é 185 IGUAL.
+- O mapa de rótulos agora lê certo: a tabela do assembler traz a RAM com extensão de sinal em 64 bits (`FFFFFFFFFFFFF6E0`); o parser antigo rejeitava. `GameProgram` vale `300` (hexadecimal). Corrigido em `xtask/src/rotulos.rs` (commit a571f14). A trava de sanidade (mínimo 50 variáveis) pegou o erro na primeira tentativa com a base 16.
+- Aviso do script: `refs/rotulos.txt` tem 444475 bytes, acima do limite do hook (262144). Precisa de exceção em `refs/excecoes-extensoes.txt` (item do Marcelo).
+- `consumidos` é só informativo (o oráculo não o mede).

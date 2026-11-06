@@ -140,20 +140,6 @@ pub fn ler_oraculo(texto: &str) -> Result<BTreeMap<ChaveItem, RespostaOraculo>, 
     Ok(mapa)
 }
 
-/// Endereços de rótulos de rotina/dados, para saber até onde um bloco pode ir.
-fn enderecos_de_rotinas(rotulos_texto: &str) -> BTreeSet<u32> {
-    rotulos_texto
-        .lines()
-        .filter_map(|l| {
-            let c: Vec<&str> = l.split('\t').collect();
-            match c.as_slice() {
-                [_, "rotina", valor] => u32::from_str_radix(valor, 16).ok(),
-                _ => None,
-            }
-        })
-        .collect()
-}
-
 /// Resultado do relatório.
 pub struct Relatorio {
     pub texto: String,
@@ -183,7 +169,12 @@ pub fn relatorio(
     let rotulos = Rotulos::analisar(rotulos_texto).map_err(|e| e.to_string())?;
     let itens = ler_manifesto(manifesto)?;
     let oraculo = ler_oraculo(oraculo_texto)?;
-    let enderecos = enderecos_de_rotinas(rotulos_texto);
+    // Limite de leitura de um bloco: o próximo bloco do manifesto. Rótulos de rotina em geral
+    // não servem: o mapa tem símbolos que caem no meio de dados (ex.: uma constante de som).
+    let enderecos: BTreeSet<u32> = itens
+        .iter()
+        .filter_map(|i| rotulos.resolver(&i.rotulo))
+        .collect();
 
     let mut texto = String::from(
         "bloco\tformato\ttile\tendereco_origem\tconsumidos\ttamanho_saida\tsha1_oraculo\tsha1_obtido\tveredito\n",
@@ -459,12 +450,5 @@ mod testes {
                 .iter()
                 .any(|i| i.formato == Formato::Enigma && i.tile == 0x2345)
         );
-    }
-
-    #[test]
-    fn saida_nao_tem_tipo_de_rotulo_alem_de_rotina() {
-        // Garante que o parser de endereços ignora constantes e variáveis.
-        let e = enderecos_de_rotinas("a\tconstante\t10\nb\trotina\t20\nc\tvariavel\tff0000\n");
-        assert_eq!(e.into_iter().collect::<Vec<_>>(), vec![0x20]);
     }
 }
