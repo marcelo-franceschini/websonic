@@ -49,6 +49,13 @@ name = "sonic1-core"
 version = "0.0.0"
 
 [[package]]
+name = "sonic1-fidelidade"
+version = "0.0.0"
+dependencies = [
+ "sonic1-rom",
+]
+
+[[package]]
 name = "sonic1-rom"
 version = "0.0.0"
 
