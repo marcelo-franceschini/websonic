@@ -10,4 +10,5 @@
 - [descompressao.md](descompressao.md): formatos Nemesis, Enigma e Kosinski, fontes, código, manifesto e como o oráculo mede a saída.
 - [esqueleto.md](esqueleto.md): workspace Rust, lints do núcleo, crate `rom`, site e `cargo xtask`, com evidência.
 - [hooks.md](hooks.md): hooks do git, regras de bloqueio da ROM, ativação, limites e testes.
+- [oraculos.md](oraculos.md): segundo oraculo (Genesis Plus GX) e a diferenca D1 no quadro 52.
 - [oraculo.md](oraculo.md): oráculo (jgenesis modificado), formato do trace e dos eventos, mapa de rótulos, com evidência.
