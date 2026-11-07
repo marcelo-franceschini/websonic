@@ -183,6 +183,8 @@ pub struct Vdp {
     fila_dma: VecDeque<u16>,
     preenchimento: Option<u16>,
     pendentes: Vec<Pendente>,
+    /// Quantas vezes a VRAM foi gravada (o renderizador usa para saber se os planos ainda valem).
+    pub(crate) gravacoes_de_vram: u64,
     /// Bytes gravados na VRAM desde a última vez que o renderizador olhou (cache de sprites).
     pub(crate) ao_gravar_vram: Vec<(u32, u8)>,
 }
@@ -218,6 +220,7 @@ impl Vdp {
             fila_dma: VecDeque::new(),
             preenchimento: None,
             pendentes: Vec::new(),
+            gravacoes_de_vram: 0,
             ao_gravar_vram: Vec::new(),
         }
     }
@@ -421,6 +424,7 @@ impl Vdp {
     }
 
     fn gravar_byte_vram(&mut self, endereco: usize, valor: u8) {
+        self.gravacoes_de_vram = self.gravacoes_de_vram.wrapping_add(1);
         if let Some(b) = self.vram.get_mut(endereco) {
             *b = valor;
         }

@@ -104,7 +104,10 @@ pub struct Renderizador {
     // Pontos coloridos da CRAM: da linha atual e da anterior (índice 0 = ponto 18).
     pontos_atual: Vec<Option<u16>>,
     pontos_anterior: Vec<Option<u16>>,
-    // Planos.
+    // Planos. `chave_planos` diz para qual estado os buffers valem (linha, gravações de VRAM e
+    // versão dos registradores e rolagens), para a troca de CRAM não refazer os planos.
+    chave_planos: Option<(u16, u64, u64)>,
+    versao_planos: u64,
     buf_a: Vec<PontoDeTile>,
     buf_b: Vec<PontoDeTile>,
 }
@@ -134,6 +137,8 @@ impl Renderizador {
             estado_sprites: EstadoDeSprites::default(),
             pontos_atual: vec![None; PONTOS_DA_CRAM],
             pontos_anterior: vec![None; PONTOS_DA_CRAM],
+            chave_planos: None,
+            versao_planos: 0,
             buf_a: vec![PontoDeTile::default(); LARGURA],
             buf_b: vec![PontoDeTile::default(); LARGURA],
         }
@@ -276,6 +281,9 @@ impl Renderizador {
         if let Some(p) = ef.ponto_da_cram {
             self.marcar_ponto_da_cram(p);
         }
+        if ef.vsram {
+            self.versao_planos = self.versao_planos.wrapping_add(1);
+        }
         let dois = self.travados.rolagem_v() == crate::registros::RolagemV::DuasCelulas;
         if ef.imagem_habilitada || ef.cram || (ef.vsram && dois) {
             self.redesenhar_a_partir_de(self.ponto);
@@ -321,6 +329,7 @@ impl Renderizador {
             }
             Evento::TravarRegistradores => {
                 self.travados = self.vdp.registros.clone();
+                self.versao_planos = self.versao_planos.wrapping_add(1);
                 self.v_tela_cheia = (
                     self.vdp.vsram.first().copied().unwrap_or(0),
                     self.vdp.vsram.get(1).copied().unwrap_or(0),
@@ -370,6 +379,7 @@ impl Renderizador {
                 novo != antes
             }
             2 | 3 | 4 | 7 => {
+                self.versao_planos = self.versao_planos.wrapping_add(1);
                 let antes = self.travados.brutos.get(reg).copied().unwrap_or(0);
                 if let Some(t) = self.travados.brutos.get_mut(reg) {
                     *t = vivo;
@@ -545,38 +555,58 @@ impl Renderizador {
         }
         if ponto_inicial == 0 {
             let pular_tiles = self.estado_sprites.pontos_desligados.div_ceil(2);
-            let r = desenhar_sprites(
+            let estouro = desenhar_sprites(
                 &self.vdp.vram,
                 &self.sprites,
                 linha,
                 pular_tiles,
                 self.estado_sprites.estouro_de_pontos_anterior,
+                &mut self.pontos_de_sprite,
             );
-            self.pontos_de_sprite = r.pontos;
-            self.estado_sprites.estouro_de_pontos_anterior = r.estouro_de_pontos;
+            self.estado_sprites.estouro_de_pontos_anterior = estouro;
         }
         if linha >= LINHAS_ATIVAS {
             return;
         }
-        let par = ParametrosDosPlanos {
-            vram: &self.vdp.vram,
-            vsram: &self.vdp.vsram,
-            reg: &self.travados,
-            linha,
-            rolagem_h: self.rolagem_h,
-            v_tela_cheia: self.v_tela_cheia,
-            ini: i32::from(ponto_inicial),
-            fim: 320,
-        };
-        desenhar_planos(&par, &mut self.buf_a, &mut self.buf_b);
+        let chave = (linha, self.vdp.gravacoes_de_vram, self.versao_planos);
+        // Uma troca só de cor (CRAM) não muda os planos: basta compor de novo.
+        if ponto_inicial == 0 || self.chave_planos != Some(chave) {
+            let par = ParametrosDosPlanos {
+                vram: &self.vdp.vram,
+                vsram: &self.vdp.vsram,
+                reg: &self.travados,
+                linha,
+                rolagem_h: self.rolagem_h,
+                v_tela_cheia: self.v_tela_cheia,
+                ini: i32::from(ponto_inicial),
+                fim: 320,
+            };
+            desenhar_planos(&par, &mut self.buf_a, &mut self.buf_b);
+            // Só o desenho da linha inteira deixa os buffers válidos para a linha toda.
+            self.chave_planos = if ponto_inicial == 0 {
+                Some(chave)
+            } else {
+                None
+            };
+        }
         let fundo = self.vdp.registros.indice_do_fundo();
-        for x in usize::from(ponto_inicial)..LARGURA {
-            let s = self.pontos_de_sprite.get(x).copied().unwrap_or_default();
-            let a = self.buf_a.get(x).copied().unwrap_or_default();
-            let b = self.buf_b.get(x).copied().unwrap_or_default();
-            let idx = usize::from(resolver_ponto(s, a, b, fundo));
-            let cor = da_palavra_cram(self.vdp.cram.get(idx).copied().unwrap_or(0));
-            self.quadro.definir(x, y, cor);
+        // As 64 cores da CRAM já na cor de 9 bits, uma vez por linha.
+        let mut paleta = [0u16; 64];
+        for (p, c) in paleta.iter_mut().zip(self.vdp.cram.iter()) {
+            *p = da_palavra_cram(*c);
+        }
+        let Some(linha_do_quadro) = self.quadro.linha_mut(y) else {
+            return;
+        };
+        let inicio = usize::from(ponto_inicial);
+        let pontos = self
+            .pontos_de_sprite
+            .iter()
+            .zip(self.buf_a.iter())
+            .zip(self.buf_b.iter());
+        for (destino, ((s, a), b)) in linha_do_quadro.iter_mut().zip(pontos).skip(inicio) {
+            let idx = usize::from(resolver_ponto(*s, *a, *b, fundo)) & 63;
+            *destino = paleta[idx];
         }
     }
 }

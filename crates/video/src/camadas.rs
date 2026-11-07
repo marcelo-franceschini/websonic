@@ -116,15 +116,23 @@ fn linha_do_tile(vram: &[u8], padrao: u16, linha: u16, v_flip: bool, h_flip: boo
     };
     let celula = 32u16.wrapping_mul(padrao);
     let base = usize::from(celula.wrapping_add(4u16.wrapping_mul(l)));
-    let mut cores = [0u8; 8];
-    for (i, c) in cores.iter_mut().enumerate() {
-        let b = vram.get(base.saturating_add(i / 2)).copied().unwrap_or(0);
-        *c = (b >> (((i & 1) ^ 1) << 2)) & 0x0f;
-    }
+    let Some(b) = vram.get(base..base.saturating_add(4)) else {
+        return [0; 8];
+    };
+    let mut c = [
+        b[0] >> 4,
+        b[0] & 15,
+        b[1] >> 4,
+        b[1] & 15,
+        b[2] >> 4,
+        b[2] & 15,
+        b[3] >> 4,
+        b[3] & 15,
+    ];
     if h_flip {
-        cores.reverse();
+        c.reverse();
     }
-    cores
+    c
 }
 
 /// Entradas do desenho dos planos de uma linha.
@@ -201,17 +209,28 @@ pub fn desenhar_planos(
                 let nome = ler_nome(vram, base, largura_nome, celula_v, celula_h);
                 let cores =
                     linha_do_tile(vram, nome.padrao, linha_rolada, nome.v_flip, nome.h_flip);
+                let ponto = |cor: u8| PontoDeTile {
+                    cor,
+                    paleta: nome.paleta,
+                    prioridade: nome.prioridade,
+                };
+                // Caminho comum: a célula inteira cabe no que vai ser desenhado.
+                if col_fb >= ini.max(0) && col_fb.wrapping_add(8) <= fim.min(320) {
+                    let inicio = usize::try_from(col_fb).unwrap_or(0);
+                    if let Some(dest) = buf.get_mut(inicio..inicio.saturating_add(8)) {
+                        for (d, c) in dest.iter_mut().zip(cores.iter()) {
+                            *d = ponto(*c);
+                        }
+                        continue;
+                    }
+                }
                 for (k, cor) in cores.iter().enumerate() {
                     let x = col_fb.wrapping_add(i32::try_from(k).unwrap_or(0));
                     if x < ini || x >= fim {
                         continue;
                     }
                     if let Some(p) = usize::try_from(x).ok().and_then(|i| buf.get_mut(i)) {
-                        *p = PontoDeTile {
-                            cor: *cor,
-                            paleta: nome.paleta,
-                            prioridade: nome.prioridade,
-                        };
+                        *p = ponto(*cor);
                     }
                 }
             }
@@ -308,22 +327,19 @@ pub fn varrer_sprites(
     (ids, estourou)
 }
 
-/// Resultado do desenho dos sprites de uma linha.
-pub struct SpritesDaLinha {
-    pub pontos: Vec<PontoDeTile>,
-    pub estouro_de_pontos: bool,
-}
-
 /// Fase 3: desenha os sprites já buscados da `linha`. `pular_tiles` reduz o limite de 40 tiles.
 /// `estouro_anterior`: a linha anterior estourou o limite de pontos (afeta a máscara por x = 0).
+///
+/// Escreve em `pontos` (limpa antes) e devolve se a linha estourou o limite de 40 tiles.
 pub fn desenhar_sprites(
     vram: &[u8],
     sprites: &[Sprite],
     linha: u16,
     pular_tiles: u16,
     estouro_anterior: bool,
-) -> SpritesDaLinha {
-    let mut pontos = vec![PontoDeTile::default(); LARGURA];
+    pontos: &mut [PontoDeTile],
+) -> bool {
+    pontos.fill(PontoDeTile::default());
     let max_tiles = 40u16.saturating_sub(pular_tiles);
     let linha_sprite = INICIO_SPRITES.wrapping_add(linha);
     let mut buscados: u16 = 0;
@@ -387,10 +403,7 @@ pub fn desenhar_sprites(
             }
         }
     }
-    SpritesDaLinha {
-        pontos,
-        estouro_de_pontos: estouro,
-    }
+    estouro
 }
 
 /// Escolhe o índice de cor de 6 bits do ponto, pela prioridade (sem sombra nem realce).
@@ -548,6 +561,20 @@ mod testes {
         assert_eq!(varrer_sprites(&c, 24, 0).0.len(), 0);
     }
 
+    struct Resultado {
+        pontos: Vec<PontoDeTile>,
+        estouro_de_pontos: bool,
+    }
+
+    fn sprites_da_linha(vram: &[u8], s: &[Sprite], anterior: bool) -> Resultado {
+        let mut pontos = vec![PontoDeTile::default(); LARGURA];
+        let estouro_de_pontos = desenhar_sprites(vram, s, 0, 0, anterior, &mut pontos);
+        Resultado {
+            pontos,
+            estouro_de_pontos,
+        }
+    }
+
     fn sprite_simples(h: u16) -> Sprite {
         Sprite {
             padrao: 1,
@@ -563,7 +590,7 @@ mod testes {
     fn sprite_aparece_na_posicao_certa() {
         let mut vram = vec![0u8; 65536];
         vram[32..36].copy_from_slice(&[0x11, 0x11, 0x11, 0x11]);
-        let r = desenhar_sprites(&vram, &[sprite_simples(0x80 + 10)], 0, 0, false);
+        let r = sprites_da_linha(&vram, &[sprite_simples(0x80 + 10)], false);
         assert_eq!(r.pontos[9].cor, 0);
         assert_eq!(r.pontos[10].cor, 1);
         assert_eq!(r.pontos[17].cor, 1);
@@ -580,15 +607,15 @@ mod testes {
         let mut atras = sprite_simples(0x80 + 40);
         atras.padrao = 2;
         // Sem sprite anterior com x diferente de zero: a máscara não vale e o sprite aparece.
-        let r = desenhar_sprites(&vram, &[mascara, atras], 0, 0, false);
+        let r = sprites_da_linha(&vram, &[mascara, atras], false);
         assert_eq!(r.pontos[40].cor, 2);
         // Com um sprite anterior fora do zero, o x = 0 mascara os seguintes.
         let antes = sprite_simples(0x80 + 100);
-        let r = desenhar_sprites(&vram, &[antes, mascara, atras], 0, 0, false);
+        let r = sprites_da_linha(&vram, &[antes, mascara, atras], false);
         assert_eq!(r.pontos[100].cor, 1);
         assert_eq!(r.pontos[40].cor, 0);
         // Estouro de pontos na linha anterior troca o requisito.
-        let r = desenhar_sprites(&vram, &[mascara, atras], 0, 0, true);
+        let r = sprites_da_linha(&vram, &[mascara, atras], true);
         assert_eq!(r.pontos[40].cor, 0);
     }
 
@@ -607,9 +634,9 @@ mod testes {
                 ..Sprite::default()
             })
             .collect();
-        let r = desenhar_sprites(&vram, &s, 0, 0, false);
+        let r = sprites_da_linha(&vram, &s, false);
         assert!(r.estouro_de_pontos);
-        let r = desenhar_sprites(&vram, &s[..10], 0, 0, false);
+        let r = sprites_da_linha(&vram, &s[..10], false);
         assert!(!r.estouro_de_pontos);
     }
 

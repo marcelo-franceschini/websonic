@@ -48,6 +48,16 @@ impl Quadro {
         }
     }
 
+    /// Os pontos de uma linha (320), para escrita direta. Os valores já devem ter 9 bits.
+    pub fn linha_mut(&mut self, y: usize) -> Option<&mut [u16]> {
+        if y >= ALTURA {
+            return None;
+        }
+        let ini = y.checked_mul(LARGURA)?;
+        let fim = ini.checked_add(LARGURA)?;
+        self.pontos.get_mut(ini..fim)
+    }
+
     /// Os pontos, linha após linha.
     pub fn pontos(&self) -> &[u16] {
         &self.pontos
