@@ -56,6 +56,9 @@ pub enum RolagemV {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Registros {
     pub brutos: [u8; QUANTIDADE],
+    /// Modo 4 do Master System: só muda quando o registrador 1 é escrito (começa desligado,
+    /// como no oráculo).
+    pub modo4: bool,
 }
 
 impl Default for Registros {
@@ -68,6 +71,7 @@ impl Registros {
     pub const fn novo() -> Self {
         Self {
             brutos: [0; QUANTIDADE],
+            modo4: false,
         }
     }
 
@@ -97,12 +101,6 @@ impl Registros {
     /// Registrador 1, bit 3: 30 linhas de células.
     pub fn v30(&self) -> bool {
         self.bit(1, 3)
-    }
-
-    /// Registrador 1, bit 2 desligado: modo 4 do Master System (escritas nos registradores acima
-    /// de 10 são ignoradas, como no oráculo).
-    pub fn modo4(&self) -> bool {
-        !self.bit(1, 2)
     }
 
     /// Registrador 1, bit 7: VRAM de 128 KiB (não suportado).
@@ -248,8 +246,6 @@ mod testes {
         assert!(com(1, 0x74).imagem_ligada());
         assert!(com(1, 0x74).dma_permitido());
         assert!(!com(1, 0x74).v30());
-        assert!(!com(1, 0x74).modo4());
-        assert!(com(1, 0x00).modo4());
         assert_eq!(com(11, 0x03).rolagem_h(), RolagemH::Linha);
         assert_eq!(com(11, 0x00).rolagem_h(), RolagemH::Tela);
         assert_eq!(com(16, 0x01).largura_do_plano(), TamanhoPlano::T64);

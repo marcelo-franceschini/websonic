@@ -3,6 +3,7 @@
 //! - `site`: monta o site em `dist/`.
 //! - `anti-rom`: procura ROM no repositório (extensão, tamanho e hash).
 //! - `rotulos`: gera `refs/rotulos.txt` (só o Marcelo roda; ver `rotulos.rs`).
+//! - `video-estado` e `video-comparar`: renderizador contra o oráculo (ver `video.rs`).
 //! - `inventario`: inventário de hardware a partir dos traces (ver `inventario.rs`).
 //! - `ocultos`: cifra e audita os testes ocultos (ver `ocultos.rs`).
 //! - `manifesto`: gera e verifica o manifesto assinado (ver `manifesto.rs`).
@@ -20,6 +21,7 @@ mod ocultos;
 mod rotulos;
 mod sha256;
 mod site;
+mod video;
 
 /// Raiz do repositório (o xtask fica em `<raiz>/xtask`).
 fn raiz() -> PathBuf {
@@ -51,12 +53,14 @@ fn main() -> ExitCode {
             descompressao::executar(&std::env::args().skip(2).collect::<Vec<_>>())
         }
         Some("corpus-trace") => corpus::executar(&std::env::args().skip(2).collect::<Vec<_>>()),
+        Some("video-estado") => video::estado(&std::env::args().skip(2).collect::<Vec<_>>()),
+        Some("video-comparar") => video::comparar(&std::env::args().skip(2).collect::<Vec<_>>()),
         Some("inventario") => inventario::executar(&std::env::args().skip(2).collect::<Vec<_>>()),
         Some("ocultos") => ocultos::executar(&std::env::args().skip(2).collect::<Vec<_>>()),
         Some("manifesto") => manifesto::executar(&std::env::args().skip(2).collect::<Vec<_>>()),
         _ => {
             eprintln!(
-                "uso: cargo xtask <site|anti-rom|rotulos|descompressao-relatorio|corpus-trace|manifesto|ocultos|inventario>"
+                "uso: cargo xtask <site|anti-rom|rotulos|descompressao-relatorio|corpus-trace|manifesto|ocultos|inventario|video-estado|video-comparar>"
             );
             return ExitCode::from(2);
         }

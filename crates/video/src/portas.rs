@@ -207,13 +207,17 @@ impl Vdp {
             return;
         }
         // Em modo 4 do Master System, registradores acima de 10 não mudam (como no oráculo).
-        if self.registros.modo4() && reg > 10 {
+        if self.registros.modo4 && reg > 10 {
             self.avisos.modo4 = self.avisos.modo4.saturating_add(1);
             return;
         }
         let byte = valor.to_le_bytes()[0];
         if let Some(r) = self.registros.brutos.get_mut(reg) {
             *r = byte;
+        }
+        if reg == 1 {
+            // O bit 2 do registrador 1 liga e desliga o modo 4 (comportamento do oraculo).
+            self.registros.modo4 = byte & 4 == 0;
         }
         self.notar_recursos_fora_do_inventario(reg);
     }
@@ -414,6 +418,12 @@ mod testes {
     #[test]
     fn modo4_ignora_registradores_acima_de_10() {
         let mut v = Vdp::nova();
+        // O modo 4 so liga quando o jogo escreve o registrador 1 sem o bit 2.
+        v.escrever_controle(0x8C81);
+        assert_eq!(v.registros.brutos[12], 0x81);
+        assert_eq!(v.avisos.modo4, 0);
+        let mut v = Vdp::nova();
+        v.escrever_controle(0x8100);
         v.escrever_controle(0x8C81);
         assert_eq!(v.registros.brutos[12], 0);
         assert_eq!(v.avisos.modo4, 1);

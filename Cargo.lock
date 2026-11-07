@@ -1515,8 +1515,10 @@ dependencies = [
  "sonic1-core",
  "sonic1-corpus",
  "sonic1-fidelidade",
+ "sonic1-formato-video",
  "sonic1-rom",
  "sonic1-teste-descompressao",
+ "sonic1-video",
 ]
 
 [[package]]

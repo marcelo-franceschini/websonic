@@ -165,6 +165,10 @@ impl Renderizador {
 
     /// Termina o quadro do oráculo (linha 232) e devolve a imagem.
     pub fn fechar_quadro(&mut self) -> &Quadro {
+        // Se o quadro anterior acabou de fechar neste mesmo ponto, um quadro inteiro se passou.
+        if self.linha == LINHA_DO_FIM_DO_QUADRO && self.ponto == 0 {
+            self.terminar_linha();
+        }
         self.avancar_ate(LINHA_DO_FIM_DO_QUADRO, 0);
         self.vdp.conferir_dma_pendente();
         &self.quadro
@@ -441,5 +445,81 @@ impl Renderizador {
             let cor = da_palavra_cram(self.vdp.cram.get(idx).copied().unwrap_or(0));
             self.quadro.definir(x, y, cor);
         }
+    }
+}
+
+#[cfg(test)]
+mod testes {
+    use super::*;
+
+    fn controle(r: &mut Renderizador, linha: u16, w: u16) {
+        r.aplicar(linha, 0, Escrita::Controle(w));
+    }
+
+    /// Mesmas escritas do programa de video sintetico do oraculo (sem DMA).
+    fn fundo_azul() -> Renderizador {
+        let mut r = Renderizador::novo();
+        for w in [0x8F02u16, 0x8004, 0x8C81, 0x8700, 0x8174] {
+            controle(&mut r, 0, w);
+        }
+        controle(&mut r, 0, 0xC000);
+        controle(&mut r, 0, 0x0000);
+        r.aplicar(
+            0,
+            0,
+            Escrita::Dados {
+                valor: 0x0E00,
+                tamanho: 2,
+            },
+        );
+        r
+    }
+
+    #[test]
+    fn imagem_so_com_o_fundo() {
+        let mut r = fundo_azul();
+        r.avancar_ate(LINHA_DO_FIM_DO_QUADRO, 0);
+        r.avancar_ate(LINHA_DO_FIM_DO_QUADRO.saturating_sub(1), 0);
+        assert!(
+            r.quadro().pontos().iter().all(|p| *p == 448),
+            "fundo azul em todo o quadro"
+        );
+    }
+
+    #[test]
+    fn imagem_desligada_mostra_o_fundo_da_cor_zero() {
+        let mut r = fundo_azul();
+        controle(&mut r, 0, 0x8134); // imagem desligada
+        r.avancar_ate(LINHA_DO_FIM_DO_QUADRO, 0);
+        assert!(r.quadro().pontos().iter().all(|p| *p == 448));
+    }
+
+    #[test]
+    fn mudanca_de_cram_no_meio_da_linha_redesenha_o_resto() {
+        let mut r = fundo_azul();
+        // Primeiro quadro completo para a CRAM e os registradores assentarem.
+        r.avancar_ate(LINHA_DO_FIM_DO_QUADRO, 0);
+        r.avancar_ate(10, 0);
+        // Na linha 10, no ponto 100 (mclk 800), a cor 0 vira vermelho maximo.
+        r.avancar_ate(10, 800);
+        controle(&mut r, 10, 0xC000);
+        controle(&mut r, 10, 0x0000);
+        r.aplicar(
+            10,
+            800,
+            Escrita::Dados {
+                valor: 0x000E,
+                tamanho: 2,
+            },
+        );
+        r.avancar_ate(LINHA_DO_FIM_DO_QUADRO, 0);
+        let q = r.quadro();
+        // Antes do ponto 100 a linha 10 continua azul; do ponto 100 em diante fica vermelha.
+        assert_eq!(q.ponto(0, 10), Some(448));
+        assert_eq!(q.ponto(99 - 26, 10), Some(448));
+        assert_eq!(q.ponto(319, 10), Some(7));
+        // As linhas seguintes usam a cor nova inteira; as anteriores nao mudam.
+        assert_eq!(q.ponto(0, 11), Some(7));
+        assert_eq!(q.ponto(0, 9), Some(448));
     }
 }
