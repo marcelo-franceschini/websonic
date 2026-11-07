@@ -19,3 +19,14 @@
 - D1, segunda rodada (host, 07/11/2026, `scripts/etapa2-d1.sh`): a diferença cresce devagar, com a ordem de byte de pares trocados: quadro 52 com 4 bytes (`v_init`), 53 com 1 (`v_megadrive`), 60 com 3, 120 com 14 (entre elas `v_vblank_routine`, `v_pcyc_num` e linhas de paleta), 600 com 295. `v_megadrive` é o byte de versão do console que o jogo lê, e o nucleo estava com a região em `auto` (o jogo é de várias regiões), enquanto o oráculo principal força Japão. **Hipótese (não provada):** a região diferente explica o D1. Mudança feita: `oracle2` agora responde `ntsc-j` à opção `genesis_plus_gx_region_detect` do nucleo. A prova é refazer `scripts/etapa2-oraculo2.sh` e `scripts/etapa2-d1.sh`.
 
 - D1, terceira rodada (host, 07/11/2026, com a região `ntsc-j` no segundo oráculo): no quadro 53 a RAM passa a ser **idêntica** (0 bytes), o que confirma que a região explicava `v_megadrive`. O quadro 52 ainda difere (os 4 bytes de `v_init`, que no outro emulador mudam um quadro depois). No quadro 120 diferem 13 bytes e no 600 diferem 197. Os que aparecem são variáveis de tempo: `v_vblank_routine`, `v_pcyc_num`, linhas de paleta, `v_hscrolltablebuffer`, `v_lvllayout_end`, `v_spritequeue`. Leitura: os dois emuladores fecham o quadro em pontos diferentes em relação à interrupção de VBlank, então variáveis que o VBlank muda aparecem num quadro ou no seguinte. **Isto é hipótese, não prova.** Decisão (regra do requisitos): vale o oráculo principal, e a diferença fica registrada. A comparação com o segundo oráculo no nível 1 só vale para variáveis estáveis no quadro; o ponto exato da interrupção é do nível 2 (Etapa 15). Backlog.
+
+- D1, quarta rodada (host, 07/11/2026, `scripts/etapa2-d1b.sh ROM 60 120 600 2000`, `boot-demos`). Compara a RAM do principal no quadro N com a do segundo oráculo no quadro N ou N+1. Bytes diferentes (pares trocados):
+
+| N | principal N contra segundo N | principal N contra segundo N+1 | principal N+1 contra segundo N |
+| --- | --- | --- | --- |
+| 60 | 2 | 2 | 44 |
+| 120 | 13 | 3 | 13 |
+| 600 | 197 | 19 | 262 |
+| 2000 | 503 | 49 | 995 |
+
+  Leitura: a comparação com o quadro seguinte do segundo oráculo reduz a diferença em cerca de 10 vezes, e a outra direção piora. Isso **apoia** a hipótese de uma fase de um quadro entre os oráculos. **Não prova**: o resto não é zero. O resumo mostra só as 5 primeiras faixas de cada comparação. Os endereços que apareceram no resto são `v_vblank_routine` (em todos os N), `v_jpadhold1` (N=2000) e faixas `FFFDxx`, que ficam logo abaixo de `v_systemstack` (`FFFE00`) e provavelmente são a pilha, a confirmar com a lista completa. A pilha é área de exclusão prevista no requisitos, mas a exclusão ainda não foi aprovada. Falta a lista completa das faixas restantes (`COMPLETO=1`).
