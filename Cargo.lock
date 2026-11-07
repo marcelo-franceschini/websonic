@@ -1228,6 +1228,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "sonic1-formato-video"
+version = "0.0.0"
+
+[[package]]
 name = "sonic1-rom"
 version = "0.0.0"
 

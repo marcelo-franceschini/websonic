@@ -1,0 +1,536 @@
+diff --color -ruN a/oracle/patches/0002-oraculo-WebSonic-palavras-do-DMA-P7.patch b/oracle/patches/0002-oraculo-WebSonic-palavras-do-DMA-P7.patch
+--- a/oracle/patches/0002-oraculo-WebSonic-palavras-do-DMA-P7.patch	1969-12-31 21:00:00.000000000 -0300
++++ b/oracle/patches/0002-oraculo-WebSonic-palavras-do-DMA-P7.patch	2026-11-06 21:34:19.697353435 -0300
+@@ -0,0 +1,71 @@
++diff --git a/Cargo.lock b/Cargo.lock
++index cd0d441b..53ea7a5e 100644
++--- a/Cargo.lock
+++++ b/Cargo.lock
++@@ -1679,6 +1679,7 @@ dependencies = [
++  "jgenesis-proc-macros",
++  "log",
++  "m68000-emu",
+++ "oracle-trace",
++  "regex",
++  "test-log",
++  "z80-emu",
++diff --git a/backend/genesis-components/Cargo.toml b/backend/genesis-components/Cargo.toml
++index 03f0c27f..ffd4b973 100644
++--- a/backend/genesis-components/Cargo.toml
+++++ b/backend/genesis-components/Cargo.toml
++@@ -6,6 +6,7 @@ version.workspace = true
++ [dependencies]
++ jgenesis-common = { workspace = true }
++ jgenesis-proc-macros = { workspace = true }
+++oracle-trace = { workspace = true }
++ 
++ genesis-config = { workspace = true }
++ 
++diff --git a/backend/genesis-components/src/vdp.rs b/backend/genesis-components/src/vdp.rs
++index a7034472..7218fb98 100644
++--- a/backend/genesis-components/src/vdp.rs
+++++ b/backend/genesis-components/src/vdp.rs
++@@ -1490,6 +1490,8 @@ impl Vdp {
++         }
++ 
++         let word = memory.read_word_for_dma(self.registers.dma_source_address);
+++        // Oraculo WebSonic (P7): registra a palavra lida pelo DMA.
+++        oracle_trace::dma_word(word);
++         self.increment_dma_source_address();
++ 
++         self.push_fifo(VdpFifoEntry {
++diff --git a/common/oracle-trace/src/lib.rs b/common/oracle-trace/src/lib.rs
++index 2bc1ba5d..99316874 100644
++--- a/common/oracle-trace/src/lib.rs
+++++ b/common/oracle-trace/src/lib.rs
++@@ -88,6 +88,7 @@ thread_local! {
++     static ENABLED: Cell<bool> = const { Cell::new(false) };
++     static CTX: Cell<Ctx> = const { Cell::new(Ctx { mclk: 0, src: 0, line: 0, col: 0, pc68: 0, pc80: 0 }) };
++     static BUF: RefCell<Vec<Raw>> = const { RefCell::new(Vec::new()) };
+++    static DMA: RefCell<Vec<u16>> = const { RefCell::new(Vec::new()) };
++ }
++ 
++ /// Liga ou desliga o registro.
++@@ -189,3 +190,21 @@ pub fn drain(saida: &mut Vec<Raw>) {
++ pub fn clear() {
++     BUF.with(|b| b.borrow_mut().clear());
++ }
+++
+++/// Registra uma palavra lida pelo DMA de memoria para VDP, na ordem de leitura (pedido P7).
+++#[inline]
+++pub fn dma_word(palavra: u16) {
+++    if enabled() {
+++        DMA.with(|d| d.borrow_mut().push(palavra));
+++    }
+++}
+++
+++/// Entrega e esvazia as palavras de DMA acumuladas.
+++pub fn take_dma() -> Vec<u16> {
+++    DMA.with(|d| std::mem::take(&mut *d.borrow_mut()))
+++}
+++
+++/// Descarta as palavras de DMA acumuladas.
+++pub fn clear_dma() {
+++    DMA.with(|d| d.borrow_mut().clear());
+++}
+diff --color -ruN a/oracle/patches/SHA1 b/oracle/patches/SHA1
+--- a/oracle/patches/SHA1	2026-11-06 21:34:19.693308064 -0300
++++ b/oracle/patches/SHA1	2026-11-06 21:34:19.697328036 -0300
+@@ -1 +1 @@
+-751851c40a76175babf7c8624047790078c1bbfc
+\ Nenhum caractere de nova linha no final do arquivo
++9e065ee5c316a8513dbed20c538f0a62c84f27b2
+\ Nenhum caractere de nova linha no final do arquivo
+diff --color -ruN a/oracle/runner/Cargo.lock b/oracle/runner/Cargo.lock
+--- a/oracle/runner/Cargo.lock	2026-11-06 21:34:19.694399077 -0300
++++ b/oracle/runner/Cargo.lock	2026-11-06 21:34:19.697860633 -0300
+@@ -277,6 +277,7 @@
+  "jgenesis-proc-macros",
+  "log",
+  "m68000-emu",
++ "oracle-trace",
+  "regex",
+  "z80-emu",
+ ]
+@@ -830,6 +831,10 @@
+ ]
+ 
+ [[package]]
++name = "sonic1-formato-video"
++version = "0.0.0"
++
++[[package]]
+ name = "sonic1-rom"
+ version = "0.0.0"
+ 
+@@ -1037,6 +1042,7 @@
+  "jgenesis-common",
+  "oracle-trace",
+  "sonic1-fidelidade",
++ "sonic1-formato-video",
+ ]
+ 
+ [[package]]
+diff --color -ruN a/oracle/runner/Cargo.toml b/oracle/runner/Cargo.toml
+--- a/oracle/runner/Cargo.toml	2026-11-06 21:34:19.694436590 -0300
++++ b/oracle/runner/Cargo.toml	2026-11-06 21:34:19.697884140 -0300
+@@ -13,6 +13,7 @@
+ oracle-trace = { path = "../../target/oracle-fonte/common/oracle-trace" }
+ bincode = "2"
+ sonic1-fidelidade = { path = "../../crates/fidelidade" }
++sonic1-formato-video = { path = "../../crates/formato-video" }
+ 
+ [lints.clippy]
+ all = { level = "warn", priority = -1 }
+diff --color -ruN a/oracle/runner/src/bin/oraculo.rs b/oracle/runner/src/bin/oraculo.rs
+--- a/oracle/runner/src/bin/oraculo.rs	2026-11-06 21:34:19.694027692 -0300
++++ b/oracle/runner/src/bin/oraculo.rs	2026-11-06 21:34:19.697712027 -0300
+@@ -3,8 +3,9 @@
+ //! ```text
+ //! oraculo rodar --rom ARQ --quadros N --saida ARQ [--entradas ARQ] [--rotulos ARQ --parar-em NOME]
+ //!               [--salvar-estado ARQ] [--estado-a-cada N] [--carregar-estado ARQ]
+-//!               [--perfil-a-cada N]   (com --rotulos: imprime modo, zona, ato e demo)
++//!               [--perfil-a-cada N] [--video PREFIXO]   (com --rotulos: imprime modo, zona, ato e demo)
+ //! oraculo comparar TRACE_A TRACE_B
++//! oraculo imagem --rom ARQ --estado ARQ --quadro N --saida ARQ.s1p [--entradas ARQ]
+ //! oraculo descomprimir --rom ARQ --rotulos ARQ --manifesto ARQ [--saida ARQ]
+ //! ```
+ //!
+@@ -13,6 +14,7 @@
+ use sonic1_fidelidade::hash::em_hex;
+ use sonic1_fidelidade::rotulos::Rotulos;
+ use sonic1_fidelidade::{Escritor, Leitor, Onde, Tipo, comparar_leitores};
++use sonic1_formato_video as fv;
+ use std::collections::BTreeMap;
+ use std::fs::File;
+ use std::io::{BufReader, BufWriter};
+@@ -24,6 +26,7 @@
+     let resultado = match args.first().map(String::as_str) {
+         Some("rodar") => rodar(&args[1..]),
+         Some("comparar") => comparar(&args[1..]),
++        Some("imagem") => imagem(&args[1..]),
+         Some("descomprimir") => descomprimir(&args[1..]),
+         Some("rom-sintetica") => rom_sintetica(&args[1..]),
+         _ => Err(
+@@ -101,6 +104,22 @@
+             .map_err(|_| "--estado-a-cada deve ser um numero")?,
+         None => 0,
+     };
++    // Video (pedidos P6 e P7): `--video PREFIXO` grava PREFIXO.s1i e PREFIXO.s1v.
++    let mut video = match opcao(args, "--video") {
++        Some(prefixo) => {
++            if opcao(args, "--parar-em").is_some() {
++                return Err("--video nao combina com --parar-em".into());
++            }
++            let mut i =
++                BufWriter::new(File::create(format!("{prefixo}.s1i")).map_err(|e| e.to_string())?);
++            let mut v =
++                BufWriter::new(File::create(format!("{prefixo}.s1v")).map_err(|e| e.to_string())?);
++            fv::escrever_cabecalho_imagem(&mut i).map_err(|e| e.to_string())?;
++            fv::escrever_cabecalho_video(&mut v).map_err(|e| e.to_string())?;
++            Some((i, v))
++        }
++        None => None,
++    };
+     let mut oraculo = Oraculo::novo(rom, entradas)?;
+     if let Some(arq) = opcao(args, "--carregar-estado") {
+         let bytes = std::fs::read(arq).map_err(|e| format!("nao li o estado: {e}"))?;
+@@ -139,8 +158,12 @@
+     } else {
+         while oraculo.quadro_atual() < quadros {
+             let q = oraculo.executar_quadro()?;
++            let numero = q.numero;
+             registrar(q, &mut escritor)?;
+             fechados += 1;
++            if let Some((i, v)) = video.as_mut() {
++                registrar_video(&oraculo, numero, i, v)?;
++            }
+             let atual = oraculo.quadro_atual();
+             if estado_a_cada > 0 && atual % estado_a_cada == 0 && atual < quadros {
+                 let base = std::path::Path::new(saida).with_extension("");
+@@ -159,6 +182,11 @@
+             }
+         }
+     }
++    if let Some((mut i, mut v)) = video {
++        use std::io::Write;
++        i.flush().map_err(|e| e.to_string())?;
++        v.flush().map_err(|e| e.to_string())?;
++    }
+     if let Some(arq) = opcao(args, "--salvar-estado") {
+         std::fs::write(arq, oraculo.salvar_estado()?).map_err(|e| e.to_string())?;
+     }
+@@ -180,6 +208,85 @@
+     Ok(ExitCode::SUCCESS)
+ }
+ 
++/// Bytes da imagem usados no hash: cada ponto de 9 bits em 2 bytes, little-endian.
++fn bytes_da_imagem(pontos: &[u16]) -> Vec<u8> {
++    pontos.iter().flat_map(|p| p.to_le_bytes()).collect()
++}
++
++/// Grava o registro de imagem e, se houve DMA, o de palavras do quadro recem-fechado.
++fn registrar_video(
++    oraculo: &Oraculo,
++    quadro: u32,
++    i: &mut BufWriter<File>,
++    v: &mut BufWriter<File>,
++) -> Result<(), String> {
++    let tela = oraculo.imagem();
++    if let Some(e) = &tela.erro {
++        return Err(format!("quadro {quadro}: {e}"));
++    }
++    let registro = fv::RegistroImagem {
++        quadro,
++        largura: u16::try_from(tela.largura).map_err(|_| "largura")?,
++        altura: u16::try_from(tela.altura).map_err(|_| "altura")?,
++        sha1: sonic1_fidelidade::hash::sha1(&bytes_da_imagem(&tela.pontos)),
++    };
++    fv::escrever_imagem(i, &registro).map_err(|e| e.to_string())?;
++    let palavras = oraculo.dma_do_quadro();
++    if !palavras.is_empty() {
++        let r = fv::RegistroDma {
++            quadro,
++            palavras: palavras.to_vec(),
++        };
++        fv::escrever_dma(v, &r).map_err(|e| e.to_string())?;
++    }
++    Ok(())
++}
++
++/// Regenera um quadro inteiro a partir de um estado salvo (pedido P6). Imprime so o hash.
++fn imagem(args: &[String]) -> Result<ExitCode, String> {
++    let rom = std::fs::read(opcao(args, "--rom").ok_or("falta --rom")?)
++        .map_err(|e| format!("nao li a ROM: {e}"))?;
++    let alvo: u32 = opcao(args, "--quadro")
++        .ok_or("falta --quadro")?
++        .parse()
++        .map_err(|_| "--quadro deve ser um numero")?;
++    let saida = opcao(args, "--saida").ok_or("falta --saida")?;
++    let entradas = match opcao(args, "--entradas") {
++        Some(c) => Entradas::de_texto(&std::fs::read_to_string(c).map_err(|e| e.to_string())?)?,
++        None => Entradas::default(),
++    };
++    let mut oraculo = Oraculo::novo(rom, entradas)?;
++    if let Some(arq) = opcao(args, "--estado") {
++        let bytes = std::fs::read(arq).map_err(|e| format!("nao li o estado: {e}"))?;
++        oraculo.carregar_estado(&bytes)?;
++    }
++    if oraculo.quadro_atual() > alvo {
++        return Err("o estado ja passou do quadro pedido".into());
++    }
++    while oraculo.quadro_atual() <= alvo {
++        oraculo.executar_quadro()?;
++    }
++    let tela = oraculo.imagem();
++    if let Some(e) = &tela.erro {
++        return Err(e.clone());
++    }
++    let q = fv::QuadroInteiro {
++        quadro: alvo,
++        largura: u16::try_from(tela.largura).map_err(|_| "largura")?,
++        altura: u16::try_from(tela.altura).map_err(|_| "altura")?,
++        pontos: tela.pontos.clone(),
++    };
++    let mut f = BufWriter::new(File::create(saida).map_err(|e| e.to_string())?);
++    fv::escrever_quadro_inteiro(&mut f, &q).map_err(|e| e.to_string())?;
++    println!("quadro={alvo}");
++    println!("tamanho={}x{}", q.largura, q.altura);
++    println!(
++        "sha1_da_imagem={}",
++        em_hex(&sonic1_fidelidade::hash::sha1(&bytes_da_imagem(&q.pontos)))
++    );
++    Ok(ExitCode::SUCCESS)
++}
++
+ fn comparar(args: &[String]) -> Result<ExitCode, String> {
+     let [a, b] = args else {
+         return Err("uso: oraculo comparar A B".into());
+@@ -223,6 +330,7 @@
+         "entrada" => websonic_oracle::rom_sintetica::programa_entrada(),
+         "vblank" => websonic_oracle::rom_sintetica::programa_vblank(),
+         "z80" => websonic_oracle::rom_sintetica::programa_z80(),
++        "video" => websonic_oracle::rom_sintetica::programa_video(),
+         _ => return Err("tipo desconhecido".into()),
+     };
+     std::fs::write(saida, rom).map_err(|e| e.to_string())?;
+diff --color -ruN a/oracle/runner/src/lib.rs b/oracle/runner/src/lib.rs
+--- a/oracle/runner/src/lib.rs	2026-11-06 21:34:19.694131975 -0300
++++ b/oracle/runner/src/lib.rs	2026-11-06 21:34:19.697761798 -0300
+@@ -8,4 +8,4 @@
+ pub mod rom_sintetica;
+ 
+ pub use entradas::{Botao, Entradas};
+-pub use oraculo::{ChamadaRotina, MotivoParada, Oraculo, Parada, ResultadoRotina};
++pub use oraculo::{CapturaTela, ChamadaRotina, MotivoParada, Oraculo, Parada, ResultadoRotina};
+diff --color -ruN a/oracle/runner/src/oraculo.rs b/oracle/runner/src/oraculo.rs
+--- a/oracle/runner/src/oraculo.rs	2026-11-06 21:34:19.693912849 -0300
++++ b/oracle/runner/src/oraculo.rs	2026-11-06 21:34:19.697508473 -0300
+@@ -27,16 +27,61 @@
+ 
+ // ---- Sinks nulos: o oraculo nao tem tela, nem som, nem arquivo de save. ----
+ 
+-struct SemTela;
+-impl Renderer for SemTela {
++/// Tabela de niveis de cor do jgenesis na configuracao do oraculo (escala nao linear, sem
++/// escurecimento): o nivel de 3 bits do canal e a posicao do valor de 8 bits nesta lista.
++const NIVEIS_NORMAL: [u8; 8] = [0, 52, 87, 116, 144, 172, 206, 255];
++
++/// Converte um canal de 8 bits no nivel de 3 bits. `None` se o valor nao esta na tabela
++/// (por exemplo, um ponto de sombra ou realce).
++fn nivel(valor: u8) -> Option<u16> {
++    NIVEIS_NORMAL
++        .iter()
++        .position(|n| *n == valor)
++        .and_then(|i| u16::try_from(i).ok())
++}
++
++/// Cor de 9 bits (`BBBGGGRRR`, 0 a 511) de um ponto do jgenesis.
++pub fn cor9(c: &Color) -> Option<u16> {
++    Some((nivel(c.b)? << 6) | (nivel(c.g)? << 3) | nivel(c.r)?)
++}
++
++/// Captura a imagem de cada quadro renderizado, ja na cor de 9 bits (pedido P6).
++#[derive(Default)]
++pub struct CapturaTela {
++    /// Pontos do ultimo quadro, linha apos linha.
++    pub pontos: Vec<u16>,
++    pub largura: u32,
++    pub altura: u32,
++    /// Primeiro ponto cuja cor nao esta na tabela de 9 bits.
++    pub erro: Option<String>,
++}
++
++impl Renderer for CapturaTela {
+     type Err = Infallible;
+     fn render_frame(
+         &mut self,
+-        _quadro: &[Color],
+-        _tamanho: FrameSize,
++        quadro: &[Color],
++        tamanho: FrameSize,
+         _fps: f64,
+         _opcoes: RenderFrameOptions,
+     ) -> Result<(), Infallible> {
++        self.largura = tamanho.width;
++        self.altura = tamanho.height;
++        self.pontos.clear();
++        self.erro = None;
++        // O vetor do jgenesis tem tamanho fixo (maximo); so os primeiros largura x altura pontos valem.
++        let total = usize::try_from(tamanho.width.saturating_mul(tamanho.height)).unwrap_or(0);
++        for c in quadro.iter().take(total) {
++            match cor9(c) {
++                Some(v) => self.pontos.push(v),
++                None => {
++                    if self.erro.is_none() {
++                        self.erro = Some("ponto com cor fora da tabela de 9 bits".into());
++                    }
++                    self.pontos.push(0);
++                }
++            }
++        }
+         Ok(())
+     }
+ }
+@@ -154,6 +199,8 @@
+     psg: [u16; 8],
+     psg_ultimo: u8,
+     passos: u64,
++    tela: CapturaTela,
++    dma_quadro: Vec<u16>,
+ }
+ 
+ impl Oraculo {
+@@ -171,6 +218,7 @@
+         };
+         oracle_trace::set_enabled(true);
+         oracle_trace::clear();
++        oracle_trace::clear_dma();
+         let emu = GenesisEmulator::create(
+             genesis_core::api::GenesisHardware::Standalone,
+             Some(rom),
+@@ -195,13 +243,26 @@
+             psg: [0; 8],
+             psg_ultimo: 0,
+             passos: 0,
++            tela: CapturaTela::default(),
++            dma_quadro: Vec::new(),
+         };
+         // Eventos gerados na criacao (reset) nao pertencem a nenhum quadro.
+         oracle_trace::clear();
++        oracle_trace::clear_dma();
+         oraculo.brutos.clear();
+         Ok(oraculo)
+     }
+ 
++    /// Imagem do ultimo quadro renderizado, na cor de 9 bits (pedido P6).
++    pub fn imagem(&self) -> &CapturaTela {
++        &self.tela
++    }
++
++    /// Palavras que o DMA de memoria para VDP leu no ultimo quadro fechado (pedido P7).
++    pub fn dma_do_quadro(&self) -> &[u16] {
++        &self.dma_quadro
++    }
++
+     pub fn cabecalho(&self) -> &Cabecalho {
+         &self.cabecalho
+     }
+@@ -234,7 +295,7 @@
+         let efeito = self
+             .emu
+             .tick(
+-                &mut SemTela,
++                &mut self.tela,
+                 &mut SemSom,
+                 &mut Leitor(&self.inputs),
+                 &mut SemArquivos,
+@@ -243,6 +304,7 @@
+         self.passos += 1;
+         self.coletar();
+         if efeito == TickEffect::FrameRendered {
++            self.dma_quadro = oracle_trace::take_dma();
+             let quadro = self.fechar_quadro();
+             // Os botoes do proximo quadro valem a partir daqui.
+             self.inputs = entradas_da_mascara(self.entradas.do_quadro(self.quadro));
+@@ -504,6 +566,7 @@
+         self.inputs = entradas_da_mascara(mascara);
+         self.brutos.clear();
+         oracle_trace::clear();
++        oracle_trace::clear_dma();
+         Ok(())
+     }
+ 
+diff --color -ruN a/oracle/runner/src/rom_sintetica.rs b/oracle/runner/src/rom_sintetica.rs
+--- a/oracle/runner/src/rom_sintetica.rs	2026-11-06 21:34:19.693716186 -0300
++++ b/oracle/runner/src/rom_sintetica.rs	2026-11-06 21:34:19.697778257 -0300
+@@ -132,3 +132,35 @@
+     rom.palavras(0x200, &codigo);
+     rom.finalizar()
+ }
++
++/// Programa 4: video. Liga o display em H40, pinta a cor 0 da CRAM de azul maximo ($0E00) e faz um
++/// DMA de 4 palavras da ROM (em $1000) para a VRAM em $8000. Depois fica em laco.
++pub fn programa_video() -> Vec<u8> {
++    let mut rom = RomSintetica::nova(SSP, 0x200);
++    rom.palavras(
++        0x200,
++        &[
++            0x46FC, 0x2700, // move.w #$2700,sr
++            0x33FC, 0x8F02, 0x00C0, 0x0004, // reg 15 = 2 (incremento automatico)
++            0x33FC, 0x8004, 0x00C0, 0x0004, // reg 0 = $04 (cor de 9 bits)
++            0x33FC, 0x8C81, 0x00C0, 0x0004, // reg 12 = $81 (40 colunas)
++            0x33FC, 0x8700, 0x00C0, 0x0004, // reg 7 = 0 (fundo: cor 0 da paleta 0)
++            0x33FC, 0x8174, 0x00C0, 0x0004, // reg 1 = $74 (video ligado, VBlank, DMA)
++            0x23FC, 0xC000, 0x0000, 0x00C0, 0x0004, // CRAM, endereco 0
++            0x33FC, 0x0E00, 0x00C0, 0x0000, // cor 0 = azul maximo
++            0x33FC, 0x9304, 0x00C0, 0x0004, // reg 19 = 4 (comprimento do DMA)
++            0x33FC, 0x9400, 0x00C0, 0x0004, // reg 20 = 0
++            0x33FC, 0x9500, 0x00C0, 0x0004, // reg 21 = 0 (fonte, palavras)
++            0x33FC, 0x9608, 0x00C0, 0x0004, // reg 22 = 8 (fonte = $1000 em bytes)
++            0x33FC, 0x9700, 0x00C0, 0x0004, // reg 23 = 0 (68000 para VDP)
++            0x23FC, 0x4000, 0x0082, 0x00C0,
++            0x0004, // VRAM, endereco $8000 (longe do tile 0), com DMA
++            0x60FE, // bra.s *
++        ],
++    );
++    rom.palavras(0x1000, &PALAVRAS_DMA_VIDEO);
++    rom.finalizar()
++}
++
++/// As 4 palavras que o DMA de `programa_video` transfere.
++pub const PALAVRAS_DMA_VIDEO: [u16; 4] = [0x1111, 0x2222, 0x3333, 0x4444];
+diff --color -ruN a/oracle/runner/tests/video.rs b/oracle/runner/tests/video.rs
+--- a/oracle/runner/tests/video.rs	1969-12-31 21:00:00.000000000 -0300
++++ b/oracle/runner/tests/video.rs	2026-11-06 21:34:19.697845017 -0300
+@@ -0,0 +1,50 @@
++//! Testes do video do oraculo (P6 e P7), so com ROM sintetica.
++
++use sha1_ext::*;
++use websonic_oracle::rom_sintetica::{PALAVRAS_DMA_VIDEO, programa_video};
++use websonic_oracle::{Entradas, Oraculo};
++
++mod sha1_ext {
++    pub use sonic1_fidelidade::hash::sha1;
++}
++
++/// (numero do quadro, largura, palavras de DMA) por quadro.
++type PorQuadro = Vec<(u32, u32, Vec<u16>)>;
++
++fn rodar(quadros: u32) -> (PorQuadro, Vec<u16>) {
++    let mut o = Oraculo::novo(programa_video(), Entradas::default()).unwrap();
++    let mut dma = Vec::new();
++    let mut ultimo = Vec::new();
++    for _ in 0..quadros {
++        let q = o.executar_quadro().unwrap();
++        assert!(o.imagem().erro.is_none());
++        dma.push((q.numero, o.imagem().largura, o.dma_do_quadro().to_vec()));
++        ultimo = o.imagem().pontos.clone();
++    }
++    (dma, ultimo)
++}
++
++#[test]
++fn imagem_so_com_o_fundo_azul_tem_o_hash_calculado_a_mao() {
++    let (info, pontos) = rodar(4);
++    assert_eq!(info[3].1, 320);
++    assert_eq!(pontos.len(), 320 * 224);
++    // Azul maximo: BBB=7, GGG=0, RRR=0, ou seja, 7 << 6 = 448 = $01C0.
++    assert!(pontos.iter().all(|p| *p == 448));
++    // Modelo independente: 71680 pontos de 2 bytes $C0 $01.
++    let esperado: Vec<u8> = (0..320 * 224).flat_map(|_| [0xC0u8, 0x01]).collect();
++    let bytes: Vec<u8> = pontos.iter().flat_map(|p| p.to_le_bytes()).collect();
++    assert_eq!(sha1(&bytes), sha1(&esperado));
++}
++
++#[test]
++fn dma_entrega_as_palavras_lidas_na_ordem() {
++    let (info, _) = rodar(4);
++    let todas: Vec<u16> = info.iter().flat_map(|(_, _, p)| p.clone()).collect();
++    assert_eq!(todas, PALAVRAS_DMA_VIDEO);
++}
++
++#[test]
++fn duas_execucoes_dao_o_mesmo_video() {
++    assert_eq!(rodar(4), rodar(4));
++}

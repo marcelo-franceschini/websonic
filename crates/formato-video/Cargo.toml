@@ -1,0 +1,10 @@
+[package]
+name = "sonic1-formato-video"
+description = "Formatos dos arquivos de video da fidelidade: .s1i (hash da imagem), .s1v (palavras de DMA) e .s1p (quadro inteiro)"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
