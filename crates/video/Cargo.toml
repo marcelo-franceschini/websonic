@@ -1,0 +1,26 @@
+# Mesma tabela de lints do nucleo (CLAUDE.md): o renderizador tambem precisa dar o mesmo resultado em qualquer maquina.
+[package]
+name = "sonic1-video"
+description = "Renderizador fiel em software: modelo da VDP do Mega Drive (sem dependencias)"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+# Lints do nucleo (CLAUDE.md). Nao da para herdar da workspace e acrescentar,
+# por isso a tabela e completa aqui.
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+# Sem ponto flutuante: o resultado precisa ser identico em qualquer maquina.
+float_arithmetic = "deny"
+# Estouro de inteiro sempre explicito (checked, wrapping ou saturating).
+arithmetic_side_effects = "deny"
+# Sem casts que cortam bits em silencio.
+cast_possible_truncation = "deny"
+cast_possible_wrap = "deny"
+cast_sign_loss = "deny"
+# HashMap e HashSet proibidos pelo clippy.toml deste crate (ordem nao deterministica).
+disallowed_types = "deny"
