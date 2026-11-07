@@ -88,7 +88,12 @@ impl Registros {
         self.bit(0, 4)
     }
 
-    /// Registrador 1, bit 6: imagem ligada.
+    /// Registrador 0, bit 5: apaga a coluna da esquerda (fora do inventário).
+    pub fn coluna_esquerda_apagada(&self) -> bool {
+        self.bit(0, 5)
+    }
+
+    /// Registrador 1, bit 6: imagem ligada (valor escrito; o que vale é `Vdp::imagem_ligada`).
     pub fn imagem_ligada(&self) -> bool {
         self.bit(1, 6)
     }

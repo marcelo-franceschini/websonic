@@ -131,6 +131,7 @@ fn cena(semente: u64) -> Renderizador {
     for _ in 0..40 {
         dados(&mut r, l, s.palavra() & 0x03ff);
     }
+    r.drenar_vdp();
     // Um quadro inteiro para tudo assentar, depois outro para medir.
     r.avancar_ate(232, 0);
     r.avancar_ate(l, 0);

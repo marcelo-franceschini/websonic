@@ -10,13 +10,21 @@ use crate::camadas::{
     desenhar_sprites, ler_rolagem_h, resolver_ponto, varrer_sprites,
 };
 use crate::cor::da_palavra_cram;
-use crate::portas::Vdp;
+use crate::portas::{Efeitos, PontoDaCram, Vdp};
 use crate::quadro::Quadro;
 use crate::registros::Registros;
 use crate::tempo::{
     AGENDA, Evento, FIM_ATIVO, INICIO_ATIVO, LINHA_DO_FIM_DO_QUADRO, LINHAS_POR_QUADRO,
     PONTOS_POR_LINHA, mclk_para_ponto, ponto_para_h,
 };
+
+/// Primeiro ponto em que o oráculo aceita um ponto da CRAM (início ativo menos a borda esquerda
+/// mais 5) e o fim (fim ativo mais a borda direita mais 5), em 40 colunas.
+const INICIO_PONTOS_CRAM: u16 = 18;
+const FIM_PONTOS_CRAM: u16 = 365;
+const PONTOS_DA_CRAM: usize = 347;
+/// Borda esquerda em 40 colunas.
+const BORDA_ESQUERDA: i32 = 13;
 
 /// Linhas ativas (28 linhas de células).
 const LINHAS_ATIVAS: u16 = 224;
@@ -93,6 +101,9 @@ pub struct Renderizador {
     sprites: Vec<Sprite>,
     pontos_de_sprite: Vec<PontoDeTile>,
     estado_sprites: EstadoDeSprites,
+    // Pontos coloridos da CRAM: da linha atual e da anterior (índice 0 = ponto 18).
+    pontos_atual: Vec<Option<u16>>,
+    pontos_anterior: Vec<Option<u16>>,
     // Planos.
     buf_a: Vec<PontoDeTile>,
     buf_b: Vec<PontoDeTile>,
@@ -121,6 +132,8 @@ impl Renderizador {
             sprites: Vec::new(),
             pontos_de_sprite: vec![PontoDeTile::default(); LARGURA],
             estado_sprites: EstadoDeSprites::default(),
+            pontos_atual: vec![None; PONTOS_DA_CRAM],
+            pontos_anterior: vec![None; PONTOS_DA_CRAM],
             buf_a: vec![PontoDeTile::default(); LARGURA],
             buf_b: vec![PontoDeTile::default(); LARGURA],
         }
@@ -142,7 +155,13 @@ impl Renderizador {
     /// Entrega as palavras de DMA do quadro que vai começar.
     pub fn entregar_dma(&mut self, palavras: &[u16]) {
         self.vdp.entregar_dma(palavras);
-        self.depois_da_escrita(None);
+    }
+
+    /// Deixa a FIFO e o DMA correrem até acabar, sem andar o tempo. Só para cenas estáticas de
+    /// teste: no oráculo a FIFO esvazia nos slots, e é isso que `avancar_ate` reproduz.
+    pub fn drenar_vdp(&mut self) {
+        self.vdp.drenar();
+        self.drenar_cache_de_sprites();
     }
 
     /// Avança o tempo até (`linha`, `coluna`) e aplica a escrita.
@@ -190,16 +209,26 @@ impl Renderizador {
 
     fn terminar_linha(&mut self) {
         self.avancar_pontos(PONTOS_POR_LINHA);
+        self.trocar_pontos_da_cram();
         self.linha = (self.linha.saturating_add(1)) % LINHAS_POR_QUADRO;
         self.ponto = 0;
         self.proximo_evento = 0;
     }
 
-    /// Dispara os eventos com H interno menor que o do ponto `fim`.
+    /// Avança os pontos até `fim`. Com a FIFO ou o DMA ativos o tempo anda slot a slot.
     fn avancar_pontos(&mut self, fim: u16) {
         if fim <= self.ponto {
             return;
         }
+        if self.vdp.precisa_de_slots() {
+            self.avancar_devagar(fim);
+        } else {
+            self.avancar_rapido(fim);
+        }
+    }
+
+    /// Dispara os eventos com H interno menor que o do ponto `fim` (sem FIFO nem DMA).
+    fn avancar_rapido(&mut self, fim: u16) {
         let h_fim = ponto_para_h(fim.saturating_sub(1));
         while let Some(e) = AGENDA.get(self.proximo_evento).copied() {
             if e.h > h_fim {
@@ -212,11 +241,59 @@ impl Renderizador {
         self.ponto = fim;
     }
 
+    /// Um ponto por vez: processa o slot (FIFO e DMA) e depois os eventos da agenda.
+    fn avancar_devagar(&mut self, fim: u16) {
+        let mut p = self.ponto;
+        while p < fim {
+            self.ponto = p;
+            if p.is_multiple_of(2) {
+                let ef = self.vdp.passo_de_slot(usize::from(p / 2));
+                self.efeitos_do_slot(ef);
+            }
+            let h = ponto_para_h(p);
+            while let Some(e) = AGENDA.get(self.proximo_evento).copied() {
+                if h < e.h {
+                    break;
+                }
+                self.proximo_evento = self.proximo_evento.saturating_add(1);
+                self.disparar(e.evento);
+            }
+            p = p.saturating_add(1);
+        }
+        self.ponto = fim;
+    }
+
+    /// O que a saída de uma entrada da FIFO pede ao renderizador.
+    fn efeitos_do_slot(&mut self, ef: Efeitos) {
+        self.drenar_cache_de_sprites();
+        if ef.imagem_habilitada {
+            if let Some(t) = self.travados.brutos.get_mut(1) {
+                *t |= 0x40;
+            }
+            self.estado_sprites
+                .escrita_do_registrador_1(true, self.ponto);
+        }
+        if let Some(p) = ef.ponto_da_cram {
+            self.marcar_ponto_da_cram(p);
+        }
+        let dois = self.travados.rolagem_v() == crate::registros::RolagemV::DuasCelulas;
+        if ef.imagem_habilitada || ef.cram || (ef.vsram && dois) {
+            self.redesenhar_a_partir_de(self.ponto);
+        }
+    }
+
+    fn drenar_cache_de_sprites(&mut self) {
+        let gravados = std::mem::take(&mut self.vdp.ao_gravar_vram);
+        for (endereco, valor) in gravados {
+            self.atualizar_cache_de_sprites(endereco, valor);
+        }
+    }
+
     fn disparar(&mut self, evento: Evento) {
         match evento {
             Evento::InterrupcaoDeVBlank => {}
             Evento::LerRolagemH => {
-                if !self.vdp.registros.imagem_ligada() || self.linha >= LINHAS_ATIVAS {
+                if !self.vdp.imagem_ligada() || self.linha >= LINHAS_ATIVAS {
                     return;
                 }
                 self.rolagem_h =
@@ -226,11 +303,18 @@ impl Renderizador {
                 self.estado_sprites.fim_da_linha(self.ponto);
                 self.varrer_uma_linha_a_frente();
                 self.desenhar_linha(self.linha, 0);
+                self.aplicar_pontos_da_linha_anterior();
             }
             Evento::BuscarAtributosDeSprites => self.buscar_atributos(),
             Evento::InicioDoHBlank => {
-                let ligada = self.vdp.registros.imagem_ligada();
+                let ligada = self.vdp.imagem_ligada();
                 self.estado_sprites.inicio_do_hblank(ligada);
+                // O VBlank começa no HBlank da última linha ativa e acaba no da penúltima do quadro.
+                if self.linha == LINHAS_ATIVAS.saturating_sub(1) {
+                    self.vdp.em_vblank = true;
+                } else if self.linha == LINHAS_POR_QUADRO.saturating_sub(2) {
+                    self.vdp.em_vblank = false;
+                }
             }
             Evento::InterrupcaoDeLinha => {
                 self.cache_travado.clone_from(&self.cache);
@@ -248,19 +332,9 @@ impl Renderizador {
     // ---- Efeitos de uma escrita ----
 
     fn depois_da_escrita(&mut self, registrador: Option<usize>) {
-        // Cache dos primeiros 4 bytes de cada sprite.
-        let gravados = std::mem::take(&mut self.vdp.ao_gravar_vram);
-        for (endereco, valor) in gravados {
-            self.atualizar_cache_de_sprites(endereco, valor);
-        }
+        self.drenar_cache_de_sprites();
         if let Some(reg) = registrador {
             self.registrador_mudou(reg);
-        }
-        let cram = std::mem::take(&mut self.vdp.cram_gravada);
-        let vsram = std::mem::take(&mut self.vdp.vsram_gravada);
-        let dois = self.travados.rolagem_v() == crate::registros::RolagemV::DuasCelulas;
-        if cram || (vsram && dois) {
-            self.redesenhar_a_partir_de(self.ponto);
         }
     }
 
@@ -286,12 +360,13 @@ impl Renderizador {
         let mudou = match reg {
             1 => {
                 let antes = self.travados.brutos.get(1).copied().unwrap_or(0);
-                let novo = (antes & !0x40) | (vivo & 0x40);
+                let ligada = if self.vdp.imagem_ligada() { 0x40 } else { 0 };
+                let novo = (antes & !0x40) | ligada;
                 if let Some(t) = self.travados.brutos.get_mut(1) {
                     *t = novo;
                 }
                 self.estado_sprites
-                    .escrita_do_registrador_1(self.vdp.registros.imagem_ligada(), self.ponto);
+                    .escrita_do_registrador_1(self.vdp.imagem_ligada(), self.ponto);
                 novo != antes
             }
             2 | 3 | 4 | 7 => {
@@ -340,6 +415,64 @@ impl Renderizador {
             return;
         }
         self.desenhar_linha(self.linha, ponto.saturating_sub(INICIO_ATIVO));
+    }
+
+    // ---- Pontos coloridos da CRAM ----
+
+    fn marcar_ponto_da_cram(&mut self, p: PontoDaCram) {
+        let ponto = self.ponto;
+        self.pontos_no_intervalo(ponto, p.cor);
+        // Truque do oráculo: com a imagem desligada e a cor de fundo mudando, os pontos
+        // seguintes também recebem a cor nova.
+        let (paleta, cor_id) = self.vdp.registros.fundo();
+        let indice_fundo = (u32::from(paleta) << 4) | u32::from(cor_id);
+        if !self.vdp.imagem_ligada() && p.indice == indice_fundo {
+            let n = if p.tamanho_da_fifo > 1 {
+                3
+            } else {
+                FIM_PONTOS_CRAM.saturating_sub(ponto)
+            };
+            for i in 1..=n {
+                self.pontos_no_intervalo(ponto.saturating_add(i), p.cor);
+            }
+        }
+    }
+
+    fn pontos_no_intervalo(&mut self, ponto: u16, cor: u16) {
+        if !(INICIO_PONTOS_CRAM..FIM_PONTOS_CRAM).contains(&ponto) {
+            return;
+        }
+        let idx = usize::from(ponto.saturating_sub(INICIO_PONTOS_CRAM));
+        if let Some(c) = self.pontos_atual.get_mut(idx) {
+            *c = Some(cor);
+        }
+    }
+
+    /// No fim de cada linha, os pontos dela passam a ser os da "linha anterior".
+    fn trocar_pontos_da_cram(&mut self) {
+        let algum = self.pontos_atual.iter().any(Option::is_some)
+            || self.pontos_anterior.iter().any(Option::is_some);
+        if !algum {
+            return;
+        }
+        std::mem::swap(&mut self.pontos_atual, &mut self.pontos_anterior);
+        self.pontos_atual.fill(None);
+    }
+
+    /// Desenha na imagem os pontos da linha anterior (como o oráculo, no início da linha atual).
+    fn aplicar_pontos_da_linha_anterior(&mut self) {
+        if self.linha == 0 || self.linha > LINHAS_ATIVAS {
+            return;
+        }
+        let y = usize::from(self.linha.saturating_sub(1));
+        for (idx, cor) in self.pontos_anterior.iter().enumerate() {
+            let Some(cor) = cor else { continue };
+            let x = i32::try_from(idx)
+                .unwrap_or(0)
+                .saturating_sub(BORDA_ESQUERDA);
+            let Ok(x) = usize::try_from(x) else { continue };
+            self.quadro.definir(x, y, da_palavra_cram(*cor));
+        }
     }
 
     // ---- Sprites ----
@@ -400,7 +533,7 @@ impl Renderizador {
             return;
         }
         let y = usize::from(linha);
-        if !self.vdp.registros.imagem_ligada() {
+        if !self.vdp.imagem_ligada() {
             let fundo = self.cor_do_fundo();
             if linha < LINHAS_ATIVAS {
                 for x in usize::from(ponto_inicial)..LARGURA {

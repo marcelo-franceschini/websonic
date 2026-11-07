@@ -166,6 +166,8 @@ pub fn comparar(args: &[String]) -> Result<(), String> {
             eprintln!("q{} {:?} pos={:?} mclk_fim={} linhas={}", q.numero, m, r.posicao(), q.mclk_fim, q.mclk_fim / 3420);
             let negros: Vec<(usize, usize)> = (0..224).flat_map(|y| (0..320).map(move |x| (x, y))).filter(|(x, y)| r.quadro().ponto(*x, *y) == Some(0)).take(12).collect();
             eprintln!("negros {negros:?}");
+            let linha0: Vec<u16> = (0..320).map(|x| r.quadro().ponto(x, 0).unwrap_or(0)).collect();
+            eprintln!("LINHA0 primeiro_azul={:?} nao_azuis={}", linha0.iter().position(|v| *v == 448), linha0.iter().filter(|v| **v != 448).count());
             if let Some(e) = q.eventos.last() {
                 eprintln!("  ULTIMO mclk={} linha={} col={} tipo={:?}", e.mclk, e.linha, e.coluna, e.tipo);
             }
