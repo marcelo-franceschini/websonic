@@ -9,4 +9,6 @@
 #![forbid(unsafe_code)]
 
 pub mod cor;
+pub mod portas;
 pub mod quadro;
+pub mod registros;
