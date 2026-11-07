@@ -2,6 +2,10 @@
 
 Documento de acompanhamento do progresso das etapas.
 
+## Etapa 4 (Renderizador fiel): em andamento
+
+Plano aprovado pelo Marcelo em 06/11/2026 (`docs/plano-etapa-4.md`). Feito pela IA com dados sinteticos: 4.0 (crate `sonic1-video`, patch do CI), 4.1 (formato de video, patches P6 e P7 do oraculo), 4.2 a 4.6 (registradores, portas, FIFO, DMA, planos, sprites, tempo por linha, pontos da CRAM), 4.7 (caso `lz-agua`, entradas escritas por nos), 4.8 (`cargo xtask video-estado` e `video-comparar`) e 4.9 (teste de desempenho). Provas ja rodadas: 44 testes do crate, referencia independente em 6 cenas aleatorias, ROM sintetica de video contra o oraculo. **Falta** a rodada do host (`scripts/etapa4-host.sh`), os patches `video-oraculo`, `extensoes-video` e `ci-video`, o perfil da Labyrinth e as comparacoes com a ROM real. Ver `docs/conhecimento/video.md`.
+
 ## Etapa atual
 
 - Etapa: 1 (Oráculo), plano aprovado pelo Marcelo em 06/11/2026.
