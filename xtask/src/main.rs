@@ -5,6 +5,8 @@
 //! - `rotulos`: gera `refs/rotulos.txt` (só o Marcelo roda; ver `rotulos.rs`).
 //! - `video-estado` e `video-comparar`: renderizador contra o oráculo (ver `video.rs`).
 //! - `inventario`: inventário de hardware a partir dos traces (ver `inventario.rs`).
+//! - `inventario-memoria`: inventário da memória compartilhada (ver `inventario_memoria.rs`).
+//! - `fidelidade`: o comando único de fidelidade (ver `fidelidade.rs`).
 //! - `ocultos`: cifra e audita os testes ocultos (ver `ocultos.rs`).
 //! - `manifesto`: gera e verifica o manifesto assinado (ver `manifesto.rs`).
 //! - `corpus-trace`: traces do corpus e prova de determinismo (ver `corpus.rs`).
@@ -15,7 +17,9 @@ use std::process::{Command, ExitCode};
 mod anti_rom;
 mod corpus;
 mod descompressao;
+mod fidelidade;
 mod inventario;
+mod inventario_memoria;
 mod manifesto;
 mod ocultos;
 mod rotulos;
@@ -57,11 +61,15 @@ fn main() -> ExitCode {
         Some("video-estado") => video::estado(&std::env::args().skip(2).collect::<Vec<_>>()),
         Some("video-comparar") => video::comparar(&std::env::args().skip(2).collect::<Vec<_>>()),
         Some("inventario") => inventario::executar(&std::env::args().skip(2).collect::<Vec<_>>()),
+        Some("inventario-memoria") => {
+            inventario_memoria::executar(&std::env::args().skip(2).collect::<Vec<_>>())
+        }
+        Some("fidelidade") => fidelidade::executar(&std::env::args().skip(2).collect::<Vec<_>>()),
         Some("ocultos") => ocultos::executar(&std::env::args().skip(2).collect::<Vec<_>>()),
         Some("manifesto") => manifesto::executar(&std::env::args().skip(2).collect::<Vec<_>>()),
         _ => {
             eprintln!(
-                "uso: cargo xtask <site|anti-rom|rotulos|descompressao-relatorio|corpus-trace|corpus-meta|manifesto|ocultos|inventario|video-estado|video-comparar>"
+                "uso: cargo xtask <site|anti-rom|rotulos|descompressao-relatorio|corpus-trace|corpus-meta|manifesto|ocultos|inventario|inventario-memoria|fidelidade|video-estado|video-comparar>"
             );
             return ExitCode::from(2);
         }

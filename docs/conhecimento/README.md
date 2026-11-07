@@ -6,7 +6,7 @@
 
 - [ambiente.md](ambiente.md): provas do contêiner, da rede e das permissões, com comando e resultado.
 - [ci.md](ci.md): workflow do GitHub Actions, publicação no Pages, segurança e o que só o GitHub prova.
-- [corpus.md](corpus.md): formato `.s1in`, GMV, traces do corpus e prova de determinismo e retomada.
+- [corpus.md](corpus.md): formato `.s1in`, GMV, traces do corpus, determinismo e retomada, mapa de acessos a RAM, gravador e `fidelidade`.
 - [descompressao.md](descompressao.md): formatos Nemesis, Enigma e Kosinski, fontes, código, manifesto e como o oráculo mede a saída.
 - [esqueleto.md](esqueleto.md): workspace Rust, lints do núcleo, crate `rom`, site e `cargo xtask`, com evidência.
 - [hooks.md](hooks.md): hooks do git, regras de bloqueio da ROM, ativação, limites e testes.

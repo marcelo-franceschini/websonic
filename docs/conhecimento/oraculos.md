@@ -13,3 +13,5 @@
 
 - O criterio da Etapa 2, "o segundo oraculo concorda nas demos", **nao foi cumprido**. Nada aqui diz qual dos dois esta certo.
 - Proximo passo de diagnostico (backlog): imprimir so os enderecos das palavras que diferem no quadro 52 (sem os valores) e cruzar com `refs/rotulos.txt` para ver o nome da variavel.
+
+- Diagnóstico do D1 (preparado em 06/11/2026): `oraculo2 diferencas --a RAM_PRINCIPAL --b RAM_GPGX --rotulos refs/rotulos.txt` mostra, para os quadros 51 e 52, as faixas de RAM que diferem e a variável mais próxima. Resultado pendente do host (`scripts/etapa2-final.sh`).

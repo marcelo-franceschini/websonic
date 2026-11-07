@@ -7,7 +7,11 @@
 //! ```text
 //! oraculo2 rodar --nucleo ARQ.so --rom ROM --quadros N --saida ARQ.tsv
 //! oraculo2 comparar --trace ARQ.s1t --tsv ARQ.tsv [--deslocamento -2..2]
+//! oraculo2 diferencas --a RAM_PRINCIPAL --b RAM_GPGX --rotulos refs/rotulos.txt
 //! ```
+//! `rodar` aceita `--despejar N:ARQ`: grava a RAM do 68000 inteira depois do quadro N (so para o
+//! host, nunca entra no git). `diferencas` compara dois despejos e imprime so enderecos, nomes de
+//! variaveis e contagens. Nunca imprime valores.
 //! Formato do `.tsv`: `quadro<TAB>sha1_normal<TAB>sha1_pares_trocados`.
 //! Entradas de controle ainda NAO sao suportadas (so demos, sem botoes): o mapa entre os
 //! botoes do libretro e os do Mega Drive precisa ser conferido antes.
@@ -97,6 +101,14 @@ fn rodar(args: &[String]) -> Result<(), String> {
         .parse()
         .map_err(|_| "--quadros invalido")?;
     let saida = opcao(args, "--saida").ok_or("falta --saida")?;
+    // `--despejar N:ARQ`: grava a RAM crua (como o nucleo a guarda) depois do quadro N.
+    let despejar: Option<(u32, &str)> = match opcao(args, "--despejar") {
+        Some(v) => {
+            let (n, arq) = v.split_once(':').ok_or("--despejar deve ser N:ARQ")?;
+            Some((n.parse().map_err(|_| "--despejar: N invalido")?, arq))
+        }
+        None => None,
+    };
     let rom = fs::read(rom_arq).map_err(|e| format!("ROM: {e}"))?;
     let caminho = CString::new(rom_arq).map_err(|e| e.to_string())?;
 
@@ -145,6 +157,11 @@ fn rodar(args: &[String]) -> Result<(), String> {
         for q in 0..quadros {
             executar();
             let ram = std::slice::from_raw_parts(ptr, tam);
+            if let Some((n, arq)) = despejar
+                && n == q
+            {
+                fs::write(arq, ram).map_err(|e| e.to_string())?;
+            }
             writeln!(
                 arq,
                 "{q}\t{}\t{}",
@@ -223,12 +240,120 @@ fn comparar(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// Variaveis de RAM do mapa de rotulos: `(offset na RAM, nome)`, ordenadas por offset.
+/// So entram valores em `$FF0000..$FFFFFF` (o mapa guarda com extensao de sinal, `FFFFxxxx`).
+fn variaveis_de_ram(texto: &str) -> Vec<(usize, String)> {
+    let mut v: Vec<(usize, String)> = Vec::new();
+    for l in texto.lines() {
+        let c: Vec<&str> = l.split('\t').collect();
+        let [nome, "variavel", valor] = c[..] else {
+            continue;
+        };
+        let Ok(x) = u32::from_str_radix(valor, 16) else {
+            continue;
+        };
+        if (x >= 0xFFFF_0000) || (0x00FF_0000..=0x00FF_FFFF).contains(&x) {
+            v.push(((x & 0xFFFF) as usize, nome.to_string()));
+        }
+    }
+    // Para o mesmo endereco, prefere o nome sem ponto (o campo e mais fino que a estrutura
+    // so quando tem ponto, mas o nome simples e o mais legivel), depois o mais curto.
+    v.sort_by_key(|(a, n)| (*a, n.contains('.'), n.len(), n.clone()));
+    v
+}
+
+/// Variavel que contem o offset: a de maior endereco `<= offset`, e entre as de mesmo endereco
+/// a preferida (a primeira na ordem de `variaveis_de_ram`).
+fn variavel_do_offset(vars: &[(usize, String)], offset: usize) -> Option<&(usize, String)> {
+    let ultima = vars.partition_point(|(a, _)| *a <= offset).checked_sub(1)?;
+    let endereco = vars.get(ultima)?.0;
+    vars.get(vars.partition_point(|(a, _)| *a < endereco))
+}
+
+/// Nome da variavel que contem o offset, com o deslocamento dentro dela.
+fn nome_do_offset(vars: &[(usize, String)], offset: usize) -> String {
+    match variavel_do_offset(vars, offset) {
+        Some((a, n)) => format!("{n}+{:#x}", offset - a),
+        None => "(antes da primeira variavel)".to_string(),
+    }
+}
+
+/// Offsets dos bytes que diferem.
+fn bytes_diferentes(a: &[u8], b: &[u8]) -> Vec<usize> {
+    a.iter()
+        .zip(b)
+        .enumerate()
+        .filter(|(_, (x, y))| x != y)
+        .map(|(i, _)| i)
+        .collect()
+}
+
+/// Junta offsets vizinhos (distancia ate `folga`) em faixas `(inicio, fim)` inclusivas.
+fn faixas(offsets: &[usize], folga: usize) -> Vec<(usize, usize)> {
+    let mut f: Vec<(usize, usize)> = Vec::new();
+    for &o in offsets {
+        match f.last_mut() {
+            Some((_, fim)) if o <= *fim + folga => *fim = o,
+            _ => f.push((o, o)),
+        }
+    }
+    f
+}
+
+fn diferencas(args: &[String]) -> Result<(), String> {
+    let a = fs::read(opcao(args, "--a").ok_or("falta --a")?).map_err(|e| e.to_string())?;
+    let b = fs::read(opcao(args, "--b").ok_or("falta --b")?).map_err(|e| e.to_string())?;
+    let rotulos = fs::read_to_string(opcao(args, "--rotulos").ok_or("falta --rotulos")?)
+        .map_err(|e| e.to_string())?;
+    if a.len() != 0x1_0000 || b.len() != 0x1_0000 {
+        return Err("os despejos devem ter 65536 bytes".into());
+    }
+    let vars = variaveis_de_ram(&rotulos);
+    // O nucleo guarda a RAM com os pares trocados; o certo e o que difere em menos bytes.
+    let normal = bytes_diferentes(&a, &b);
+    let trocado = bytes_diferentes(&a, &trocar_pares(&b));
+    println!(
+        "bytes diferentes: ordem normal={} pares trocados={}",
+        normal.len(),
+        trocado.len()
+    );
+    let (ordem, dif) = if trocado.len() <= normal.len() {
+        ("pares_trocados", trocado)
+    } else {
+        ("normal", normal)
+    };
+    println!("ordem usada: {ordem}; bytes diferentes: {}", dif.len());
+    let fx = faixas(&dif, 1);
+    println!("faixas: {}", fx.len());
+    for (i, f) in fx.iter().enumerate().take(200) {
+        println!(
+            "faixa {i}: FF{:04X}..FF{:04X} ({} bytes no maximo) inicio={}",
+            f.0,
+            f.1,
+            f.1 - f.0 + 1,
+            nome_do_offset(&vars, f.0)
+        );
+    }
+    // Resumo por variavel: quantos bytes diferem em cada uma.
+    let mut por_nome: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    for &o in &dif {
+        let n = variavel_do_offset(&vars, o).map_or("(sem variavel)", |(_, n)| n.as_str());
+        *por_nome.entry(n.to_string()).or_default() += 1;
+    }
+    println!("por variavel (mais proxima antes do byte):");
+    for (n, c) in &por_nome {
+        println!("  {n}: {c}");
+    }
+    Ok(())
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let r = match args.first().map(String::as_str) {
         Some("rodar") => rodar(&args[1..]),
         Some("comparar") => comparar(&args[1..]),
-        _ => Err("uso: oraculo2 rodar|comparar".into()),
+        Some("diferencas") => diferencas(&args[1..]),
+        _ => Err("uso: oraculo2 rodar|comparar|diferencas".into()),
     };
     match r {
         Ok(()) => ExitCode::SUCCESS,
@@ -260,6 +385,18 @@ mod testes {
             primeira_diferenca(&a, &v(&["z", "a", "b", "c", "d"]), 1),
             (4, None)
         );
+    }
+
+    #[test]
+    fn nome_e_faixas() {
+        let mapa = "b\tvariavel\tfffff010\na\tvariavel\tfffff000\na.x\tvariavel\tfffff000\nr\trotina\t200\n";
+        let v = variaveis_de_ram(mapa);
+        assert_eq!(v.len(), 3);
+        assert_eq!(nome_do_offset(&v, 0xF012), "b+0x2");
+        assert_eq!(nome_do_offset(&v, 0xF000), "a+0x0");
+        assert_eq!(nome_do_offset(&v, 0x10), "(antes da primeira variavel)");
+        assert_eq!(faixas(&[1, 2, 3, 9, 11], 1), vec![(1, 3), (9, 9), (11, 11)]);
+        assert_eq!(bytes_diferentes(&[1, 2, 3], &[1, 9, 9]), vec![1, 2]);
     }
 
     #[test]

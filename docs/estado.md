@@ -2,6 +2,10 @@
 
 Documento de acompanhamento do progresso das etapas.
 
+## Etapa 2 (Corpus e integridade): fechamento, lado da IA pronto (06/11/2026)
+
+O Marcelo pediu para fechar a Etapa 2 antes da Etapa 5. Feito pela IA, com dados sintéticos: patch 0003 do oráculo (mapa de acessos à RAM por contexto e gravador de entradas, `docs/pedidos/etapa2-oraculo.patch`, 2 testes novos; a suíte inteira do oráculo, fmt e clippy passaram numa cópia de trabalho com o patch), `cargo xtask inventario-memoria` (P2), `cargo xtask fidelidade` (2.9), `oraculo2 diferencas` (diagnóstico do D1), scripts `etapa2-final.sh`, `etapa2-gravar.sh`, `etapa2-fechar.sh`. `cargo test -p xtask`: 48 testes; fmt e clippy do workspace limpos. **Falta o host**: aplicar o patch, rodar os três scripts, gravar os testes ocultos (um caso por zona) e assinar. Depois, a sessão de revisão da Etapa 2. Detalhes em `docs/conhecimento/corpus.md` (seção "Fechamento da Etapa 2").
+
 ## Etapa 4 (Renderizador fiel): implementada e provada no corpus atual (06/11/2026)
 
 Plano aprovado em 06/11/2026 (`docs/plano-etapa-4.md`). 4.0 a 4.9 feitas. Prova com a ROM real (rodada 2, `docs/conhecimento/video.md`): `video-comparar` **IGUAL em 7200 quadros** (`boot-demos`) e **em 2000 quadros** (`lz-agua`, Labyrinth, com 1530 interrupcoes de linha de nivel 4); VRAM, CRAM e VSRAM iguais ao trace em todos os quadros; nenhum aviso fora do inventario; lints do nucleo e testes wasm do `sonic1-video` ok na imagem; manifesto assinado. Falta a sessao de revisao (so do que a Etapa 4 mudou) e o resumo para o chat de planejamento. A Etapa 2 continua incompleta (ver abaixo e o backlog).
