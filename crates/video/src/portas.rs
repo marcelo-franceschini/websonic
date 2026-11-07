@@ -22,6 +22,8 @@ pub struct Avisos {
     pub sombra_realce: u32,
     pub dma_copia: u32,
     pub dma_preenchimento_fora_da_vram: u32,
+    /// Quadros que acabaram com um DMA esperando palavras (acontece quando o DMA atravessa o
+    /// fim do quadro; não é recurso fora do inventário e não entra no total).
     pub dma_sem_dados: u32,
     pub dados_em_bytes: u32,
     pub modo4: u32,
@@ -40,7 +42,6 @@ impl Avisos {
             self.sombra_realce,
             self.dma_copia,
             self.dma_preenchimento_fora_da_vram,
-            self.dma_sem_dados,
             self.dados_em_bytes,
             self.modo4,
             self.coluna_esquerda,
