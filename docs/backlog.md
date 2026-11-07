@@ -8,7 +8,6 @@ Uma linha por item: o que é, dono, etapa-alvo. Só entra aqui o que não bloque
 - Proteção de branch em `main` no GitHub. Dono: Marcelo. Etapa-alvo: qualquer.
 - Prova 1.9 mostrou `eventos_int80=0` e `eventos_int68=293` em 600 quadros. Confirmar que são esperados (VBlank mascarado no boot; Z80 sem INT). Dono: Marcelo e IA. Etapa-alvo: 5.
 - R3 a R6, R8, R12 da revisão da Etapa 1 (ROM real só na prova de determinismo; tempo no início da instrução; estado inicial zerado; sem evento de DMA; wasm do `fidelidade` não rodou; oráculo construído no host). Dono: IA e Marcelo. Etapa-alvo: 2 a 5, ver `docs/conhecimento/oraculo.md`.
-- Licença dos TAS do TASVideos não verificada. Dono: Marcelo. Etapa-alvo: 14 (antes do primeiro download).
 - Comparar eventos e ciclos exatos com o segundo oráculo (nível 2). Dono: IA. Etapa-alvo: 15.
 - Confirmar a especificação dos três formatos em fonte primária (Sonic Retro bloqueou o acesso automático). Dono: Marcelo e IA. Etapa-alvo: 4 (só se o relatório da Etapa 3 mostrar `DIFERE`).
 - Provar `NemDec` (porta da VDP) além de `NemDecToRAM`: só a escrita da linha muda. Dono: IA. Etapa-alvo: 5.
@@ -16,8 +15,6 @@ Uma linha por item: o que é, dono, etapa-alvo. Só entra aqui o que não bloque
 - Rodar `cargo test --target wasm32-wasip1 -p sonic1-core -p sonic1-teste-descompressao` na imagem. Dono: Marcelo. Etapa-alvo: 5.
 - Comparar a saída dos descompressores com o segundo oráculo. Dono: IA. Etapa-alvo: 5.
 - Conversor de BK2: o formato (nome do log e ordem dos botoes do Mega Drive) nao foi confirmado em documentacao. Dono: IA. Etapa-alvo: 14, so se houver TAS em BK2.
-- Mapa A/B/C do GMV so confere na pagina do TASVideos; confirmar com um TAS real (2.5). Dono: Marcelo e IA. Etapa-alvo: 14.
-- Demos do corpus: o caso `boot-demos` cobre 7200 quadros (duas demos e inicio da terceira). Estender para 11700 cobre as quatro. Dono: Marcelo (reassinar o manifesto). Etapa-alvo: 4.
 - Desempenho do renderizador: mediana de 0,93 a 1,10 ms no nativo (orcamento 1 ms), sem folga. Otimizar planos e sprites (reuso de linhas sem mudanca). Dono: IA. Etapa-alvo: 7.
 - OQ1: o quadro 0 do oraculo e desenhado com largura 256 (esquisitice do jgenesis). Documentado; so importa se o quadro 0 tiver imagem. Dono: IA. Etapa-alvo: 7.
 - Sombra e realce, janela, H32, V30 e entrelacamento fora do renderizador. Entram se o corpus ampliado mostrar uso (aviso do `video-estado`). Dono: IA. Etapa-alvo: 10.
@@ -27,11 +24,16 @@ Uma linha por item: o que é, dono, etapa-alvo. Só entra aqui o que não bloque
 - Lista estatica de memoria compartilhada (nomes citados pelas rotinas de interrupcao nos .asm de texto) para cruzar com `docs/inventario-memoria.md`. Dono: IA. Etapa-alvo: 5.
 - Atos completos de cada zona nos testes ocultos (a Etapa 2 fecha com um caso por zona). Dono: Marcelo. Etapa-alvo: 14.
 - Mapa de rotulos sem tamanhos: o inventario de memoria agrupa pelo rotulo anterior, e pilha e areas sem rotulo caem na ultima variavel. Dono: IA. Etapa-alvo: 5.
-- D1 (segundo oráculo): fase de 1 quadro apoiada em 14 quadros do `boot-demos` (até o 5600); falta cobrir 5601 a 7200 (`sh scripts/etapa2-d1c.sh ROM 6100 6600 7100`, um por vez, é lento), olhar o ciclo da interrupção para provar a causa e separar o D1 por grupo em `oraculos.md`. Dono: IA e Marcelo. Etapa-alvo: 5.
-- Manifesto sem cobertura de `oracle/runner/tests/*`, `oracle/runner/Cargo.toml`, `crates/fidelidade/Cargo.toml` e de todo o `oracle2/`. Os testes do `oracle/` (workspace separado) também não entram na lista de testes assinada. `oracle2/` não tem regra Edit nem denyWrite no `managed-settings.json`. Dono: IA (`REFERENCIAS` em `xtask/src/manifesto.rs`), Marcelo (congelar `oracle2/` e reassinar). Etapa-alvo: 5.
-- TAS: nenhum TAS no corpus e a conferência contra a REV01 (plano 2.5, modo/zona/ato no último quadro) não existe. Corte padrão do plano. Dono: Marcelo e IA. Etapa-alvo: 14.
 - Inventário de hardware sem E/S do 68000 (versão, controle, SRAM, TMSS) e sem DMA como evento; o mapa de acessos só cobre a RAM. Dono: IA. Etapa-alvo: 5 (a Etapa 5 precisa para a entrada e a versão).
-- A auditoria dos ocultos usa um sistema sob teste mínimo (`scripts/sut-reproduz.sh`: o oráculo roda o caso sem erro). Trocar pelo núcleo comparado com o oráculo. Dono: IA. Etapa-alvo: 5.
+- A auditoria dos ocultos usa um sistema sob teste mínimo (`scripts/sut-reproduz.sh`: o oráculo roda o caso sem erro). Trocar pelo núcleo comparado com o oráculo. O "passou" tem de vir do comparador congelado, não do sistema sob teste. Dono: IA. Etapa-alvo: 5.
 - Teste `assinatura_valida_e_adulterada` passa vazio sem `ssh-keygen` (a imagem não tem openssh) e não cobre chave de outro assinante nem namespace errado; não há teste de ponta a ponta de `manifesto verificar` e `fidelidade` falhando. Dono: IA. Etapa-alvo: 5.
 - Saída literal da regravação da zona mz (rodada 4) e do `REPRODUZ` das seis zonas não está na base de conhecimento. Dono: Marcelo (colar a saída de `sh scripts/etapa2-rodada4.sh`, só vereditos). Etapa-alvo: 5.
-- Identidade `age` dos ocultos sem senha (arquivo 0600). Dono: Marcelo. Etapa-alvo: 14.
+- Fechamento da Etapa 2: executar `docs/plano-fechamento-etapa-2.md` (2.10 no contêiner, script do host, 2.11, revisão do fechamento). Dono: IA e Marcelo. Etapa-alvo: 2.
+- Sessões da IA rodam no host desde a Etapa 1, contra o requisito "Onde a IA roda: dentro do contêiner de trabalho". No host não há bloqueio técnico. Dono: Marcelo (abrir as sessões no contêiner). Etapa-alvo: já.
+- D1, causa: nenhum teste olhou o ciclo da interrupção; D1a, D1b e D1c continuam hipótese. Dono: IA. Etapa-alvo: 15.
+- Contêiner de auditoria (`.devcontainer/auditoria/devcontainer.json`, pedido P3 do plano da Etapa 2, nunca entregue). Dono: IA (patch) e Marcelo. Etapa-alvo: 9.
+- Comparação por quadro com o segundo oráculo, com a máscara de D1b e D1c (pede patch no oráculo principal para despejar a RAM a cada quadro). Dono: IA e Marcelo. Etapa-alvo: 14.
+- VRAM, CRAM, VSRAM e RAM do Z80 sem comparação com o segundo oráculo (o núcleo libretro só expõe a RAM do 68000). Dono: IA. Etapa-alvo: 14.
+- Segundo oráculo com entradas (TAS e partidas). Dono: IA. Etapa-alvo: 14.
+- TAS 5121M ("100%", BK2), junto com o conversor de BK2. Dono: IA. Etapa-alvo: 14.
+- Exclusão da pilha na comparação do núcleo contra o oráculo: decisão do Marcelo (requisitos, critério 2). Recomendação da IA: aprovar. Etapa-alvo: 5.

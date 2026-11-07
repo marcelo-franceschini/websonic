@@ -2,13 +2,9 @@
 
 Documento de acompanhamento do progresso das etapas.
 
-## Etapa 2 (Corpus e integridade): revisada, aprovada com três ressalvas (07/11/2026)
+## Etapa 2 (Corpus e integridade): revisada; fechamento planejado, não feito (07/11/2026)
 
-Revisão feita por sessão nova em 07/11/2026 (só do que a Etapa 2 mudou). Nenhum achado BLOQUEIA. Três linhas do "Pronto quando" só se sustentam por corte aprovado no plano ou por decisão registrada, e o Marcelo precisa aceitar de forma explícita:
-- Segundo oráculo: a linha diz "concorda nas demos" e isso **não** foi cumprido (ver abaixo). Vale só a via do critério 5 do pronto (diferença com decisão registrada).
-- TAS: nenhum TAS no corpus e a conferência contra a REV01 não foi implementada (corte padrão do plano, seção 1). O conversor GMV só foi provado com dado sintético.
-- Demos: o caso `boot-demos` cobre duas demos e o início da terceira, não as quatro.
-Detalhes, evidência e pendências em `docs/backlog.md` e no fim de `docs/conhecimento/corpus.md`.
+Revisão feita por sessão nova em 07/11/2026 (só do que a Etapa 2 mudou). Ela achou três linhas do "Pronto quando" sem cumprimento literal (segundo oráculo, TAS, quatro demos) e mais cinco pontos do requisito sem cumprimento (partida gravada no corpus, congelamento do que mede, trace sem cópias, senha das chaves, IA no contêiner). O Marcelo pediu que a IA decidisse. O plano com as decisões está em `docs/plano-fechamento-etapa-2.md`: sub-etapa 2.10 (IA, no contêiner), um script único do host (Marcelo) e a 2.11 (registro). **A Etapa 2 só fecha depois disso e da revisão do fechamento.**
 
 Rodadas do host de 06 e 07/11/2026. Provas, com comando e resultado em `docs/conhecimento/corpus.md` e `docs/conhecimento/oraculos.md`:
 - Patch 0003 do oráculo aplicado (mapa de acessos à RAM por contexto e gravador de entradas); testes do oráculo OK, incluindo o que falha sem a correção dos botões no quadro.
@@ -18,9 +14,10 @@ Rodadas do host de 06 e 07/11/2026. Provas, com comando e resultado em `docs/con
 - Manifesto assinado (207 linhas); `cargo xtask fidelidade`: manifesto, determinismo e traces `PASSOU`; `veredito: PASSOU`. Hashes novos: `lz-agua` `9f8d8be1…`, `boot-demos` `52ed49ce…`.
 - Segundo oráculo: **não concorda** em todos os quadros, então a linha "concorda nas demos" da Etapa 2 não foi cumprida. D1 foi medido só nos quadros 51, 52, 53, 60, 120 e 600 do `boot-demos` (4, 1, 3, 13 e 197 bytes, conforme a rodada). A região explicava `v_megadrive` (corrigida, provado no quadro 53). O resto são variáveis de tempo, que a hipótese atribui ao ponto de fechamento do quadro em relação ao VBlank. **É hipótese, sem prova**, e a diferença cresce com o tempo. Decisão registrada: vale o oráculo principal. Isso atende o critério 5 do pronto (diferença com decisão registrada), não a linha da Etapa 2.
   - Atualização (07/11/2026, quarta a sexta rodadas, `oraculos.md`): o principal no quadro N contra o segundo no quadro N+1 deixa, em 14 quadros do `boot-demos` (até o 5600), só pilha (`FFFCC0..FFFDFF`) e 3 variáveis de tempo (`v_vblank_routine`, `v_jpadhold1`, `v_jpadpress1`). Nenhuma variável de lógica difere. A causa continua hipótese. Não cobre os quadros 5601 a 7200.
-  - Decisão que falta do Marcelo: aprovar a exclusão da pilha na comparação entre oráculos e aceitar "fase de 1 quadro" como a forma de concordar nas demos.
+  - Decisão (IA, a pedido do Marcelo, pela regra do requisitos): D1 vira D1a (alinhamento), D1b (pilha) e D1c (3 variáveis de tempo), todas com "vale o principal". Faltam amostras do fim da MZ, da SYZ e da special stage. Ver `docs/plano-fechamento-etapa-2.md`, D-R1.
 - Limite aceito: os testes ocultos desta etapa são um caso curto por zona; os atos completos ficam para a Etapa 14.
-- Revisão da Etapa 2: feita em 07/11/2026. Falta o Marcelo aceitar as três ressalvas acima.
+- Revisão da Etapa 2: feita em 07/11/2026. Fechamento em `docs/plano-fechamento-etapa-2.md`.
+- Aviso: esta sessão de revisão e as sessões desde a Etapa 1 rodaram no host, fora do contêiner. O requisito decide que a IA roda no contêiner. O fechamento roda no contêiner.
 
 ## Etapa 4 (Renderizador fiel): implementada e provada no corpus atual (06/11/2026)
 
