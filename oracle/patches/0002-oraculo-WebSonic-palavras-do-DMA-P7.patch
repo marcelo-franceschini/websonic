@@ -1,0 +1,71 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index cd0d441b..53ea7a5e 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -1679,6 +1679,7 @@ dependencies = [
+  "jgenesis-proc-macros",
+  "log",
+  "m68000-emu",
++ "oracle-trace",
+  "regex",
+  "test-log",
+  "z80-emu",
+diff --git a/backend/genesis-components/Cargo.toml b/backend/genesis-components/Cargo.toml
+index 03f0c27f..ffd4b973 100644
+--- a/backend/genesis-components/Cargo.toml
++++ b/backend/genesis-components/Cargo.toml
+@@ -6,6 +6,7 @@ version.workspace = true
+ [dependencies]
+ jgenesis-common = { workspace = true }
+ jgenesis-proc-macros = { workspace = true }
++oracle-trace = { workspace = true }
+ 
+ genesis-config = { workspace = true }
+ 
+diff --git a/backend/genesis-components/src/vdp.rs b/backend/genesis-components/src/vdp.rs
+index a7034472..7218fb98 100644
+--- a/backend/genesis-components/src/vdp.rs
++++ b/backend/genesis-components/src/vdp.rs
+@@ -1490,6 +1490,8 @@ impl Vdp {
+         }
+ 
+         let word = memory.read_word_for_dma(self.registers.dma_source_address);
++        // Oraculo WebSonic (P7): registra a palavra lida pelo DMA.
++        oracle_trace::dma_word(word);
+         self.increment_dma_source_address();
+ 
+         self.push_fifo(VdpFifoEntry {
+diff --git a/common/oracle-trace/src/lib.rs b/common/oracle-trace/src/lib.rs
+index 2bc1ba5d..99316874 100644
+--- a/common/oracle-trace/src/lib.rs
++++ b/common/oracle-trace/src/lib.rs
+@@ -88,6 +88,7 @@ thread_local! {
+     static ENABLED: Cell<bool> = const { Cell::new(false) };
+     static CTX: Cell<Ctx> = const { Cell::new(Ctx { mclk: 0, src: 0, line: 0, col: 0, pc68: 0, pc80: 0 }) };
+     static BUF: RefCell<Vec<Raw>> = const { RefCell::new(Vec::new()) };
++    static DMA: RefCell<Vec<u16>> = const { RefCell::new(Vec::new()) };
+ }
+ 
+ /// Liga ou desliga o registro.
+@@ -189,3 +190,21 @@ pub fn drain(saida: &mut Vec<Raw>) {
+ pub fn clear() {
+     BUF.with(|b| b.borrow_mut().clear());
+ }
++
++/// Registra uma palavra lida pelo DMA de memoria para VDP, na ordem de leitura (pedido P7).
++#[inline]
++pub fn dma_word(palavra: u16) {
++    if enabled() {
++        DMA.with(|d| d.borrow_mut().push(palavra));
++    }
++}
++
++/// Entrega e esvazia as palavras de DMA acumuladas.
++pub fn take_dma() -> Vec<u16> {
++    DMA.with(|d| std::mem::take(&mut *d.borrow_mut()))
++}
++
++/// Descarta as palavras de DMA acumuladas.
++pub fn clear_dma() {
++    DMA.with(|d| d.borrow_mut().clear());
++}

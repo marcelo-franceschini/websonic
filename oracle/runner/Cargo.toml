@@ -13,6 +13,7 @@ jgenesis-common = { path = "../../target/oracle-fonte/common/jgenesis-common" }
 oracle-trace = { path = "../../target/oracle-fonte/common/oracle-trace" }
 bincode = "2"
 sonic1-fidelidade = { path = "../../crates/fidelidade" }
+sonic1-formato-video = { path = "../../crates/formato-video" }
 
 [lints.clippy]
 all = { level = "warn", priority = -1 }

@@ -28,6 +28,9 @@ dist/
 *.gst
 *.s1t
 *.s1e
+*.s1i
+*.s1p
+*.s1v
 
 # Midia e capturas brutas
 *.wav

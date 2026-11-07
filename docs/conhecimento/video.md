@@ -66,3 +66,13 @@ ROM `programa_video` (escrita por nos): liga o display, grava a cor 0 da CRAM no
 - O renderizador copia o comportamento do oraculo, inclusive o que o proprio codigo dele marca como duvidoso. A diferenca para o hardware real fica para o desempate (plano da Etapa 4, secao 5).
 - Janela, sombra e realce, entrelacamento, H32, V30, copia de VRAM por DMA, VRAM de 128 KiB e coluna da esquerda apagada: so contam um aviso.
 - O quadro e fechado na linha 232, como o oraculo.
+
+## Rodada do host de 06/11/2026 (Marcelo, com a ROM real)
+
+- Oraculo com P6 e P7 aplicados: `Testes do oraculo: OK`, patches `9e065ee5`. Hooks 14 de 14. O `checa-core`, o `lints-core` e os testes wasm **nao rodaram**: a imagem `websonic-dev:ci` nao existe no host (precisa `docker build -t websonic-dev:ci -f .devcontainer/Dockerfile .`, como o CI).
+- O hash do trace do `boot-demos` mudou de `d0acd7fe` para `ee5d2725`. Explicacao: o cabecalho do trace carrega o hash dos patches do oraculo (`ID_ORACULO`), que mudou com o P7. O conteudo dos eventos nao foi comparado quadro a quadro com o trace antigo (foi sobrescrito). `determinismo: PASSOU`.
+- **`video-comparar`: IGUAL em 7200 quadros (`boot-demos`) e em 1500 quadros (`lz-agua`).** Isto vale para a imagem de 320x224 em 9 bits da Sega, do titulo e das demos de GHZ, MZ e do inicio de SYZ. O criterio da etapa esta cumprido para esse corpus, mas ele nao tem interrupcao de linha (ver abaixo).
+- `lz-agua` (1a versao): o perfil mostrou zona 0 (GHZ), nao a Labyrinth. O codigo do seletor foi digitado cedo demais, aos quadros 420 a 435 (o titulo comeca perto do quadro 360 e demora a ler o controle), e o A + Start aos 450 iniciou a fase 1 normal. Corrigido: sequencia a partir do quadro 560 e 2000 quadros.
+- `video-estado`: CRAM e VSRAM iguais em todos os quadros, mas a VRAM difere em 1129 dos 7200 quadros (a primeira no 354) e as imagens batem. Hipotese: o oraculo fecha o quadro no fim da instrucao que cruza para a linha 232, e nao no comeco dela; com DMA em andamento a VRAM nesse instante tem palavras a mais ou a menos. Correcao feita: `fechar_quadro_em(coluna)` com a coluna `mclk_fim - inicio_da_linha_232`. Ainda nao verificado com a ROM.
+- `avisos_fora_do_inventario` deu 2406 e 440. O detalhe por campo agora e impresso (`avisos=...`). Hipotese: `dma_sem_dados`, que conta quadros que terminam com DMA parado sem palavras, e nao um recurso fora do inventario de fato.
+- Desempenho nativo: mediana 982 us, maximo 1016 us (orcamento 1000 us).

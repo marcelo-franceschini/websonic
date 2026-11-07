@@ -40,7 +40,7 @@ for alvo in nativo wasm32-unknown-unknown wasm32-wasip1; do
     fi
     echo "== clippy do nucleo: $alvo =="
     # shellcheck disable=SC2086  # $sel e vazio ou "--target X", sem espacos no valor.
-    cargo clippy --locked --config "$conf_clippy_valor" --config env.CLIPPY_CONF_DIR.force=true -p sonic1-core --all-features --all-targets $sel -- \
+    cargo clippy --locked --config "$conf_clippy_valor" --config env.CLIPPY_CONF_DIR.force=true -p sonic1-core -p sonic1-video --all-features --all-targets $sel -- \
         -D warnings \
         -F unsafe_code \
         -F clippy::float_arithmetic \

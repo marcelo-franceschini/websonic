@@ -26,7 +26,7 @@ bin=$CARGO_TARGET_DIR/release/oraculo
 unset CARGO_TARGET_DIR
 
 echo "=== PERFIL DA LABYRINTH (so as linhas em que modo, zona, ato ou demo mudam) ==="
-"$bin" rodar --rom "$rom" --quadros 1500 --saida /dev/null --entradas corpus/lz-agua.s1in \
+"$bin" rodar --rom "$rom" --quadros 2000 --saida /dev/null --entradas corpus/lz-agua.s1in \
     --perfil-a-cada 60 --rotulos refs/rotulos.txt | grep '^perfil ' \
     | awk '{k=$3" "$4" "$5" "$6; if (k!=u) print; u=k}'
 
@@ -55,7 +55,7 @@ for caso in boot-demos lz-agua; do
 done
 
 echo "=== DESEMPENHO NATIVO ==="
-cargo test -p sonic1-video --release --test desempenho -- --ignored --nocapture 2>&1 | grep video-bench
+WEBSONIC_BENCH=1 cargo test -p sonic1-video --release --test desempenho -- --nocapture 2>&1 | grep video-bench
 
 echo "=== MANIFESTO (sem assinar) ==="
 grep -hv '^determinismo' "$traces/resumo4.tsv" > "$traces/hashes4.tsv"

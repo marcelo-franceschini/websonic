@@ -40,15 +40,23 @@ if grep -rnE '^\[(patch|replace)' --include=Cargo.toml . 2>/dev/null | grep -v '
 fi
 
 # ---- 2. Dependencias do nucleo ----
-if [ -e crates/core/build.rs ] || find crates/core -name build.rs | grep -q .; then
-    falha "crates/core nao pode ter build.rs."
-fi
-if grep -nE '^[[:space:]]*(build|links)[[:space:]]*=' crates/core/Cargo.toml; then
-    falha "crates/core/Cargo.toml nao pode declarar build ou links."
-fi
-deps=$(cargo tree --locked -p sonic1-core -e normal,build,dev --target all --all-features \
-    --prefix none 2>&1) || { echo "$deps" >&2; falha "cargo tree falhou."; deps=""; }
-atuais=$(printf '%s\n' "$deps" | sed -e 's/ .*//' | grep -v '^$' | sort -u | grep -vx 'sonic1-core')
+# Os dois crates que seguem os lints do nucleo: core e video (Etapa 4).
+for c in core video; do
+    if [ -e "crates/$c/build.rs" ] || find "crates/$c" -name build.rs | grep -q .; then
+        falha "crates/$c nao pode ter build.rs."
+    fi
+    if grep -nE '^[[:space:]]*(build|links)[[:space:]]*=' "crates/$c/Cargo.toml"; then
+        falha "crates/$c/Cargo.toml nao pode declarar build ou links."
+    fi
+done
+deps=""
+for p in sonic1-core sonic1-video; do
+    d1=$(cargo tree --locked -p "$p" -e normal,build,dev --target all --all-features \
+        --prefix none 2>&1) || { echo "$d1" >&2; falha "cargo tree falhou."; d1=""; }
+    deps="$deps
+$d1"
+done
+atuais=$(printf '%s\n' "$deps" | sed -e 's/ .*//' | grep -v '^$' | sort -u | grep -vx 'sonic1-core' | grep -vx 'sonic1-video')
 lista=$(sed -e 's/#.*//' -e 's/[[:space:]]//g' .github/deps-core.txt | sed '/^$/d' | sort -u)
 [ "$atuais" = "$lista" ] || falha "dependencias do sonic1-core diferem de .github/deps-core.txt.
   no cargo tree: $(echo $atuais)
@@ -58,7 +66,7 @@ lista=$(sed -e 's/#.*//' -e 's/[[:space:]]//g' .github/deps-core.txt | sed '/^$/
 # Procura nos .rs e no Cargo.toml do nucleo. Comentarios de linha ficam de fora do teste de
 # ponto flutuante, para a documentacao poder falar de numeros.
 proibe() { # <descricao> <regex>
-    if grep -rnE --include='*.rs' --include=Cargo.toml -- "$2" crates/core; then
+    if grep -rnE --include='*.rs' --include=Cargo.toml -- "$2" crates/core crates/video; then
         falha "$1"
     fi
 }
@@ -69,10 +77,10 @@ proibe "cfg de plataforma ou de compilacao no nucleo (use so cfg(test))." \
     'cfg[[:space:]]*\(.*(target_|windows|unix|debug_assertions|miri|panic)'
 proibe "extern crate, macro_use ou proc_macro no nucleo." 'extern[[:space:]]+crate|macro_use|proc_macro'
 proibe "lints do Cargo.toml do nucleo com allow ou expect." '=[[:space:]]*"(allow|expect)"|level[[:space:]]*=[[:space:]]*"(allow|expect)"'
-if grep -rnE --include='*.rs' '(^|[^[:alnum:]_])f(32|64)([^[:alnum:]_]|$)' crates/core; then
+if grep -rnE --include='*.rs' '(^|[^[:alnum:]_])f(32|64)([^[:alnum:]_]|$)' crates/core crates/video; then
     falha "tipo de ponto flutuante no nucleo."
 fi
-if grep -rn --include='*.rs' -vE '^[[:space:]]*//' crates/core | grep -E '[^[:alnum:]_.][0-9]+\.[0-9]+([eE][+-]?[0-9]+)?'; then
+if grep -rn --include='*.rs' -vE '^[[:space:]]*//' crates/core crates/video | grep -E '[^[:alnum:]_.][0-9]+\.[0-9]+([eE][+-]?[0-9]+)?'; then
     falha "literal de ponto flutuante no nucleo."
 fi
 

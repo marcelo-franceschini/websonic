@@ -87,6 +87,8 @@ pub struct Renderizador {
     vdp: Vdp,
     quadro: Quadro,
     // Tempo.
+    /// O quadro acabou de ser fechado e nada andou desde então.
+    fechado: bool,
     linha: u16,
     ponto: u16,
     proximo_evento: usize,
@@ -123,6 +125,7 @@ impl Renderizador {
         Self {
             vdp: Vdp::nova(),
             quadro: Quadro::novo(),
+            fechado: false,
             linha: 0,
             ponto: 0,
             proximo_evento: 0,
@@ -171,6 +174,7 @@ impl Renderizador {
 
     /// Avança o tempo até (`linha`, `coluna`) e aplica a escrita.
     pub fn aplicar(&mut self, linha: u16, coluna: u64, escrita: Escrita) {
+        self.fechado = false;
         self.avancar_ate(linha, coluna);
         let antes = self.vdp.registros.brutos;
         match escrita {
@@ -187,14 +191,21 @@ impl Renderizador {
         self.depois_da_escrita(mudou);
     }
 
-    /// Termina o quadro do oráculo (linha 232) e devolve a imagem.
+    /// Termina o quadro do oráculo (linha 232, coluna 0) e devolve a imagem.
     pub fn fechar_quadro(&mut self) -> &Quadro {
-        // Se o quadro anterior acabou de fechar neste mesmo ponto, um quadro inteiro se passou.
-        if self.linha == LINHA_DO_FIM_DO_QUADRO && self.ponto == 0 {
+        self.fechar_quadro_em(0)
+    }
+
+    /// Termina o quadro na coluna em que o oráculo o fechou (o fim da instrução que cruzou para a
+    /// linha 232). O estado da VRAM e da CRAM do oráculo é o desse instante.
+    pub fn fechar_quadro_em(&mut self, coluna: u64) -> &Quadro {
+        // Se o quadro anterior acabou de fechar e nada andou, um quadro inteiro se passou.
+        if self.fechado {
             self.terminar_linha();
         }
-        self.avancar_ate(LINHA_DO_FIM_DO_QUADRO, 0);
+        self.avancar_ate(LINHA_DO_FIM_DO_QUADRO, coluna);
         self.vdp.conferir_dma_pendente();
+        self.fechado = true;
         &self.quadro
     }
 
@@ -213,6 +224,7 @@ impl Renderizador {
     }
 
     fn terminar_linha(&mut self) {
+        self.fechado = false;
         self.avancar_pontos(PONTOS_POR_LINHA);
         self.trocar_pontos_da_cram();
         self.linha = (self.linha.saturating_add(1)) % LINHAS_POR_QUADRO;

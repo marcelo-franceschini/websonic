@@ -8,4 +8,4 @@ pub mod oraculo;
 pub mod rom_sintetica;
 
 pub use entradas::{Botao, Entradas};
-pub use oraculo::{ChamadaRotina, MotivoParada, Oraculo, Parada, ResultadoRotina};
+pub use oraculo::{CapturaTela, ChamadaRotina, MotivoParada, Oraculo, Parada, ResultadoRotina};

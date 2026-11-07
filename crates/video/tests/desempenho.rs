@@ -1,7 +1,7 @@
 //! Medida de desempenho do renderizador (sub-etapa 4.9). Não faz parte do conjunto normal:
-//! `cargo test -p sonic1-video --release --test desempenho -- --ignored --nocapture`
-//! Em wasm: `cargo test --target wasm32-wasip1 -p sonic1-video --release --test desempenho
-//! -- --ignored --nocapture`.
+//! `WEBSONIC_BENCH=1 cargo test -p sonic1-video --release --test desempenho -- --nocapture`
+//! Em wasm: `WEBSONIC_BENCH=1 cargo test --target wasm32-wasip1 -p sonic1-video --release --test
+//! desempenho -- --nocapture` (com a variável passada ao wasmtime).
 //! Orçamento (plano da Etapa 4): nativo até 1000 microssegundos por quadro e wasm até 4000.
 //! O tempo é medido aqui, nos testes, e nunca no código do crate.
 
@@ -30,8 +30,11 @@ fn quadro_pesado(r: &mut Renderizador, n: u16) {
 }
 
 #[test]
-#[ignore = "medida de desempenho"]
 fn desempenho_do_renderizador() {
+    // Sem a variável, o teste não mede nada (assim ele não pesa no conjunto normal).
+    if std::env::var_os("WEBSONIC_BENCH").is_none() {
+        return;
+    }
     let mut r = cena(7);
     // Rolagem por linha e tabela de rolagem cheia.
     reg(&mut r, 240, 11, 0x03);

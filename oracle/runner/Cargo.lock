@@ -277,6 +277,7 @@ dependencies = [
  "jgenesis-proc-macros",
  "log",
  "m68000-emu",
+ "oracle-trace",
  "regex",
  "z80-emu",
 ]
@@ -830,6 +831,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "sonic1-formato-video"
+version = "0.0.0"
+
+[[package]]
 name = "sonic1-rom"
 version = "0.0.0"
 
@@ -1037,6 +1042,7 @@ dependencies = [
  "jgenesis-common",
  "oracle-trace",
  "sonic1-fidelidade",
+ "sonic1-formato-video",
 ]
 
 [[package]]

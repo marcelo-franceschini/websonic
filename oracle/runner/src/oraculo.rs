@@ -27,16 +27,61 @@ const MAGIA_ESTADO: &[u8; 8] = b"S1ESTADO";
 
 // ---- Sinks nulos: o oraculo nao tem tela, nem som, nem arquivo de save. ----
 
-struct SemTela;
-impl Renderer for SemTela {
+/// Tabela de niveis de cor do jgenesis na configuracao do oraculo (escala nao linear, sem
+/// escurecimento): o nivel de 3 bits do canal e a posicao do valor de 8 bits nesta lista.
+const NIVEIS_NORMAL: [u8; 8] = [0, 52, 87, 116, 144, 172, 206, 255];
+
+/// Converte um canal de 8 bits no nivel de 3 bits. `None` se o valor nao esta na tabela
+/// (por exemplo, um ponto de sombra ou realce).
+fn nivel(valor: u8) -> Option<u16> {
+    NIVEIS_NORMAL
+        .iter()
+        .position(|n| *n == valor)
+        .and_then(|i| u16::try_from(i).ok())
+}
+
+/// Cor de 9 bits (`BBBGGGRRR`, 0 a 511) de um ponto do jgenesis.
+pub fn cor9(c: &Color) -> Option<u16> {
+    Some((nivel(c.b)? << 6) | (nivel(c.g)? << 3) | nivel(c.r)?)
+}
+
+/// Captura a imagem de cada quadro renderizado, ja na cor de 9 bits (pedido P6).
+#[derive(Default)]
+pub struct CapturaTela {
+    /// Pontos do ultimo quadro, linha apos linha.
+    pub pontos: Vec<u16>,
+    pub largura: u32,
+    pub altura: u32,
+    /// Primeiro ponto cuja cor nao esta na tabela de 9 bits.
+    pub erro: Option<String>,
+}
+
+impl Renderer for CapturaTela {
     type Err = Infallible;
     fn render_frame(
         &mut self,
-        _quadro: &[Color],
-        _tamanho: FrameSize,
+        quadro: &[Color],
+        tamanho: FrameSize,
         _fps: f64,
         _opcoes: RenderFrameOptions,
     ) -> Result<(), Infallible> {
+        self.largura = tamanho.width;
+        self.altura = tamanho.height;
+        self.pontos.clear();
+        self.erro = None;
+        // O vetor do jgenesis tem tamanho fixo (maximo); so os primeiros largura x altura pontos valem.
+        let total = usize::try_from(tamanho.width.saturating_mul(tamanho.height)).unwrap_or(0);
+        for c in quadro.iter().take(total) {
+            match cor9(c) {
+                Some(v) => self.pontos.push(v),
+                None => {
+                    if self.erro.is_none() {
+                        self.erro = Some("ponto com cor fora da tabela de 9 bits".into());
+                    }
+                    self.pontos.push(0);
+                }
+            }
+        }
         Ok(())
     }
 }
@@ -154,6 +199,8 @@ pub struct Oraculo {
     psg: [u16; 8],
     psg_ultimo: u8,
     passos: u64,
+    tela: CapturaTela,
+    dma_quadro: Vec<u16>,
 }
 
 impl Oraculo {
@@ -171,6 +218,7 @@ impl Oraculo {
         };
         oracle_trace::set_enabled(true);
         oracle_trace::clear();
+        oracle_trace::clear_dma();
         let emu = GenesisEmulator::create(
             genesis_core::api::GenesisHardware::Standalone,
             Some(rom),
@@ -195,11 +243,24 @@ impl Oraculo {
             psg: [0; 8],
             psg_ultimo: 0,
             passos: 0,
+            tela: CapturaTela::default(),
+            dma_quadro: Vec::new(),
         };
         // Eventos gerados na criacao (reset) nao pertencem a nenhum quadro.
         oracle_trace::clear();
+        oracle_trace::clear_dma();
         oraculo.brutos.clear();
         Ok(oraculo)
+    }
+
+    /// Imagem do ultimo quadro renderizado, na cor de 9 bits (pedido P6).
+    pub fn imagem(&self) -> &CapturaTela {
+        &self.tela
+    }
+
+    /// Palavras que o DMA de memoria para VDP leu no ultimo quadro fechado (pedido P7).
+    pub fn dma_do_quadro(&self) -> &[u16] {
+        &self.dma_quadro
     }
 
     pub fn cabecalho(&self) -> &Cabecalho {
@@ -234,7 +295,7 @@ impl Oraculo {
         let efeito = self
             .emu
             .tick(
-                &mut SemTela,
+                &mut self.tela,
                 &mut SemSom,
                 &mut Leitor(&self.inputs),
                 &mut SemArquivos,
@@ -243,6 +304,7 @@ impl Oraculo {
         self.passos += 1;
         self.coletar();
         if efeito == TickEffect::FrameRendered {
+            self.dma_quadro = oracle_trace::take_dma();
             let quadro = self.fechar_quadro();
             // Os botoes do proximo quadro valem a partir daqui.
             self.inputs = entradas_da_mascara(self.entradas.do_quadro(self.quadro));
@@ -504,6 +566,7 @@ impl Oraculo {
         self.inputs = entradas_da_mascara(mascara);
         self.brutos.clear();
         oracle_trace::clear();
+        oracle_trace::clear_dma();
         Ok(())
     }
 

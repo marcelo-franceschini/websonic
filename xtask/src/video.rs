@@ -59,7 +59,10 @@ pub fn aplicar_quadro(r: &mut Renderizador, q: &QuadroDoTrace, dma: &BTreeMap<u3
         };
         r.aplicar(e.linha, u64::from(e.coluna), escrita);
     }
-    r.fechar_quadro();
+    // O oráculo fecha o quadro no fim da instrução que cruza para a linha 232: a coluna é a
+    // distância do `mclk` final até o começo dessa linha.
+    let inicio_da_linha = (232u64 + 262 * u64::from(q.numero)) * 3420;
+    r.fechar_quadro_em(q.mclk_fim.saturating_sub(inicio_da_linha));
 }
 
 fn palavras_em_bytes(p: &[u16]) -> Vec<u8> {
@@ -110,6 +113,7 @@ pub fn estado(args: &[String]) -> Result<(), String> {
     }
     println!("quadros={total} vram_iguais={ok_vram} cram_iguais={ok_cram} vsram_iguais={ok_vsram}");
     println!("avisos_fora_do_inventario={}", r.vdp().avisos.total());
+    println!("avisos={:?}", r.vdp().avisos);
     match primeira {
         None => println!("video-estado: IGUAL em {total} quadros"),
         Some((q, c)) => println!("video-estado: DIFERE no quadro {q}, categoria {c}"),
@@ -249,6 +253,7 @@ pub fn comparar(args: &[String]) -> Result<(), String> {
         }
     }
     println!("avisos_fora_do_inventario={}", r.vdp().avisos.total());
+    println!("avisos={:?}", r.vdp().avisos);
     let resumo = match primeiro {
         None => format!("video: IGUAL em {total} quadros"),
         Some(q) => format!("video: DIFERE no quadro {q} ({iguais} de {total} quadros iguais)"),

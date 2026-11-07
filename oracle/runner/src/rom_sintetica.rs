@@ -132,3 +132,35 @@ pub fn programa_z80() -> Vec<u8> {
     rom.palavras(0x200, &codigo);
     rom.finalizar()
 }
+
+/// Programa 4: video. Liga o display em H40, pinta a cor 0 da CRAM de azul maximo ($0E00) e faz um
+/// DMA de 4 palavras da ROM (em $1000) para a VRAM em $8000. Depois fica em laco.
+pub fn programa_video() -> Vec<u8> {
+    let mut rom = RomSintetica::nova(SSP, 0x200);
+    rom.palavras(
+        0x200,
+        &[
+            0x46FC, 0x2700, // move.w #$2700,sr
+            0x33FC, 0x8F02, 0x00C0, 0x0004, // reg 15 = 2 (incremento automatico)
+            0x33FC, 0x8004, 0x00C0, 0x0004, // reg 0 = $04 (cor de 9 bits)
+            0x33FC, 0x8C81, 0x00C0, 0x0004, // reg 12 = $81 (40 colunas)
+            0x33FC, 0x8700, 0x00C0, 0x0004, // reg 7 = 0 (fundo: cor 0 da paleta 0)
+            0x33FC, 0x8174, 0x00C0, 0x0004, // reg 1 = $74 (video ligado, VBlank, DMA)
+            0x23FC, 0xC000, 0x0000, 0x00C0, 0x0004, // CRAM, endereco 0
+            0x33FC, 0x0E00, 0x00C0, 0x0000, // cor 0 = azul maximo
+            0x33FC, 0x9304, 0x00C0, 0x0004, // reg 19 = 4 (comprimento do DMA)
+            0x33FC, 0x9400, 0x00C0, 0x0004, // reg 20 = 0
+            0x33FC, 0x9500, 0x00C0, 0x0004, // reg 21 = 0 (fonte, palavras)
+            0x33FC, 0x9608, 0x00C0, 0x0004, // reg 22 = 8 (fonte = $1000 em bytes)
+            0x33FC, 0x9700, 0x00C0, 0x0004, // reg 23 = 0 (68000 para VDP)
+            0x23FC, 0x4000, 0x0082, 0x00C0,
+            0x0004, // VRAM, endereco $8000 (longe do tile 0), com DMA
+            0x60FE, // bra.s *
+        ],
+    );
+    rom.palavras(0x1000, &PALAVRAS_DMA_VIDEO);
+    rom.finalizar()
+}
+
+/// As 4 palavras que o DMA de `programa_video` transfere.
+pub const PALAVRAS_DMA_VIDEO: [u16; 4] = [0x1111, 0x2222, 0x3333, 0x4444];
