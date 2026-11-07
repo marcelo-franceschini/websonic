@@ -34,6 +34,16 @@ arquivo	descompressao/manifesto.txt	8907310c9a30fe4742bae7d66a3cee2556501699ee42
 arquivo	descompressao/prova.sh	dfbd68f2f7e1237479df58cc5a0351be4d5132b7d75c25824c9e5f21c1693bfa
 trace	lz-agua	6a15450b20c80668b607bc7897769c4cbcbfbd4e
 trace	boot-demos	f3eb73fe57a7f74df62d0d434b81b570892e54ed
+zona	ghz	-
+oculto	ghz/caso1.s1in.age	7308a803b2828316cc31e671cca15e5679d148756f15acfb57ee31f63618dac0
+zona	lz	-
+oculto	lz/caso1.s1in.age	39669620a6a45bcff7d3be0ad3bab4148443ea281f24131c1b34f67018f68cbb
+zona	sbz	-
+oculto	sbz/caso1.s1in.age	2c984ad7502c01ee204ca9dc5886cf53456a41dd1889e287bf6f4d574e2eb19d
+zona	slz	-
+oculto	slz/caso1.s1in.age	cbafb75daddb7b3fed8dde2f8eb995878387ce202802134a9b2dd86e0323e287
+zona	syz	-
+oculto	syz/caso1.s1in.age	88f2d6cb881b1fb013281138e8785f603627c1db45a0bf080b7355b8893562d2
 teste	desempenho::desempenho_do_renderizador	-
 teste	formatos::enigma_erros	-
 teste	formatos::enigma_ida_e_volta_com_tile_inicial	-

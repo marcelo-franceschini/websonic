@@ -31,3 +31,4 @@ Uma linha por item: o que é, dono, etapa-alvo. Só entra aqui o que não bloque
 - Lista estatica de memoria compartilhada (nomes citados pelas rotinas de interrupcao nos .asm de texto) para cruzar com `docs/inventario-memoria.md`. Dono: IA. Etapa-alvo: 5.
 - Atos completos de cada zona nos testes ocultos (a Etapa 2 fecha com um caso por zona). Dono: Marcelo. Etapa-alvo: 14.
 - Mapa de rotulos sem tamanhos: o inventario de memoria agrupa pelo rotulo anterior, e pilha e areas sem rotulo caem na ultima variavel. Dono: IA. Etapa-alvo: 5.
+- D1: confirmar que a diferenca restante com o segundo oraculo e so o ponto de fechamento do quadro em relacao ao VBlank (comparar a RAM no quadro seguinte, ou fixar o ponto de comparacao no inicio do VBlank). Dono: IA e Marcelo. Etapa-alvo: 15.

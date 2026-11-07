@@ -47,3 +47,10 @@
 - **`cargo xtask fidelidade`:** manifesto (assinatura, referências, testes), traces do corpus contra o manifesto assinado (mais determinismo) e diferenças do segundo oráculo com decisão registrada em `oraculos.md`. Não roda o segundo oráculo; isso é `scripts/etapa2-oraculo2.sh`. Prova: 3 testes em `cargo test -p xtask`.
 - **D1:** `oraculo2 diferencas` compara os despejos de RAM dos dois oráculos no quadro N e imprime só faixas de endereço, nome da variável mais próxima e contagens. Roda em `scripts/etapa2-final.sh`. O resultado ainda não foi lido.
 - **Hash do trace:** o cabeçalho entra no hash e carrega o hash dos patches. Depois do patch 0003 os `hash_do_trace` mudam e o manifesto é regerado (`scripts/etapa2-fechar.sh`).
+
+## Rodada do host (07/11/2026): gravador e ocultos
+
+- Prova do gravador com janela: `gravacao: REPRODUZ` em 2526 quadros (RAM do último quadro idêntica ao oráculo sem janela). Configuração forçada por `--config-override` (`genesis.forced_region=Japan`, `genesis.forced_timing_mode=Ntsc`, `input.genesis.p1_type=ThreeButton`).
+- Cinco zonas gravadas e cifradas (ghz, syz, lz, slz, sbz), cada uma com `REPRODUZ`. A auditoria decifra em `/dev/shm` e imprime `zona: passou (1 casos)` para as cinco.
+- A zona mz deu `DIFERE`. Causa provável: um botão que mudou no meio de um quadro (o gravador guardava só o valor do início, mas a janela usava o valor corrente). Correção: com o gravador ligado, o núcleo usa os botões do início do quadro durante o quadro inteiro (patch `docs/pedidos/etapa2-oraculo-2.patch`, teste `oracle/runner/tests/gravador.rs`, que falha sem a correção). A mz foi regravada na rodada 4.
+- Aviso do jgenesis: `Invalid keyboard input string` para a tecla de rebobinar (crase) na configuração do usuário. Não afeta a gravação.

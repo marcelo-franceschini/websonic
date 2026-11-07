@@ -1,0 +1,110 @@
+diff --color -ruN -x target -x Cargo.lock base2/oracle/patches/0003-etapa2-mapa-de-acessos-e-gravador.patch repo/oracle/patches/0003-etapa2-mapa-de-acessos-e-gravador.patch
+--- a/oracle/patches/0003-etapa2-mapa-de-acessos-e-gravador.patch	2026-11-07 00:18:34.000000000 -0300
++++ b/oracle/patches/0003-etapa2-mapa-de-acessos-e-gravador.patch	2026-11-07 00:33:02.722322629 -0300
+@@ -1,19 +1,24 @@
+ diff --git a/backend/genesis-core/src/api.rs b/backend/genesis-core/src/api.rs
+-index 293c0d80..5b2623bb 100644
++index 293c0d80..d43f8b27 100644
+ --- a/backend/genesis-core/src/api.rs
+ +++ b/backend/genesis-core/src/api.rs
+-@@ -240,7 +240,9 @@ impl GenesisEmulator {
++@@ -240,7 +240,14 @@ impl GenesisEmulator {
+          I: InputPoller<GenesisInputs>,
+          S: SaveWriter,
+      {
+ -        self.bus.input.set_inputs(*input_poller.poll());
+-+        let oraculo_entradas = *input_poller.poll();
+++        let mut oraculo_entradas = *input_poller.poll();
+ +        let oraculo_gravando = self.oracle_gravador_passo(&oraculo_entradas);
+++        if oraculo_gravando {
+++            // Gravando: o quadro inteiro usa os botoes do seu inicio, que e o que o oraculo
+++            // reproduz. Sem isso, um botao que muda no meio do quadro nao seria reproduzivel.
+++            oraculo_entradas = oracle::oracle_entradas_do_quadro(oraculo_entradas);
+++        }
+ +        self.bus.input.set_inputs(oraculo_entradas);
+          self.bus.m68k_opcode = self.m68k.next_opcode();
+  
+          // Contexto de tempo dos eventos do oraculo: inicio da instrucao do 68000.
+-@@ -301,6 +303,9 @@ impl GenesisEmulator {
++@@ -301,6 +308,9 @@ impl GenesisEmulator {
+          self.audio_resampler.output_samples(audio_output).map_err(GenesisError::Audio)?;
+  
+          if vdp_tick_effect == VdpTickEffect::FrameComplete {
+@@ -24,10 +29,10 @@
+                  && sega_32x.adapter_enabled()
+              {
+ diff --git a/backend/genesis-core/src/api/oracle.rs b/backend/genesis-core/src/api/oracle.rs
+-index 0f036f4a..f76a1362 100644
++index 0f036f4a..c64ecef9 100644
+ --- a/backend/genesis-core/src/api/oracle.rs
+ +++ b/backend/genesis-core/src/api/oracle.rs
+-@@ -100,3 +100,39 @@ impl GenesisEmulator {
++@@ -100,3 +100,59 @@ impl GenesisEmulator {
+          self.bus.vdp.oracle_registradores()
+      }
+  }
+@@ -55,6 +60,25 @@
+ +    .fold(0, |m, (_, bit)| m | bit)
+ +}
+ +
+++thread_local! {
+++    /// Botoes do inicio do quadro em gravacao.
+++    static ENTRADAS_DO_QUADRO: std::cell::Cell<Option<genesis_config::GenesisInputs>> =
+++        const { std::cell::Cell::new(None) };
+++}
+++
+++/// Devolve os botoes do primeiro passo do quadro (e os guarda se for o primeiro).
+++pub(super) fn oracle_entradas_do_quadro(
+++    atuais: genesis_config::GenesisInputs,
+++) -> genesis_config::GenesisInputs {
+++    ENTRADAS_DO_QUADRO.with(|c| match c.get() {
+++        Some(primeiras) => primeiras,
+++        None => {
+++            c.set(Some(atuais));
+++            atuais
+++        }
+++    })
+++}
+++
+ +impl GenesisEmulator {
+ +    /// Passo do gravador de entradas (2.2). Devolve se o gravador esta ligado.
+ +    pub(super) fn oracle_gravador_passo(&self, inputs: &genesis_config::GenesisInputs) -> bool {
+@@ -65,6 +89,7 @@
+ +    pub(super) fn oracle_gravador_fim_quadro(&self) {
+ +        let ram: Vec<u8> = (0..=0xFFFFu32).map(|e| self.oracle_ram68k_byte(0xFF_0000 + e)).collect();
+ +        oracle_trace::gravador_fim_quadro(&ram);
+++        ENTRADAS_DO_QUADRO.with(|c| c.set(None));
+ +    }
+ +}
+ diff --git a/backend/genesis-core/src/bus.rs b/backend/genesis-core/src/bus.rs
+diff --color -ruN -x target -x Cargo.lock base2/oracle/patches/SHA1 repo/oracle/patches/SHA1
+--- a/oracle/patches/SHA1	2026-11-07 00:18:34.000000000 -0300
++++ b/oracle/patches/SHA1	2026-11-07 00:33:02.747323624 -0300
+@@ -1 +1 @@
+-4ca4c176371b8c4fa883742982175a62d980fbb8
+\ Nenhum caractere de nova linha no final do arquivo
++d0d82adaee06c0793ed63883c9bc0c1a0100ec1d
+\ Nenhum caractere de nova linha no final do arquivo
+diff --color -ruN -x target -x Cargo.lock base2/oracle/runner/tests/gravador.rs repo/oracle/runner/tests/gravador.rs
+--- a/oracle/runner/tests/gravador.rs	2026-11-07 00:18:34.000000000 -0300
++++ b/oracle/runner/tests/gravador.rs	2026-11-07 00:32:45.929748469 -0300
+@@ -16,8 +16,18 @@
+     for _ in 0..5 {
+         oraculo.executar_quadro().unwrap();
+     }
++    // Sexto quadro: o botao muda no MEIO do quadro. A gravacao guarda o valor do inicio (00) e o
++    // jogo ve o quadro inteiro com ele, entao a reproducao com a linha "00" gera a mesma RAM.
++    oraculo.definir_botoes(0x00);
++    for _ in 0..10 {
++        assert!(oraculo.passo().unwrap().is_none());
++    }
++    oraculo.definir_botoes(0x01);
++    while oraculo.passo().unwrap().is_none() {}
++    // O jogo viu o quadro inteiro com o botao solto (bit 0 em 1), apesar da mudanca no meio.
++    assert_eq!(oraculo.ler_byte_ram68k(0xFF_0000) & 0x01, 0x01);
+     let texto = std::fs::read_to_string(format!("{base}.s1in")).unwrap();
+-    assert_eq!(texto, "00\n01\n80\n48\n00\n");
++    assert_eq!(texto, "00\n01\n80\n48\n00\n00\n");
+     let ram = std::fs::read(format!("{base}.ram")).unwrap();
+     assert_eq!(ram, oraculo.ram68k());
+     let _ = std::fs::remove_file(format!("{base}.s1in"));
