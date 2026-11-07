@@ -2,9 +2,9 @@
 
 Documento de acompanhamento do progresso das etapas.
 
-## Etapa 4 (Renderizador fiel): em andamento
+## Etapa 4 (Renderizador fiel): implementada e provada no corpus atual (06/11/2026)
 
-Plano aprovado pelo Marcelo em 06/11/2026 (`docs/plano-etapa-4.md`). Feito pela IA com dados sinteticos: 4.0 (crate `sonic1-video`, patch do CI), 4.1 (formato de video, patches P6 e P7 do oraculo), 4.2 a 4.6 (registradores, portas, FIFO, DMA, planos, sprites, tempo por linha, pontos da CRAM), 4.7 (caso `lz-agua`, entradas escritas por nos), 4.8 (`cargo xtask video-estado` e `video-comparar`) e 4.9 (teste de desempenho). Provas ja rodadas: 44 testes do crate, referencia independente em 6 cenas aleatorias, ROM sintetica de video contra o oraculo. **Falta** a rodada do host (`scripts/etapa4-host.sh`), os patches `video-oraculo`, `extensoes-video` e `ci-video`, o perfil da Labyrinth e as comparacoes com a ROM real. Ver `docs/conhecimento/video.md`.
+Plano aprovado em 06/11/2026 (`docs/plano-etapa-4.md`). 4.0 a 4.9 feitas. Prova com a ROM real (rodada 2, `docs/conhecimento/video.md`): `video-comparar` **IGUAL em 7200 quadros** (`boot-demos`) e **em 2000 quadros** (`lz-agua`, Labyrinth, com 1530 interrupcoes de linha de nivel 4); VRAM, CRAM e VSRAM iguais ao trace em todos os quadros; nenhum aviso fora do inventario; lints do nucleo e testes wasm do `sonic1-video` ok na imagem; manifesto assinado. Falta a sessao de revisao (so do que a Etapa 4 mudou) e o resumo para o chat de planejamento. A Etapa 2 continua incompleta (ver abaixo e o backlog).
 
 ## Etapa atual
 

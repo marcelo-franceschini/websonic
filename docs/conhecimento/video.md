@@ -76,3 +76,25 @@ ROM `programa_video` (escrita por nos): liga o display, grava a cor 0 da CRAM no
 - `video-estado`: CRAM e VSRAM iguais em todos os quadros, mas a VRAM difere em 1129 dos 7200 quadros (a primeira no 354) e as imagens batem. Hipotese: o oraculo fecha o quadro no fim da instrucao que cruza para a linha 232, e nao no comeco dela; com DMA em andamento a VRAM nesse instante tem palavras a mais ou a menos. Correcao feita: `fechar_quadro_em(coluna)` com a coluna `mclk_fim - inicio_da_linha_232`. Ainda nao verificado com a ROM.
 - `avisos_fora_do_inventario` deu 2406 e 440. O detalhe por campo agora e impresso (`avisos=...`). Hipotese: `dma_sem_dados`, que conta quadros que terminam com DMA parado sem palavras, e nao um recurso fora do inventario de fato.
 - Desempenho nativo: mediana 982 us, maximo 1016 us (orcamento 1000 us).
+
+## Rodada 2 do host (06/11/2026): criterio da etapa cumprido para o corpus atual
+
+Comando: `sh scripts/etapa4-host.sh <ROM REV01>` depois de `docker build -t websonic-dev:ci -f .devcontainer/Dockerfile .`. Resultados colados pelo Marcelo:
+
+| Prova | Resultado |
+| --- | --- |
+| `checa-core.sh` na imagem (com `ci-video.patch`) | `checa-core: OK` |
+| `lints-core.sh` na imagem (nativo e os dois alvos wasm) | `lints do nucleo: OK`, com `sonic1-core` e `sonic1-video` |
+| `cargo test --target wasm32-wasip1 -p sonic1-video` | 44 testes da biblioteca, 1 do `desempenho` (sem medir) e 4 da referencia, todos ok |
+| Perfil de `lz-agua` (2000 quadros) | modo 4 (titulo) no quadro 360, modo 140 no 780, modo 12 (fase) com zona 1 (Labyrinth) e ato 0 a partir do 960 |
+| Inventario do corpus inteiro | interrupcao de **nivel 4: 1530 vezes**, primeiro caso `lz-agua`, quadro 771 (a interrupcao de linha da agua), alem de nivel 6: 8068 |
+| `video-estado` `boot-demos` (7200) e `lz-agua` (2000) | VRAM, CRAM e VSRAM iguais ao trace em todos os quadros, `avisos_fora_do_inventario=0` |
+| `video-comparar` `boot-demos` | **`IGUAL em 7200 quadros`** (imagem de 320x224 em 9 bits, hash por quadro) |
+| `video-comparar` `lz-agua` | **`IGUAL em 2000 quadros`**, incluindo a fase da Labyrinth com a interrupcao de linha |
+| `determinismo` dos dois casos | `PASSOU` (duas execucoes e retomada de estado) |
+| Desempenho nativo (`WEBSONIC_BENCH=1`) | mediana 928 us, maximo 1940 us, orcamento 1000 us: dentro (variacao entre rodadas: 928 a 1100 us) |
+| Manifesto | assinado, `assinatura: OK`, `referencias: OK`, `testes: OK (0 nao assinados)` |
+
+- As duas correcoes da rodada 1 funcionaram: fechar o quadro na coluna em que o oraculo o fecha (VRAM igual em 7200 de 7200 quadros, antes 6071) e o aviso de DMA que atravessa o quadro deixou de contar como recurso fora do inventario (`dma_sem_dados` agora e so informativo: 6269 quadros do `boot-demos` terminam com um DMA esperando palavras do proximo quadro).
+- Hash do trace atual: `lz-agua` `099144a211c1ec07c92d73c346bab97cade04dc8` (2000 quadros) e `boot-demos` `ee5d2725afdf10a996399208a30ba140e799ff30` (7200 quadros). O `boot-demos` mudou de `d0acd7fe` porque o cabecalho carrega o hash dos patches do oraculo.
+- **O que a rodada nao prova:** (1) a Labyrinth so cobre os primeiros 2000 quadros (inicio da fase, nao a imersao completa na agua nem os outros atos); (2) special stage, creditos, finais, game over e as outras zonas nao estao no corpus; (3) o desempate de cor entre os dois oraculos nao foi exercitado porque nao houve divergencia; (4) a medida em wasm nao foi feita (o teste so mede com `WEBSONIC_BENCH=1` e a variavel nao foi passada ao wasmtime); (5) a OQ1 (quadro 0 do oraculo com largura 256) nao apareceu porque o quadro 0 e preto.

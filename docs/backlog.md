@@ -22,7 +22,9 @@ Uma linha por item: o que é, dono, etapa-alvo. Só entra aqui o que não bloque
 - D1: o segundo oraculo (Genesis Plus GX) diverge do jgenesis no quadro 52 do `boot-demos`. Diagnosticar com os enderecos das palavras que diferem. Dono: IA e Marcelo. Etapa-alvo: 4 (antes do desempate de cor) ou 14.
 - Etapa 2 incompleta: gravador de partidas (2.2), inventario de memoria compartilhada (pedido P2), testes ocultos reais, `cargo xtask fidelidade` completo e revisao. Dono: IA e Marcelo. Etapa-alvo: antes da 5.
 - Demos do corpus: o caso `boot-demos` cobre 7200 quadros (duas demos e inicio da terceira). Estender para 11700 cobre as quatro. Dono: Marcelo (reassinar o manifesto). Etapa-alvo: 4.
-- Desempenho do renderizador: mediana perto do orcamento de 1 ms no nativo (0,95 a 1,10 ms) e wasm nao medido. Otimizar planos e sprites (reuso de linhas sem mudanca). Dono: IA. Etapa-alvo: 4 (se o relatorio do host estourar) ou 7.
+- Desempenho do renderizador: mediana de 0,93 a 1,10 ms no nativo (orcamento 1 ms), sem folga. Otimizar planos e sprites (reuso de linhas sem mudanca). Dono: IA. Etapa-alvo: 7.
 - OQ1: o quadro 0 do oraculo e desenhado com largura 256 (esquisitice do jgenesis). Documentado; so importa se o quadro 0 tiver imagem. Dono: IA. Etapa-alvo: 7.
 - Sombra e realce, janela, H32, V30 e entrelacamento fora do renderizador. Entram se o corpus ampliado mostrar uso (aviso do `video-estado`). Dono: IA. Etapa-alvo: 10.
-- Wasm do crate `sonic1-video` e dos lints do CI (`lints-core.sh` nos tres alvos) rodam so na imagem. Dono: Marcelo. Etapa-alvo: 4.
+- Cobertura do corpus de video: so Sega, titulo, demos GHZ, MZ, SYZ (parcial) e 2000 quadros de LZ1. Faltam special stage, LZ com o Sonic dentro da agua por mais tempo, SLZ, SBZ, FZ, chefes, creditos e telas finais. Dono: Marcelo (gravar/escolher) e IA. Etapa-alvo: 7 a 12, rodar `video-comparar` em cada caso novo.
+- Medida em wasm do renderizador (`WEBSONIC_BENCH=1` passado ao wasmtime). Dono: Marcelo. Etapa-alvo: 4 (opcional) ou 7.
+- Desempate de cor com o segundo oraculo (`oraculo2 imagens`) nao foi necessario nesta etapa; implementar so se aparecer divergencia de cor. Dono: IA. Etapa-alvo: 14.
