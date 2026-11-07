@@ -4,7 +4,7 @@
 # Previsao: ao comparar o quadro N de um com o quadro N+1 do outro, as diferencas de tempo
 # caem muito. Se nenhuma combinacao cair, a hipotese esta errada.
 # Imprime so contagens de bytes, faixas e nomes de variaveis (nunca valores).
-# Uso: sh scripts/etapa2-d1b.sh ROM [QUADROS...]   (padrao: 60 120 600 2000)
+# Uso: [COMPLETO=1] sh scripts/etapa2-d1b.sh ROM [QUADROS...]   (padrao: 60 120 600 2000)
 set -eu
 rom=${1:?uso: etapa2-d1b.sh ROM [QUADROS...]}
 shift
@@ -29,6 +29,8 @@ for n in "$@"; do
     for par in "$n $n" "$n $m" "$m $n"; do
         set -- $par
         echo "--- principal quadro $1 contra segundo oraculo quadro $2 ---"
-        "$o2" diferencas --a "$acc/d1b.p.$1.ram" --b "$acc/d1b.g.$2.ram" --rotulos refs/rotulos.txt | head -8
+        "$o2" diferencas --a "$acc/d1b.p.$1.ram" --b "$acc/d1b.g.$2.ram" --rotulos refs/rotulos.txt > "$acc/d1b.saida.txt"
+        # COMPLETO=1 mostra todas as faixas; sem ele, so o resumo. Sem pipe, para nao dar Broken pipe.
+        if [ "${COMPLETO:-0}" = 1 ]; then cat "$acc/d1b.saida.txt"; else head -8 "$acc/d1b.saida.txt"; fi
     done
 done
