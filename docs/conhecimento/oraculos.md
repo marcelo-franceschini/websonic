@@ -30,3 +30,14 @@
 | 2000 | 503 | 49 | 995 |
 
   Leitura: a comparação com o quadro seguinte do segundo oráculo reduz a diferença em cerca de 10 vezes, e a outra direção piora. Isso **apoia** a hipótese de uma fase de um quadro entre os oráculos. **Não prova**: o resto não é zero. O resumo mostra só as 5 primeiras faixas de cada comparação. Os endereços que apareceram no resto são `v_vblank_routine` (em todos os N), `v_jpadhold1` (N=2000) e faixas `FFFDxx`, que ficam logo abaixo de `v_systemstack` (`FFFE00`) e provavelmente são a pilha, a confirmar com a lista completa. A pilha é área de exclusão prevista no requisitos, mas a exclusão ainda não foi aprovada. Falta a lista completa das faixas restantes (`COMPLETO=1`).
+
+- D1, quinta rodada (host, 07/11/2026, `COMPLETO=1 sh scripts/etapa2-d1b.sh ROM 120 600 2000`, lista completa de faixas do principal no quadro N contra o segundo oráculo no quadro N+1). Todos os bytes que restam cabem em três grupos:
+
+| N | total | pilha | v_vblank_routine | v_jpadhold1 e v_jpadpress1 | outros |
+| --- | --- | --- | --- | --- | --- |
+| 120 | 3 | 2 | 1 | 0 | 0 |
+| 600 | 19 | 18 | 1 | 0 | 0 |
+| 2000 | 49 | 46 | 1 | 2 | 0 |
+
+  Pilha: o mapa de rótulos tem `v_systemstack_end` em `FFFCC0` e `v_systemstack` em `FFFE00` (`refs/rotulos.txt`, linhas `variavel`). Todos os endereços do grupo ficam entre `FFFD81` e `FFFDF7`, dentro dessa faixa. O inventário de memória mostra a faixa tocada nos três contextos (`docs/inventario-memoria.md`, linha de `v_objstate_end`, porque o mapa não tem tamanhos). Leitura: o conteúdo antigo da pilha depende do ciclo em que a interrupção chegou, e os dois oráculos não coincidem no ciclo. É a diferença esperada de tempo do nível 2.
+  Ainda é **hipótese** que as 3 variáveis restantes (`v_vblank_routine`, `v_jpadhold1`, `v_jpadpress1`) sejam só fase de tempo. A previsão foi testada em 3 quadros e valeu. O teste em mais quadros é `scripts/etapa2-d1c.sh`.
