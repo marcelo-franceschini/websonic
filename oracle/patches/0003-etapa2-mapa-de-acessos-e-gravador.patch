@@ -1,0 +1,303 @@
+diff --git a/backend/genesis-core/src/api.rs b/backend/genesis-core/src/api.rs
+index 293c0d80..5b2623bb 100644
+--- a/backend/genesis-core/src/api.rs
++++ b/backend/genesis-core/src/api.rs
+@@ -240,7 +240,9 @@ impl GenesisEmulator {
+         I: InputPoller<GenesisInputs>,
+         S: SaveWriter,
+     {
+-        self.bus.input.set_inputs(*input_poller.poll());
++        let oraculo_entradas = *input_poller.poll();
++        let oraculo_gravando = self.oracle_gravador_passo(&oraculo_entradas);
++        self.bus.input.set_inputs(oraculo_entradas);
+         self.bus.m68k_opcode = self.m68k.next_opcode();
+ 
+         // Contexto de tempo dos eventos do oraculo: inicio da instrucao do 68000.
+@@ -301,6 +303,9 @@ impl GenesisEmulator {
+         self.audio_resampler.output_samples(audio_output).map_err(GenesisError::Audio)?;
+ 
+         if vdp_tick_effect == VdpTickEffect::FrameComplete {
++            if oraculo_gravando {
++                self.oracle_gravador_fim_quadro();
++            }
+             if let Some(sega_32x) = &mut self.bus.sega_32x
+                 && sega_32x.adapter_enabled()
+             {
+diff --git a/backend/genesis-core/src/api/oracle.rs b/backend/genesis-core/src/api/oracle.rs
+index 0f036f4a..f76a1362 100644
+--- a/backend/genesis-core/src/api/oracle.rs
++++ b/backend/genesis-core/src/api/oracle.rs
+@@ -100,3 +100,39 @@ impl GenesisEmulator {
+         self.bus.vdp.oracle_registradores()
+     }
+ }
++
++/// Mascara de botoes do controle 1 no formato do corpus (Cima 01, Baixo 02, Esquerda 04,
++/// Direita 08, B 10, C 20, A 40, Start 80).
++#[must_use]
++pub fn oracle_mascara_p1(inputs: &genesis_config::GenesisInputs) -> u8 {
++    use genesis_config::GenesisController;
++    let (GenesisController::ThreeButton(s) | GenesisController::SixButton(s)) = inputs.p1 else {
++        return 0;
++    };
++    [
++        (s.up, 0x01u8),
++        (s.down, 0x02),
++        (s.left, 0x04),
++        (s.right, 0x08),
++        (s.b, 0x10),
++        (s.c, 0x20),
++        (s.a, 0x40),
++        (s.start, 0x80),
++    ]
++    .into_iter()
++    .filter(|(ligado, _)| *ligado)
++    .fold(0, |m, (_, bit)| m | bit)
++}
++
++impl GenesisEmulator {
++    /// Passo do gravador de entradas (2.2). Devolve se o gravador esta ligado.
++    pub(super) fn oracle_gravador_passo(&self, inputs: &genesis_config::GenesisInputs) -> bool {
++        oracle_trace::gravador_passo(oracle_mascara_p1(inputs))
++    }
++
++    /// Fim de quadro do gravador: entrega a RAM do 68000 inteira.
++    pub(super) fn oracle_gravador_fim_quadro(&self) {
++        let ram: Vec<u8> = (0..=0xFFFFu32).map(|e| self.oracle_ram68k_byte(0xFF_0000 + e)).collect();
++        oracle_trace::gravador_fim_quadro(&ram);
++    }
++}
+diff --git a/backend/genesis-core/src/bus.rs b/backend/genesis-core/src/bus.rs
+index 2d33423e..a95ab7d2 100644
+--- a/backend/genesis-core/src/bus.rs
++++ b/backend/genesis-core/src/bus.rs
+@@ -145,7 +145,10 @@ impl VdpBusView for VdpView<'_> {
+                     *self.open_bus
+                 }
+             }
+-            0xE00000..=0xFFFFFF => self.memory.read_main_ram_word(address),
++            0xE00000..=0xFFFFFF => {
++                oracle_trace::acesso_ram(address, 2, oracle_trace::acesso::DMA);
++                self.memory.read_main_ram_word(address)
++            }
+             _ => *self.open_bus,
+         }
+     }
+@@ -495,7 +498,10 @@ impl GenesisBus {
+                 }
+             }
+             0xC00000..=0xC0001F => self.read_vdp::<WORD>(address),
+-            0xE00000..=0xFFFFFF => self.memory.read_main_ram::<WORD>(address),
++            0xE00000..=0xFFFFFF => {
++                oracle_trace::acesso_ram(address, if WORD { 2 } else { 1 }, oracle_trace::acesso::LEITURA);
++                self.memory.read_main_ram::<WORD>(address)
++            }
+             _ => self.read_open_bus::<WORD>(address),
+         };
+ 
+@@ -790,11 +796,18 @@ impl m68000_emu::BusInterface for GenesisBus {
+ 
+     #[inline]
+     fn write_byte(&mut self, address: u32, value: u8) {
++        // O contexto vale no momento em que o 68000 escreve, nao quando a escrita pendente e aplicada.
++        if (0xE00000..=0xFFFFFF).contains(&address) {
++            oracle_trace::acesso_ram(address, 1, oracle_trace::acesso::ESCRITA);
++        }
+         self.pending_writes.byte.push((address, value));
+     }
+ 
+     #[inline]
+     fn write_word(&mut self, address: u32, value: u16) {
++        if (0xE00000..=0xFFFFFF).contains(&address) {
++            oracle_trace::acesso_ram(address, 2, oracle_trace::acesso::ESCRITA);
++        }
+         self.pending_writes.word.push((address, value));
+     }
+ 
+diff --git a/common/oracle-trace/src/lib.rs b/common/oracle-trace/src/lib.rs
+index 99316874..59db457f 100644
+--- a/common/oracle-trace/src/lib.rs
++++ b/common/oracle-trace/src/lib.rs
+@@ -7,6 +7,7 @@
+ //! parte do savestate.
+ 
+ use std::cell::{Cell, RefCell};
++use std::fs::File;
+ 
+ /// Tipos de evento. Os numeros espelham `sonic1_fidelidade::Tipo`.
+ pub mod kind {
+@@ -149,6 +150,9 @@ fn push(raw: Raw) {
+ #[inline]
+ pub fn emit(kind: u8, a: u32, b: u32, c: u32, d: u32) {
+     if enabled() {
++        if kind == self::kind::INT68 {
++            ctx_entrar(a);
++        }
+         let ctx = CTX.with(Cell::get);
+         push(Raw { mclk: ctx.mclk, kind, src: ctx.src, line: ctx.line, col: ctx.col, a, b, c, d });
+     }
+@@ -167,6 +171,9 @@ pub fn emit_at(kind: u8, line: u16, col: u16, a: u32, b: u32, c: u32, d: u32) {
+ #[inline]
+ pub fn desvio68(classe: u32, destino: u32, tomado: bool) {
+     if enabled() {
++        if classe == classe68::RTE {
++            ctx_sair();
++        }
+         let pc = CTX.with(|c| c.get().pc68);
+         emit(kind::DESVIO68, pc, if tomado { destino } else { 0 }, classe, u32::from(tomado));
+     }
+@@ -208,3 +215,154 @@ pub fn take_dma() -> Vec<u16> {
+ pub fn clear_dma() {
+     DMA.with(|d| d.borrow_mut().clear());
+ }
++
++// ---------------------------------------------------------------------------------------------
++// Mapa de acessos a RAM do 68000 por contexto (pedido P2) e gravador de entradas (2.2).
++// ---------------------------------------------------------------------------------------------
++
++/// Contexto de execucao do 68000, deduzido das excecoes tomadas e dos RTE.
++pub mod ctx {
++    /// Laco principal (nenhuma interrupcao em andamento).
++    pub const PRINCIPAL: u8 = 0;
++    /// Interrupcao de nivel 6 (VBlank).
++    pub const VBLANK: u8 = 1;
++    /// Interrupcao de nivel 4 (HBlank).
++    pub const HBLANK: u8 = 2;
++    /// Qualquer outro nivel.
++    pub const OUTRO: u8 = 3;
++}
++
++/// Tipo de acesso a RAM.
++pub mod acesso {
++    pub const LEITURA: u8 = 0;
++    pub const ESCRITA: u8 = 1;
++    /// Leitura feita pelo DMA da VDP (nao pelo 68000).
++    pub const DMA: u8 = 2;
++}
++
++thread_local! {
++    static ACESSOS_LIGADO: Cell<bool> = const { Cell::new(false) };
++    static PILHA_CTX: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
++    /// 65536 entradas (um por byte da RAM). Bit `ctx * 3 + tipo`.
++    static MAPA_RAM: RefCell<Vec<u16>> = const { RefCell::new(Vec::new()) };
++}
++
++/// Liga o mapa de acessos (zera o mapa e a pilha de contextos).
++pub fn acessos_ligar() {
++    MAPA_RAM.with(|m| *m.borrow_mut() = vec![0; 0x1_0000]);
++    PILHA_CTX.with(|p| p.borrow_mut().clear());
++    ACESSOS_LIGADO.with(|a| a.set(true));
++}
++
++/// Contexto atual (o topo da pilha, ou o laco principal).
++#[must_use]
++pub fn ctx_atual() -> u8 {
++    PILHA_CTX.with(|p| p.borrow().last().copied().unwrap_or(ctx::PRINCIPAL))
++}
++
++/// Empilha o contexto de uma interrupcao tomada.
++fn ctx_entrar(nivel: u32) {
++    let c = match nivel {
++        6 => ctx::VBLANK,
++        4 => ctx::HBLANK,
++        _ => ctx::OUTRO,
++    };
++    PILHA_CTX.with(|p| p.borrow_mut().push(c));
++}
++
++/// Desempilha no RTE (uma pilha vazia fica vazia: o RTE de uma excecao nao contada).
++fn ctx_sair() {
++    PILHA_CTX.with(|p| {
++        p.borrow_mut().pop();
++    });
++}
++
++/// Marca o acesso a `bytes` bytes da RAM a partir de `endereco` (so os 16 bits baixos valem).
++#[inline]
++pub fn acesso_ram(endereco: u32, bytes: u32, tipo: u8) {
++    if ACESSOS_LIGADO.with(Cell::get) {
++        let bit = 1u16 << (u32::from(ctx_atual()) * 3 + u32::from(tipo));
++        MAPA_RAM.with(|m| {
++            let mut m = m.borrow_mut();
++            for i in 0..bytes {
++                let idx = (endereco.wrapping_add(i) & 0xFFFF) as usize;
++                m[idx] |= bit;
++            }
++        });
++    }
++}
++
++/// Copia do mapa de acessos (vazio se nunca foi ligado).
++#[must_use]
++pub fn mapa_acessos() -> Vec<u16> {
++    MAPA_RAM.with(|m| m.borrow().clone())
++}
++
++/// Gravador de entradas: grava um byte (mascara de botoes) por quadro.
++struct Gravador {
++    mascara: File,
++    ram: String,
++    primeira: Option<u8>,
++    mudancas: u32,
++    quadros: u32,
++}
++
++thread_local! {
++    static GRAVADOR: RefCell<Option<Gravador>> = const { RefCell::new(None) };
++    static GRAVADOR_INICIADO: Cell<bool> = const { Cell::new(false) };
++}
++
++/// Le `WEBSONIC_GRAVAR=BASE` uma vez por thread. Cria `BASE.s1in` e, a cada quadro, sobrescreve
++/// `BASE.ram` com a RAM do 68000 do quadro que acabou de fechar.
++fn gravador_iniciar() {
++    if GRAVADOR_INICIADO.with(Cell::get) {
++        return;
++    }
++    GRAVADOR_INICIADO.with(|g| g.set(true));
++    let Ok(base) = std::env::var("WEBSONIC_GRAVAR") else { return };
++    let Ok(mascara) = File::create(format!("{base}.s1in")) else {
++        eprintln!("WEBSONIC_GRAVAR: nao consegui criar {base}.s1in");
++        return;
++    };
++    eprintln!("WEBSONIC_GRAVAR: gravando em {base}.s1in e {base}.ram");
++    GRAVADOR.with(|g| {
++        *g.borrow_mut() =
++            Some(Gravador { mascara, ram: format!("{base}.ram"), primeira: None, mudancas: 0, quadros: 0 });
++    });
++}
++
++/// Chamado a cada passo do emulador, com a mascara de botoes lida agora. Devolve se o gravador
++/// esta ligado (para o chamador so montar a RAM no fim do quadro quando precisar).
++pub fn gravador_passo(mascara: u8) -> bool {
++    gravador_iniciar();
++    GRAVADOR.with(|g| {
++        let mut g = g.borrow_mut();
++        let Some(g) = g.as_mut() else { return false };
++        match g.primeira {
++            None => g.primeira = Some(mascara),
++            Some(p) if p != mascara => g.mudancas += 1,
++            Some(_) => {}
++        }
++        true
++    })
++}
++
++/// Fecha o quadro: grava a mascara do inicio dele e a RAM do 68000 (`ram` tem 65536 bytes).
++pub fn gravador_fim_quadro(ram: &[u8]) {
++    use std::io::Write;
++    GRAVADOR.with(|g| {
++        let mut g = g.borrow_mut();
++        let Some(g) = g.as_mut() else { return };
++        let m = g.primeira.take().unwrap_or(0);
++        let _ = writeln!(g.mascara, "{m:02X}");
++        let _ = g.mascara.flush();
++        g.quadros += 1;
++        let _ = std::fs::write(&g.ram, ram);
++        if g.mudancas > 0 && g.quadros % 600 == 0 {
++            eprintln!(
++                "WEBSONIC_GRAVAR: {} quadros; a mascara mudou {} vezes dentro de um quadro",
++                g.quadros, g.mudancas
++            );
++        }
++    });
++}

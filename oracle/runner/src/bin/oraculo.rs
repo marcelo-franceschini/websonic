@@ -4,6 +4,7 @@
 //! oraculo rodar --rom ARQ --quadros N --saida ARQ [--entradas ARQ] [--rotulos ARQ --parar-em NOME]
 //!               [--salvar-estado ARQ] [--estado-a-cada N] [--carregar-estado ARQ]
 //!               [--perfil-a-cada N] [--video PREFIXO]   (com --rotulos: imprime modo, zona, ato e demo)
+//!               [--acessos ARQ] [--despejar-ram ARQ]   (mapa de acessos a RAM por contexto; RAM no fim)
 //! oraculo comparar TRACE_A TRACE_B
 //! oraculo imagem --rom ARQ --estado ARQ --quadro N --saida ARQ.s1p [--entradas ARQ]
 //! oraculo descomprimir --rom ARQ --rotulos ARQ --manifesto ARQ [--saida ARQ]
@@ -120,7 +121,13 @@ fn rodar(args: &[String]) -> Result<ExitCode, String> {
         }
         None => None,
     };
+    // Mapa de acessos a RAM por contexto (pedido P2): so enderecos e bits, nunca valores.
+    let acessos = opcao(args, "--acessos");
+    let despejar_ram = opcao(args, "--despejar-ram");
     let mut oraculo = Oraculo::novo(rom, entradas)?;
+    if acessos.is_some() {
+        oracle_trace::acessos_ligar();
+    }
     if let Some(arq) = opcao(args, "--carregar-estado") {
         let bytes = std::fs::read(arq).map_err(|e| format!("nao li o estado: {e}"))?;
         oraculo.carregar_estado(&bytes)?;
@@ -186,6 +193,13 @@ fn rodar(args: &[String]) -> Result<ExitCode, String> {
         use std::io::Write;
         i.flush().map_err(|e| e.to_string())?;
         v.flush().map_err(|e| e.to_string())?;
+    }
+    if let Some(arq) = acessos {
+        escrever_acessos(arq, &oracle_trace::mapa_acessos())?;
+    }
+    if let Some(arq) = despejar_ram {
+        // So para uso do host (diagnostico). A saida nunca entra no git.
+        std::fs::write(arq, oraculo.ram68k()).map_err(|e| e.to_string())?;
     }
     if let Some(arq) = opcao(args, "--salvar-estado") {
         std::fs::write(arq, oraculo.salvar_estado()?).map_err(|e| e.to_string())?;
@@ -356,4 +370,19 @@ fn descomprimir(args: &[String]) -> Result<ExitCode, String> {
     }
     print!("{texto}");
     Ok(ExitCode::SUCCESS)
+}
+
+/// Grava o mapa de acessos a RAM: uma linha `ENDERECO<TAB>BITS` por byte tocado, com o endereco
+/// em hexadecimal de 6 digitos (`FF0000` a `FFFFFF`) e os bits em 4 digitos hexadecimais.
+/// Bit `contexto * 3 + tipo`; contexto 0 laco principal, 1 VBlank, 2 HBlank, 3 outro; tipo 0
+/// leitura do 68000, 1 escrita do 68000, 2 leitura do DMA da VDP.
+fn escrever_acessos(arq: &str, mapa: &[u16]) -> Result<(), String> {
+    use std::io::Write;
+    let mut f = BufWriter::new(File::create(arq).map_err(|e| e.to_string())?);
+    for (i, bits) in mapa.iter().enumerate() {
+        if *bits != 0 {
+            writeln!(f, "{:06X}\t{bits:04X}", 0xFF_0000 + i).map_err(|e| e.to_string())?;
+        }
+    }
+    f.flush().map_err(|e| e.to_string())
 }
