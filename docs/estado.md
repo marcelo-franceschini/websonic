@@ -2,9 +2,17 @@
 
 Documento de acompanhamento do progresso das etapas.
 
-## Etapa 2 (Corpus e integridade): fechamento, lado da IA pronto (06/11/2026)
+## Etapa 2 (Corpus e integridade): feita, falta só a revisão (07/11/2026)
 
-O Marcelo pediu para fechar a Etapa 2 antes da Etapa 5. Feito pela IA, com dados sintéticos: patch 0003 do oráculo (mapa de acessos à RAM por contexto e gravador de entradas, `docs/pedidos/etapa2-oraculo.patch`, 2 testes novos; a suíte inteira do oráculo, fmt e clippy passaram numa cópia de trabalho com o patch), `cargo xtask inventario-memoria` (P2), `cargo xtask fidelidade` (2.9), `oraculo2 diferencas` (diagnóstico do D1), scripts `etapa2-final.sh`, `etapa2-gravar.sh`, `etapa2-fechar.sh`. `cargo test -p xtask`: 48 testes; fmt e clippy do workspace limpos. **Falta o host**: aplicar o patch, rodar os três scripts, gravar os testes ocultos (um caso por zona) e assinar. Depois, a sessão de revisão da Etapa 2. Detalhes em `docs/conhecimento/corpus.md` (seção "Fechamento da Etapa 2").
+Rodadas do host de 06 e 07/11/2026. Provas, com comando e resultado em `docs/conhecimento/corpus.md` e `docs/conhecimento/oraculos.md`:
+- Patch 0003 do oráculo aplicado (mapa de acessos à RAM por contexto e gravador de entradas); testes do oráculo OK, incluindo o que falha sem a correção dos botões no quadro.
+- Inventário de memória compartilhada gerado (`docs/inventario-memoria.md`: 751 variáveis, 546 compartilhadas).
+- Gravador (2.2): `gravacao: REPRODUZ` na prova e nas 6 partidas dos testes ocultos.
+- Testes ocultos (2.8): um caso cifrado por zona (ghz, mz, syz, lz, slz, sbz); a auditoria imprime `zona: passou (1 casos)` para as seis.
+- Manifesto assinado (207 linhas); `cargo xtask fidelidade`: manifesto, determinismo e traces `PASSOU`; `veredito: PASSOU`. Hashes novos: `lz-agua` `9f8d8be1…`, `boot-demos` `52ed49ce…`.
+- Segundo oráculo: **não concorda** em todos os quadros. D1 estreitado: a região explicava `v_megadrive` (corrigida); o resto são variáveis de tempo, atribuídas ao ponto de fechamento do quadro em relação ao VBlank (hipótese). Decisão registrada: vale o oráculo principal. O critério 5 do pronto fica como "cada diferença tem decisão registrada", e a causa fica no backlog (nível 2, Etapa 15).
+- Limite aceito: os testes ocultos desta etapa são um caso curto por zona; os atos completos ficam para a Etapa 14.
+- Falta a sessão de revisão da Etapa 2 (nova, só do que ela mudou).
 
 ## Etapa 4 (Renderizador fiel): implementada e provada no corpus atual (06/11/2026)
 
