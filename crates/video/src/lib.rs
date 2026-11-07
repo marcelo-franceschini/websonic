@@ -8,7 +8,10 @@
 //! estouro implícito de inteiros, sem casts que truncam e sem coleções não determinísticas.
 #![forbid(unsafe_code)]
 
+pub mod camadas;
 pub mod cor;
 pub mod portas;
 pub mod quadro;
 pub mod registros;
+pub mod renderizador;
+pub mod tempo;

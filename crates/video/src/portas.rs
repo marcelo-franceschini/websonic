@@ -110,6 +110,10 @@ pub struct Vdp {
     fila_dma: VecDeque<u16>,
     /// Escritas que o jogo fez nas memórias e que o renderizador precisa notar (sprites).
     pub(crate) ao_gravar_vram: Vec<(u32, u8)>,
+    /// A CRAM foi gravada desde a última vez que o renderizador olhou.
+    pub(crate) cram_gravada: bool,
+    /// A VSRAM foi gravada desde a última vez que o renderizador olhou.
+    pub(crate) vsram_gravada: bool,
 }
 
 impl Default for Vdp {
@@ -136,6 +140,8 @@ impl Vdp {
             dma_memoria: None,
             fila_dma: VecDeque::new(),
             ao_gravar_vram: Vec::new(),
+            cram_gravada: false,
+            vsram_gravada: false,
         }
     }
 
@@ -285,11 +291,13 @@ impl Vdp {
                 if let Some(c) = self.cram.get_mut(i) {
                     *c = e.palavra;
                 }
+                self.cram_gravada = true;
             }
             Alvo::Vsram => {
                 let i = usize::try_from((e.endereco & 0x7f) >> 1).unwrap_or(usize::MAX);
                 if let Some(v) = self.vsram.get_mut(i) {
                     *v = e.palavra;
+                    self.vsram_gravada = true;
                 }
             }
             Alvo::Vram8Bits | Alvo::Invalido => {}
@@ -545,5 +553,38 @@ mod testes {
         v.escrever_controle(0x8F02);
         v.escrever_dados(0xffff, 2);
         assert!(v.vram().iter().all(|b| *b == 0));
+    }
+
+    #[test]
+    fn recursos_fora_do_inventario_viram_aviso() {
+        // Modo 5 ligado primeiro (senao os registradores acima de 10 sao ignorados).
+        let mut v = Vdp::nova();
+        v.escrever_controle(0x8104);
+        let antes = v.avisos.total();
+        assert_eq!(antes, 0);
+        v.escrever_controle(0x8C00); // 32 colunas
+        assert_eq!(v.avisos.h32, 1);
+        v.escrever_controle(0x8C89); // 40 colunas com sombra e realce
+        assert_eq!(v.avisos.sombra_realce, 1);
+        v.escrever_controle(0x8C87); // entrelacado
+        assert_eq!(v.avisos.entrelacado, 1);
+        v.escrever_controle(0x910F); // janela cobrindo area
+        assert_eq!(v.avisos.janela, 1);
+        v.escrever_controle(0x810C); // 30 linhas
+        assert_eq!(v.avisos.v30, 1);
+        v.escrever_controle(0x8184); // VRAM de 128 KiB
+        assert_eq!(v.avisos.vram128, 1);
+    }
+
+    #[test]
+    fn valores_do_corpus_nao_geram_aviso() {
+        let mut v = Vdp::nova();
+        // Sequencia de inicializacao vista no corpus: modo 5, 40 colunas, janela zerada.
+        for w in [
+            0x8004u16, 0x8174, 0x8C81, 0x8B03, 0x9100, 0x9200, 0x8230, 0x8407,
+        ] {
+            v.escrever_controle(w);
+        }
+        assert_eq!(v.avisos.total(), 0);
     }
 }
