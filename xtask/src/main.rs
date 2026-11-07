@@ -6,25 +6,24 @@
 //! - `video-estado` e `video-comparar`: renderizador contra o oráculo (ver `video.rs`).
 //! - `inventario`: inventário de hardware a partir dos traces (ver `inventario.rs`).
 //! - `inventario-memoria`: inventário da memória compartilhada (ver `inventario_memoria.rs`).
-//! - `fidelidade`: o comando único de fidelidade (ver `fidelidade.rs`).
-//! - `ocultos`: cifra e audita os testes ocultos (ver `ocultos.rs`).
-//! - `manifesto`: gera e verifica o manifesto assinado (ver `manifesto.rs`).
-//! - `corpus-trace`: traces do corpus e prova de determinismo (ver `corpus.rs`).
+//! - `corpus-meta`: escreve o `.meta` de um caso do corpus (ver `corpus.rs`).
+//! - `tas`: converte e confere TAS do TASVideos (ver `tas.rs`).
 //! - `descompressao-relatorio`: compara os descompressores com o oráculo (ver `descompressao.rs`).
+//!
+//! O comando de fidelidade, o manifesto, os testes ocultos e os traces do corpus saíram daqui na
+//! 2.10: medem o que está certo e ficam no pacote congelado `crates/fidelidade/relatorio`
+//! (`cargo fidelidade`).
 use std::path::PathBuf;
 use std::process::{Command, ExitCode};
 
 mod anti_rom;
 mod corpus;
 mod descompressao;
-mod fidelidade;
 mod inventario;
 mod inventario_memoria;
-mod manifesto;
-mod ocultos;
 mod rotulos;
-mod sha256;
 mod site;
+mod tas;
 mod video;
 
 /// Raiz do repositório (o xtask fica em `<raiz>/xtask`).
@@ -49,27 +48,21 @@ fn rodar(cmd: &mut Command) -> Result<(), String> {
 
 fn main() -> ExitCode {
     let comando = std::env::args().nth(1);
+    let resto = || std::env::args().skip(2).collect::<Vec<_>>();
     let resultado = match comando.as_deref() {
         Some("site") => site::montar(),
         Some("anti-rom") => anti_rom::executar(),
-        Some("rotulos") => rotulos::executar(&std::env::args().skip(2).collect::<Vec<_>>()),
-        Some("descompressao-relatorio") => {
-            descompressao::executar(&std::env::args().skip(2).collect::<Vec<_>>())
-        }
-        Some("corpus-meta") => corpus::escrever_meta(&std::env::args().skip(2).collect::<Vec<_>>()),
-        Some("corpus-trace") => corpus::executar(&std::env::args().skip(2).collect::<Vec<_>>()),
-        Some("video-estado") => video::estado(&std::env::args().skip(2).collect::<Vec<_>>()),
-        Some("video-comparar") => video::comparar(&std::env::args().skip(2).collect::<Vec<_>>()),
-        Some("inventario") => inventario::executar(&std::env::args().skip(2).collect::<Vec<_>>()),
-        Some("inventario-memoria") => {
-            inventario_memoria::executar(&std::env::args().skip(2).collect::<Vec<_>>())
-        }
-        Some("fidelidade") => fidelidade::executar(&std::env::args().skip(2).collect::<Vec<_>>()),
-        Some("ocultos") => ocultos::executar(&std::env::args().skip(2).collect::<Vec<_>>()),
-        Some("manifesto") => manifesto::executar(&std::env::args().skip(2).collect::<Vec<_>>()),
+        Some("rotulos") => rotulos::executar(&resto()),
+        Some("descompressao-relatorio") => descompressao::executar(&resto()),
+        Some("corpus-meta") => corpus::escrever_meta(&resto()),
+        Some("tas") => tas::executar(&resto()),
+        Some("video-estado") => video::estado(&resto()),
+        Some("video-comparar") => video::comparar(&resto()),
+        Some("inventario") => inventario::executar(&resto()),
+        Some("inventario-memoria") => inventario_memoria::executar(&resto()),
         _ => {
             eprintln!(
-                "uso: cargo xtask <site|anti-rom|rotulos|descompressao-relatorio|corpus-trace|corpus-meta|manifesto|ocultos|inventario|inventario-memoria|fidelidade|video-estado|video-comparar>"
+                "uso: cargo xtask <site|anti-rom|rotulos|descompressao-relatorio|corpus-meta|tas|inventario|inventario-memoria|video-estado|video-comparar>"
             );
             return ExitCode::from(2);
         }

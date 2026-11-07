@@ -1,2 +1,5 @@
 # nome<TAB>quadros. Sem botoes: a sequencia do boot, da Sega e do titulo ate as demos, 120 s.
 boot-demos	7200
+# As quatro demos do jogo (GHZ, MZ, SYZ) e a special stage que vem depois, ate o quadro 11700.
+# O boot-demos acima nao muda (teste congelado); este e o caso novo da sub-etapa 2.10 (D-R3).
+demos-quatro	11700

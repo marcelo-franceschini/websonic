@@ -14,14 +14,14 @@ cd "$repo"
 
 echo "=== CORPUS-TRACE (oraculo novo) ==="
 for caso in lz-agua boot-demos; do
-    cargo run -q -p xtask -- corpus-trace --rom "$rom" --oraculo "$bin" \
+    cargo fidelidade corpus-trace --rom "$rom" --oraculo "$bin" \
         --rotulos refs/rotulos.txt --saida "$traces" --caso "$caso"
 done | tee "$traces/resumo5.tsv"
 grep -hv '^determinismo' "$traces/resumo5.tsv" > "$traces/hashes5.tsv"
 
 echo "=== AUDITORIA DOS OCULTOS (decifra em /dev/shm; so zona: passou|falhou) ==="
 if [ -d "$ext/ocultos" ]; then
-    ROM="$rom" ORACULO="$bin" cargo run -q -p xtask -- ocultos auditar --pasta "$ext/ocultos" \
+    ROM="$rom" ORACULO="$bin" cargo fidelidade ocultos auditar --pasta "$ext/ocultos" \
         --identidade "$HOME/.config/websonic/ocultos.key" --sut "$repo/scripts/sut-reproduz.sh"
     ocultos="--ocultos $ext/ocultos"
 else
@@ -31,10 +31,10 @@ fi
 
 echo "=== MANIFESTO ==="
 # shellcheck disable=SC2086
-cargo run -q -p xtask -- manifesto gerar --traces "$traces/hashes5.tsv" $ocultos
+cargo fidelidade manifesto gerar --traces "$traces/hashes5.tsv" $ocultos
 ssh-keygen -Y sign -f "$HOME/.ssh/websonic_assinatura" -n websonic-manifesto refs/manifesto.txt
-cargo run -q -p xtask -- manifesto verificar --pular-testes
+cargo fidelidade manifesto verificar --pular-testes
 
 echo "=== FIDELIDADE (comando unico) ==="
-cargo run -q --release -p xtask -- fidelidade --rom "$rom" --oraculo "$bin" --saida "$traces"
+cargo fidelidade fidelidade --rom "$rom" --oraculo "$bin" --saida "$traces"
 echo "=== FIM ==="

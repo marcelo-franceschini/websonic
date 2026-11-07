@@ -26,7 +26,7 @@ echo "=== PERFIL (so as linhas em que modo, zona, ato ou demo mudam) ==="
 
 echo "=== CORPUS-TRACE ==="
 cd "$repo"
-cargo run -q -p xtask -- corpus-trace --rom "$rom" --oraculo "$bin" \
+cargo fidelidade corpus-trace --rom "$rom" --oraculo "$bin" \
     --rotulos refs/rotulos.txt --saida "$traces" | tee "$traces/resumo.tsv"
 
 echo "=== INVENTARIO ==="
@@ -34,5 +34,5 @@ cargo run -q -p xtask -- inventario --traces "$traces"
 
 echo "=== MANIFESTO (sem assinar) ==="
 grep -v '^determinismo' "$traces/resumo.tsv" > "$traces/hashes.tsv"
-cargo run -q -p xtask -- manifesto gerar --traces "$traces/hashes.tsv"
+cargo fidelidade manifesto gerar --traces "$traces/hashes.tsv"
 echo "=== FIM ==="

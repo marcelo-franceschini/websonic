@@ -37,3 +37,4 @@ Uma linha por item: o que é, dono, etapa-alvo. Só entra aqui o que não bloque
 - Segundo oráculo com entradas (TAS e partidas). Dono: IA. Etapa-alvo: 14.
 - TAS 5121M ("100%", BK2), junto com o conversor de BK2. Dono: IA. Etapa-alvo: 14.
 - Exclusão da pilha na comparação do núcleo contra o oráculo: decisão do Marcelo (requisitos, critério 2). Recomendação da IA: aprovar. Etapa-alvo: 5.
+- Arquivo NOVO numa pasta de referência do manifesto (por exemplo um `.rs` a mais em `oracle2/src`) não é acusado: o manifesto só confere os arquivos listados. Pede patch no `relatorio` (congelado) para comparar o conjunto de arquivos. Dono: IA (patch) e Marcelo. Etapa-alvo: 5.

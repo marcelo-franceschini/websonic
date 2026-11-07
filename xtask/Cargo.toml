@@ -16,7 +16,6 @@ sonic1-rom = { path = "../crates/rom" }
 sonic1-corpus = { path = "../crates/corpus" }
 sonic1-video = { path = "../crates/video" }
 sonic1-formato-video = { path = "../crates/formato-video" }
-age = { version = "0.12.1", default-features = false }
 
 [dev-dependencies]
 sonic1-teste-descompressao = { path = "../crates/teste-descompressao" }

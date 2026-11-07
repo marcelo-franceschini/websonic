@@ -1,0 +1,39 @@
+diff --git a/.devcontainer/managed-settings.json b/.devcontainer/managed-settings.json
+index 9322212..953118d 100644
+--- a/.devcontainer/managed-settings.json
++++ b/.devcontainer/managed-settings.json
+@@ -23,6 +23,8 @@
+       "Edit(//workspaces/websonic/.cargo/**)",
+       "Edit(//workspaces/websonic/**/.cargo/**)",
+       "Edit(//workspaces/websonic/oracle/**)",
++      "Edit(//workspaces/websonic/oracle2/**)",
++      "Edit(//workspaces/websonic/crates/corpus/**)",
+       "Edit(//workspaces/websonic/crates/fidelidade/**)",
+       "Edit(//workspaces/websonic/rust-toolchain.toml)",
+       "Edit(//workspaces/websonic/**/rust-toolchain)",
+@@ -92,6 +94,8 @@
+         "/workspaces/websonic/.vscode",
+         "/workspaces/websonic/.cargo",
+         "/workspaces/websonic/oracle",
++        "/workspaces/websonic/oracle2",
++        "/workspaces/websonic/crates/corpus",
+         "/workspaces/websonic/crates/fidelidade",
+         "/workspaces/websonic/rust-toolchain.toml",
+         "/workspaces/websonic/.git/config",
+diff --git a/.devcontainer/verifica-config.sh b/.devcontainer/verifica-config.sh
+index 8484b32..1d124a0 100755
+--- a/.devcontainer/verifica-config.sh
++++ b/.devcontainer/verifica-config.sh
+@@ -44,8 +44,11 @@ fi
+ # 0.7: entram tambem a configuracao do Claude Code no projeto (.claude, .mcp.json, .vscode)
+ #      e a configuracao do cargo (.cargo, rust-toolchain.toml).
+ # Etapa 1: entram o oraculo (oracle) e o formato do trace e comparador (crates/fidelidade).
++# 2.10: entram o segundo oraculo (oracle2) e o conversor do corpus (crates/corpus).
++# O relatorio (crates/fidelidade/relatorio) ja fica coberto por crates/fidelidade.
+ for item in CLAUDE.md .gitignore docs/requisitos.md hooks refs .github .devcontainer \
+-    .claude .mcp.json .vscode .cargo rust-toolchain.toml oracle crates/fidelidade; do
++    .claude .mcp.json .vscode .cargo rust-toolchain.toml oracle crates/fidelidade \
++    oracle2 crates/corpus; do
+     base="//workspaces/websonic/$item"
+     grep -q "\"Edit($base)\"\|\"Edit($base/\*\*)\"" "$ms" || falha "falta a regra Edit de $item."
+     grep -q "\"/workspaces/websonic/$item\"" "$ms" || falha "falta o denyWrite de $item."

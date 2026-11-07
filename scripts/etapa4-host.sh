@@ -32,7 +32,7 @@ echo "=== PERFIL DA LABYRINTH (so as linhas em que modo, zona, ato ou demo mudam
 
 echo "=== CORPUS-TRACE (traces, imagem e DMA) ==="
 for caso in lz-agua boot-demos; do
-    cargo run -q -p xtask -- corpus-trace --rom "$rom" --oraculo "$bin" \
+    cargo fidelidade corpus-trace --manter-trace --rom "$rom" --oraculo "$bin" \
         --rotulos refs/rotulos.txt --saida "$traces" --caso "$caso"
 done | tee "$traces/resumo4.tsv"
 
@@ -60,5 +60,5 @@ WEBSONIC_BENCH=1 cargo test -p sonic1-video --release --test desempenho -- --noc
 echo "=== MANIFESTO (sem assinar) ==="
 grep -hv '^determinismo' "$traces/resumo4.tsv" > "$traces/hashes4.tsv"
 # Mantem os hashes do corpus anterior (boot-demos) e acrescenta o novo caso.
-cargo run -q -p xtask -- manifesto gerar --traces "$traces/hashes4.tsv"
+cargo fidelidade manifesto gerar --traces "$traces/hashes4.tsv"
 echo "=== FIM ==="

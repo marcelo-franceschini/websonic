@@ -9,9 +9,15 @@
 
 | id | caso | quadro | categoria | o que difere | causa | decisao |
 | --- | --- | --- | --- | --- | --- | --- |
-| D1 | boot-demos | 52 | ram68k | hash da RAM do 68000 | **parcialmente conhecida** (ver as rodadas abaixo): a regiao do nucleo estava em auto (byte de versao diferente, corrigido no `oracle2`); o que resta e de tempo, nao de logica, mas isso ainda e hipotese | Vale o oraculo principal (regra do requisitos: sem evidencia, vale o principal, e a diferenca fica registrada). O diagnostico fica no backlog |
+| D1a | boot-demos e demos-quatro | todos | ram68k | o segundo oraculo fecha o quadro um depois do principal | alinhamento do quadro (hipotese, apoiada em 14 quadros do boot-demos) | Comparar o principal no quadro N com o segundo no quadro N+1 |
+| D1b | boot-demos e demos-quatro | todos | ram68k | pilha, `FFFCC0..FFFDFF` (de `v_systemstack_end` a `v_systemstack`) | bytes antigos que dependem do ciclo da interrupcao (hipotese) | Vale o oraculo principal. Tempo e do nivel 2 (Etapa 15) |
+| D1c | boot-demos e demos-quatro | todos | ram68k | `v_vblank_routine`, `v_jpadhold1`, `v_jpadpress1` | escritas perto do VBlank (hipotese) | Vale o oraculo principal. Etapa 15 |
 
-- O criterio da Etapa 2, "o segundo oraculo concorda nas demos", **nao foi cumprido**. Nada aqui diz qual dos dois esta certo.
+- Decisao da IA (07/11/2026, `docs/plano-fechamento-etapa-2.md`, D-R1), pela regra do requisitos ("sem evidencia, vale o oraculo principal, e a diferenca fica registrada"): o D1 virou D1a, D1b e D1c. "O segundo oraculo concorda nas demos" passa a significar: em todas as amostras das quatro demos, nada difere fora de D1b e D1c, comparando o principal no quadro N com o segundo no quadro N+1 (D1a). Amostras do boot-demos ate o quadro 5600 (14 quadros, sexta rodada). Amostras novas a medir (`scripts/etapa2-d1c.sh`): 6100, 6600, 7100 (fim da MZ e titulo), 7600, 8400 (SYZ), 10200 e 11000 (special stage). O resultado dessas amostras entra aqui na sub-etapa 2.11.
+- Limite registrado: so a RAM do 68000 e comparada, porque o nucleo libretro do Genesis Plus GX so expoe essa memoria. VRAM, CRAM, VSRAM e RAM do Z80 ficam sem comparacao com o segundo oraculo (backlog, Etapa 14). O segundo oraculo nao aceita entradas, entao TAS e partidas gravadas nao passam por ele (backlog, Etapa 14).
+- A exclusao da pilha na comparacao do nucleo contra o oraculo (Etapa 5) e outra decisao, do Marcelo (requisitos, criterio 2). Recomendacao da IA: aprovar.
+
+- Historico: antes da decisao acima, o criterio da Etapa 2 ("o segundo oraculo concorda nas demos") nao estava cumprido. Nada aqui diz qual dos dois esta certo.
 - Proximo passo de diagnostico (backlog): imprimir so os enderecos das palavras que diferem no quadro 52 (sem os valores) e cruzar com `refs/rotulos.txt` para ver o nome da variavel.
 
 - Diagnóstico do D1 (preparado em 06/11/2026): `oraculo2 diferencas --a RAM_PRINCIPAL --b RAM_GPGX --rotulos refs/rotulos.txt` mostra, para os quadros 51 e 52, as faixas de RAM que diferem e a variável mais próxima. Resultado (host, 06/11/2026, `scripts/etapa2-final.sh`): no quadro 51 as RAMs são idênticas (0 bytes); no quadro 52 diferem **4 bytes, todos em `v_init`** (faixa FFFFFC a FFFFFF), nas duas ordens de byte. Os valores não foram lidos. Isto estreita a causa a esse marcador de inicialização, mas não diz qual oráculo está certo nem se a diferença se espalha depois. Passo seguinte: `scripts/etapa2-d1.sh` (quadros 53, 60, 120 e 600).
