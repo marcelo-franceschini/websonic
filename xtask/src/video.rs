@@ -163,22 +163,62 @@ pub fn comparar(args: &[String]) -> Result<(), String> {
             for p in r.quadro().pontos() {
                 *m.entry(*p).or_insert(0u32) += 1;
             }
-            eprintln!("q{} {:?} pos={:?} mclk_fim={} linhas={}", q.numero, m, r.posicao(), q.mclk_fim, q.mclk_fim / 3420);
-            let negros: Vec<(usize, usize)> = (0..224).flat_map(|y| (0..320).map(move |x| (x, y))).filter(|(x, y)| r.quadro().ponto(*x, *y) == Some(0)).take(12).collect();
+            eprintln!(
+                "q{} {:?} pos={:?} mclk_fim={} linhas={}",
+                q.numero,
+                m,
+                r.posicao(),
+                q.mclk_fim,
+                q.mclk_fim / 3420
+            );
+            let negros: Vec<(usize, usize)> = (0..224)
+                .flat_map(|y| (0..320).map(move |x| (x, y)))
+                .filter(|(x, y)| r.quadro().ponto(*x, *y) == Some(0))
+                .take(12)
+                .collect();
             eprintln!("negros {negros:?}");
-            let linha0: Vec<u16> = (0..320).map(|x| r.quadro().ponto(x, 0).unwrap_or(0)).collect();
-            eprintln!("LINHA0 primeiro_azul={:?} nao_azuis={}", linha0.iter().position(|v| *v == 448), linha0.iter().filter(|v| **v != 448).count());
+            let linha0: Vec<u16> = (0..320)
+                .map(|x| r.quadro().ponto(x, 0).unwrap_or(0))
+                .collect();
+            eprintln!(
+                "LINHA0 primeiro_azul={:?} nao_azuis={}",
+                linha0.iter().position(|v| *v == 448),
+                linha0.iter().filter(|v| **v != 448).count()
+            );
             if let Some(e) = q.eventos.last() {
-                eprintln!("  ULTIMO mclk={} linha={} col={} tipo={:?}", e.mclk, e.linha, e.coluna, e.tipo);
+                eprintln!(
+                    "  ULTIMO mclk={} linha={} col={} tipo={:?}",
+                    e.mclk, e.linha, e.coluna, e.tipo
+                );
             }
-            for e in q.eventos.iter().filter(|e| e.tipo == Tipo::Desvio68).step_by(40000).take(8) {
-                eprintln!("  DESVIO mclk={} linha={} col={}", e.mclk, e.linha, e.coluna);
+            for e in q
+                .eventos
+                .iter()
+                .filter(|e| e.tipo == Tipo::Desvio68)
+                .step_by(40000)
+                .take(8)
+            {
+                eprintln!(
+                    "  DESVIO mclk={} linha={} col={}",
+                    e.mclk, e.linha, e.coluna
+                );
             }
-            for e in q.eventos.iter().filter(|e| e.tipo != Tipo::Desvio68 && e.linha >= 10000).take(30) {
-                eprintln!("  OUTRO tipo={:?} linha={} col={} a={} b={}", e.tipo, e.linha, e.coluna, e.a, e.b);
+            for e in q
+                .eventos
+                .iter()
+                .filter(|e| e.tipo != Tipo::Desvio68 && e.linha >= 10000)
+                .take(30)
+            {
+                eprintln!(
+                    "  OUTRO tipo={:?} linha={} col={} a={} b={}",
+                    e.tipo, e.linha, e.coluna, e.a, e.b
+                );
             }
             for e in q.eventos.iter().filter(|e| e.tipo == Tipo::Vdp).take(30) {
-                eprintln!("  ev mclk={} linha={} col={} a={} b={:#06x} c={}", e.mclk, e.linha, e.coluna, e.a, e.b, e.c);
+                eprintln!(
+                    "  ev mclk={} linha={} col={} a={} b={:#06x} c={}",
+                    e.mclk, e.linha, e.coluna, e.a, e.b, e.c
+                );
             }
         }
         let tamanho_ok = esperado.largura == 320 && esperado.altura == 224;
@@ -267,7 +307,14 @@ fn detalhar(args: &[String], quadro: u32, r: &Renderizador) -> Result<(), String
     let esperado = fv::ler_quadro_inteiro(BufReader::new(f)).map_err(|e| e.to_string())?;
     if std::env::var_os("DEPURAR_VIDEO").is_some() {
         let conta = |v: &[u16]| v.iter().filter(|p| **p == 448).count();
-        eprintln!("azuis esperado={} obtido={} tam={}x{} n={}", conta(&esperado.pontos), conta(r.quadro().pontos()), esperado.largura, esperado.altura, esperado.pontos.len());
+        eprintln!(
+            "azuis esperado={} obtido={} tam={}x{} n={}",
+            conta(&esperado.pontos),
+            conta(r.quadro().pontos()),
+            esperado.largura,
+            esperado.altura,
+            esperado.pontos.len()
+        );
     }
     match primeiro_ponto_diferente(
         &esperado.pontos,

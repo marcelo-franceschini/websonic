@@ -655,4 +655,42 @@ mod testes {
         assert_eq!(q.ponto(0, 11), Some(7));
         assert_eq!(q.ponto(0, 9), Some(448));
     }
+
+    /// Vetor tirado do oráculo com a ROM sintética de vídeo (escritas nas colunas reais do
+    /// trace): na linha 0 do primeiro quadro, a cor 0 da CRAM é gravada no ponto 145. O oráculo
+    /// mostra o azul a partir do ponto de vídeo 130, com um ponto da CRAM azul em x = 125
+    /// e quatro pontos pretos entre os dois (x = 126 a 129).
+    #[test]
+    fn vetor_do_oraculo_para_cram_no_meio_da_linha() {
+        let mut r = Renderizador::novo();
+        let ev: [(u64, Escrita); 8] = [
+            (252, Escrita::Controle(0x8F02)),
+            (392, Escrita::Controle(0x8004)),
+            (532, Escrita::Controle(0x8C81)),
+            (672, Escrita::Controle(0x8700)),
+            (812, Escrita::Controle(0x8174)),
+            (1008, Escrita::Controle(0xC000)),
+            (1008, Escrita::Controle(0x0000)),
+            (
+                1162,
+                Escrita::Dados {
+                    valor: 0x0E00,
+                    tamanho: 2,
+                },
+            ),
+        ];
+        for (col, e) in ev {
+            r.aplicar(0, col, e);
+        }
+        // O ponto da CRAM é desenhado quando a linha 1 começa a ser renderizada.
+        r.avancar_ate(2, 0);
+        let q = r.quadro();
+        let linha: Vec<u16> = (0..320).map(|x| q.ponto(x, 0).unwrap_or(0)).collect();
+        assert_eq!(linha[124], 0);
+        assert_eq!(linha[125], 448, "ponto da CRAM");
+        assert_eq!(&linha[126..130], &[0, 0, 0, 0]);
+        assert_eq!(linha[130], 448);
+        assert_eq!(linha[319], 448);
+        assert_eq!(linha.iter().filter(|p| **p != 448).count(), 129);
+    }
 }

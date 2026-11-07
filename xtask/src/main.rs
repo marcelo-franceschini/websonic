@@ -52,6 +52,7 @@ fn main() -> ExitCode {
         Some("descompressao-relatorio") => {
             descompressao::executar(&std::env::args().skip(2).collect::<Vec<_>>())
         }
+        Some("corpus-meta") => corpus::escrever_meta(&std::env::args().skip(2).collect::<Vec<_>>()),
         Some("corpus-trace") => corpus::executar(&std::env::args().skip(2).collect::<Vec<_>>()),
         Some("video-estado") => video::estado(&std::env::args().skip(2).collect::<Vec<_>>()),
         Some("video-comparar") => video::comparar(&std::env::args().skip(2).collect::<Vec<_>>()),
@@ -60,7 +61,7 @@ fn main() -> ExitCode {
         Some("manifesto") => manifesto::executar(&std::env::args().skip(2).collect::<Vec<_>>()),
         _ => {
             eprintln!(
-                "uso: cargo xtask <site|anti-rom|rotulos|descompressao-relatorio|corpus-trace|manifesto|ocultos|inventario|video-estado|video-comparar>"
+                "uso: cargo xtask <site|anti-rom|rotulos|descompressao-relatorio|corpus-trace|corpus-meta|manifesto|ocultos|inventario|video-estado|video-comparar>"
             );
             return ExitCode::from(2);
         }
