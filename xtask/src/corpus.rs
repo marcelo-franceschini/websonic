@@ -259,6 +259,9 @@ fn um_caso(
         "--rotulos",
         rotulos,
     ]);
+    // Video (P6 e P7): imagem por quadro (.s1i) e palavras de DMA (.s1v), para a Etapa 4.
+    let prefixo_video = s(dir.join(format!("{}.a", caso.nome)));
+    ra.extend(["--video", &prefixo_video]);
     let saida_a = oraculo(bin, &ra)?;
     let mut rb = base.clone();
     rb.extend(["--saida", &b]);
