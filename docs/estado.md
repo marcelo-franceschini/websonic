@@ -2,27 +2,33 @@
 
 Documento de acompanhamento do progresso das etapas.
 
-## Etapa 2 (Corpus e integridade): feita, falta só a revisão (07/11/2026)
+## Etapa 2 (Corpus e integridade): revisada, aprovada com três ressalvas (07/11/2026)
+
+Revisão feita por sessão nova em 07/11/2026 (só do que a Etapa 2 mudou). Nenhum achado BLOQUEIA. Três linhas do "Pronto quando" só se sustentam por corte aprovado no plano ou por decisão registrada, e o Marcelo precisa aceitar de forma explícita:
+- Segundo oráculo: a linha diz "concorda nas demos" e isso **não** foi cumprido (ver abaixo). Vale só a via do critério 5 do pronto (diferença com decisão registrada).
+- TAS: nenhum TAS no corpus e a conferência contra a REV01 não foi implementada (corte padrão do plano, seção 1). O conversor GMV só foi provado com dado sintético.
+- Demos: o caso `boot-demos` cobre duas demos e o início da terceira, não as quatro.
+Detalhes, evidência e pendências em `docs/backlog.md` e no fim de `docs/conhecimento/corpus.md`.
 
 Rodadas do host de 06 e 07/11/2026. Provas, com comando e resultado em `docs/conhecimento/corpus.md` e `docs/conhecimento/oraculos.md`:
 - Patch 0003 do oráculo aplicado (mapa de acessos à RAM por contexto e gravador de entradas); testes do oráculo OK, incluindo o que falha sem a correção dos botões no quadro.
 - Inventário de memória compartilhada gerado (`docs/inventario-memoria.md`: 751 variáveis, 546 compartilhadas).
 - Gravador (2.2): `gravacao: REPRODUZ` na prova e nas 6 partidas dos testes ocultos.
-- Testes ocultos (2.8): um caso cifrado por zona (ghz, mz, syz, lz, slz, sbz); a auditoria imprime `zona: passou (1 casos)` para as seis.
+- Testes ocultos (2.8): um caso cifrado por zona (ghz, mz, syz, lz, slz, sbz); a auditoria imprime `zona: passou (1 casos)` para as seis. Limite: o sistema sob teste da Etapa 2 (`scripts/sut-reproduz.sh`) só confere que o oráculo roda o caso até o fim sem erro. "passou" aqui prova decifração e execução, não fidelidade. O sistema real entra na Etapa 5.
 - Manifesto assinado (207 linhas); `cargo xtask fidelidade`: manifesto, determinismo e traces `PASSOU`; `veredito: PASSOU`. Hashes novos: `lz-agua` `9f8d8be1…`, `boot-demos` `52ed49ce…`.
-- Segundo oráculo: **não concorda** em todos os quadros. D1 estreitado: a região explicava `v_megadrive` (corrigida); o resto são variáveis de tempo, atribuídas ao ponto de fechamento do quadro em relação ao VBlank (hipótese). Decisão registrada: vale o oráculo principal. O critério 5 do pronto fica como "cada diferença tem decisão registrada", e a causa fica no backlog (nível 2, Etapa 15).
+- Segundo oráculo: **não concorda** em todos os quadros, então a linha "concorda nas demos" da Etapa 2 não foi cumprida. D1 foi medido só nos quadros 51, 52, 53, 60, 120 e 600 do `boot-demos` (4, 1, 3, 13 e 197 bytes, conforme a rodada). A região explicava `v_megadrive` (corrigida, provado no quadro 53). O resto são variáveis de tempo, que a hipótese atribui ao ponto de fechamento do quadro em relação ao VBlank. **É hipótese, sem prova**, e a diferença cresce com o tempo. Decisão registrada: vale o oráculo principal. Isso atende o critério 5 do pronto (diferença com decisão registrada), não a linha da Etapa 2. Causa no backlog, com teste barato a fazer antes da Etapa 5.
 - Limite aceito: os testes ocultos desta etapa são um caso curto por zona; os atos completos ficam para a Etapa 14.
-- Falta a sessão de revisão da Etapa 2 (nova, só do que ela mudou).
+- Revisão da Etapa 2: feita em 07/11/2026. Falta o Marcelo aceitar as três ressalvas acima.
 
 ## Etapa 4 (Renderizador fiel): implementada e provada no corpus atual (06/11/2026)
 
-Plano aprovado em 06/11/2026 (`docs/plano-etapa-4.md`). 4.0 a 4.9 feitas. Prova com a ROM real (rodada 2, `docs/conhecimento/video.md`): `video-comparar` **IGUAL em 7200 quadros** (`boot-demos`) e **em 2000 quadros** (`lz-agua`, Labyrinth, com 1530 interrupcoes de linha de nivel 4); VRAM, CRAM e VSRAM iguais ao trace em todos os quadros; nenhum aviso fora do inventario; lints do nucleo e testes wasm do `sonic1-video` ok na imagem; manifesto assinado. Falta a sessao de revisao (so do que a Etapa 4 mudou) e o resumo para o chat de planejamento. A Etapa 2 continua incompleta (ver abaixo e o backlog).
+Plano aprovado em 06/11/2026 (`docs/plano-etapa-4.md`). 4.0 a 4.9 feitas. Prova com a ROM real (rodada 2, `docs/conhecimento/video.md`): `video-comparar` **IGUAL em 7200 quadros** (`boot-demos`) e **em 2000 quadros** (`lz-agua`, Labyrinth, com 1530 interrupcoes de linha de nivel 4); VRAM, CRAM e VSRAM iguais ao trace em todos os quadros; nenhum aviso fora do inventario; lints do nucleo e testes wasm do `sonic1-video` ok na imagem; manifesto assinado. Falta a sessao de revisao (so do que a Etapa 4 mudou) e o resumo para o chat de planejamento. A Etapa 2 foi fechada depois (ver o topo deste arquivo).
 
 ## Etapa atual
 
 - Etapa: 1 (Oráculo), plano aprovado pelo Marcelo em 06/11/2026.
 - Status: sub-etapas 1.1 a 1.9 feitas (1.8 e 1.9 rodadas pelo Marcelo em 06/11/2026). Congelamento aplicado e commitado (c188a83). **Defeito achado no `refs/rotulos.txt`** (base 10 em vez de 16; inferência, a provar na 2.0). Falta a revisão da Etapa 1, com a lista R1 a R13 em `docs/conhecimento/oraculo.md`.
-- Etapa 2 (Corpus e integridade): plano aprovado pelo Marcelo em 06/11/2026. Feito pela IA, com dados sintéticos: 2.0 (mapa em base 16, já provado na Etapa 3), 2.3 (`crates/corpus`, GMV; BK2 não confirmável, ver backlog), 2.4 (`xtask corpus-trace`, patch `docs/pedidos/estado-a-cada.patch`), 2.6 parte hardware (`xtask inventario`), 2.7 (`xtask manifesto`, SHA-256 próprio, SSHSIG), 2.8 (`xtask ocultos`, crate `age`). **Rodada do host feita em 06/11/2026**: patches P0 e P1 aplicados, hooks 14 de 14, xtask 40 testes, oráculo OK, `boot-demos` 7200 quadros hash `d0acd7fe…` com `determinismo: PASSOU` e retomada, inventário de hardware gerado, manifesto assinado e verificado (chaves em `refs/assinante.pub` e `refs/ocultos.pub`). **Segundo oráculo (2.1 e 2.5), rodada de 06/11/2026: NÃO concorda** (RAM do 68000 diverge no quadro 52, causa desconhecida, ver `docs/conhecimento/oraculos.md`). **Falta**: 2.2 (gravador), 2.6 parte memória (pedido P2), rodadas do host (`scripts/etapa2-host.sh`), assinatura, primeiros testes ocultos reais e a revisão. Ver `docs/conhecimento/corpus.md`. **Etapa 2 incompleta.** O Marcelo pediu em 06/11/2026 para seguir com o plano da Etapa 4 mesmo assim; as pendências da Etapa 2 estão no backlog.
+- Etapa 2 (Corpus e integridade): plano aprovado pelo Marcelo em 06/11/2026. Feito pela IA, com dados sintéticos: 2.0 (mapa em base 16, já provado na Etapa 3), 2.3 (`crates/corpus`, GMV; BK2 não confirmável, ver backlog), 2.4 (`xtask corpus-trace`, patch `docs/pedidos/estado-a-cada.patch`), 2.6 parte hardware (`xtask inventario`), 2.7 (`xtask manifesto`, SHA-256 próprio, SSHSIG), 2.8 (`xtask ocultos`, crate `age`). **Rodada do host feita em 06/11/2026**: patches P0 e P1 aplicados, hooks 14 de 14, xtask 40 testes, oráculo OK, `boot-demos` 7200 quadros hash `d0acd7fe…` com `determinismo: PASSOU` e retomada, inventário de hardware gerado, manifesto assinado e verificado (chaves em `refs/assinante.pub` e `refs/ocultos.pub`). **Segundo oráculo (2.1 e 2.5), rodada de 06/11/2026: NÃO concorda** (RAM do 68000 diverge no quadro 52, causa desconhecida, ver `docs/conhecimento/oraculos.md`). (Histórico de 06/11/2026. O que faltava, gravador, memória compartilhada, assinatura e ocultos, foi fechado em 06 e 07/11/2026, ver o topo deste arquivo.) Ver `docs/conhecimento/corpus.md`.
 - Etapa 3 (Descompressores): feita. Prova com a ROM real em 06/11/2026: 185 de 185 blocos IGUAL, 6 AUSENTE (ramos REV00), 0 falhas (relatório sha1 `98bdc85b`). Ver `docs/conhecimento/descompressao.md`. Commits do `oracle/` e do mapa feitos (6121249). Falta só a sessão de revisão da Etapa 3.
 
 ### Etapa 3: o que o Marcelo precisa rodar (host, fora do Claude)

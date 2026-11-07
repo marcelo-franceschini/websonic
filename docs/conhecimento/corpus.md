@@ -33,7 +33,7 @@
 ## Rodada do host (06/11/2026)
 
 - Perfil das demos do `boot-demos` (quadro: modo/zona): Sega 0 a 360, titulo 360 a 960, demo da zona 0 (GHZ) de 960 a 3000, titulo, demo da zona 2 (MZ) 3900 a 5940, titulo, demo da zona 4 (SYZ) 6900 a 8880, titulo, special stage (modo 16) 9840 a 11400. O caso atual (7200 quadros) cobre duas demos e o inicio da terceira. Cobrir as quatro pede 11700 quadros (trace de cerca de 3,4 GB), pendente.
-- `boot-demos`, 7200 quadros: `hash_do_trace` `d0acd7feb9e29c0688da54ce42b74c50bcbb81e9`, `determinismo: PASSOU` (duas execucoes e retomada do ultimo estado). Trace de 2,0 GB.
+- `boot-demos`, 7200 quadros: `hash_do_trace` `d0acd7feb9e29c0688da54ce42b74c50bcbb81e9` (hash antigo, de antes dos patches 0002 e 0003; o vigente está em `refs/manifesto.txt`), `determinismo: PASSOU` (duas execucoes e retomada do ultimo estado). Trace de 2,0 GB.
 - Inventario de hardware (`docs/inventario-hardware.md`): 47 pares registrador/valor da VDP; DMA da 68000 para a VDP 20617 vezes e preenchimento de VRAM 26; DAC com 796736 escritas; so interrupcao de nivel 6 (VBlank). **Nenhuma interrupcao de nivel 4 (HBlank) no corpus das demos**: a agua da Labyrinth e as mudancas de paleta no meio do quadro nao aparecem aqui. A Etapa 4 precisa de um caso na Labyrinth (partida gravada ou TAS) para provar o meio do quadro.
 - Manifesto assinado com ssh-keygen ed25519; `manifesto verificar`: assinatura OK, referencias OK, testes OK.
 
@@ -45,7 +45,7 @@
 - **Gravador (2.2), opção A com variação:** em vez de editar o frontend, o patch grava no núcleo. `WEBSONIC_GRAVAR=BASE` faz o núcleo gravar `BASE.s1in` (máscara do primeiro passo de cada quadro) e `BASE.ram` (RAM do 68000 do último quadro fechado). Vale para qualquer frontend que use o núcleo, inclusive o `jgenesis` com janela. Prova sintética: `oracle/runner/tests/gravador.rs`. Prova com janela (host): o oráculo sem janela, com as entradas gravadas, tem de gerar a mesma RAM (`cmp`). Se a janela estiver com região, temporização ou controle diferentes do oráculo, a prova acusa `DIFERE` e nada é cifrado. Limite: se o botão mudar no meio de um quadro, a gravação guarda só o valor do início; a prova pega essa divergência.
 - **Testes ocultos, decisão:** o mínimo para fechar a Etapa 2 passa a ser um caso por zona (`ghz mz syz lz slz sbz`). Os atos completos de cada zona valem até a Etapa 14. Motivo: o requisito diz "primeiros testes ocultos, por zona". O texto claro vive só em `/dev/shm` durante `etapa2-gravar.sh`.
 - **`cargo xtask fidelidade`:** manifesto (assinatura, referências, testes), traces do corpus contra o manifesto assinado (mais determinismo) e diferenças do segundo oráculo com decisão registrada em `oraculos.md`. Não roda o segundo oráculo; isso é `scripts/etapa2-oraculo2.sh`. Prova: 3 testes em `cargo test -p xtask`.
-- **D1:** `oraculo2 diferencas` compara os despejos de RAM dos dois oráculos no quadro N e imprime só faixas de endereço, nome da variável mais próxima e contagens. Roda em `scripts/etapa2-final.sh`. O resultado ainda não foi lido.
+- **D1:** `oraculo2 diferencas` compara os despejos de RAM dos dois oráculos no quadro N e imprime só faixas de endereço, nome da variável mais próxima e contagens. Roda em `scripts/etapa2-final.sh`. O resultado foi lido nas rodadas seguintes, ver `oraculos.md`.
 - **Hash do trace:** o cabeçalho entra no hash e carrega o hash dos patches. Depois do patch 0003 os `hash_do_trace` mudam e o manifesto é regerado (`scripts/etapa2-fechar.sh`).
 
 ## Rodada do host (07/11/2026): gravador e ocultos
@@ -54,3 +54,21 @@
 - Cinco zonas gravadas e cifradas (ghz, syz, lz, slz, sbz), cada uma com `REPRODUZ`. A auditoria decifra em `/dev/shm` e imprime `zona: passou (1 casos)` para as cinco.
 - A zona mz deu `DIFERE`. Causa provável: um botão que mudou no meio de um quadro (o gravador guardava só o valor do início, mas a janela usava o valor corrente). Correção: com o gravador ligado, o núcleo usa os botões do início do quadro durante o quadro inteiro (patch `docs/pedidos/etapa2-oraculo-2.patch`, teste `oracle/runner/tests/gravador.rs`, que falha sem a correção). A mz foi regravada na rodada 4.
 - Aviso do jgenesis: `Invalid keyboard input string` para a tecla de rebobinar (crase) na configuração do usuário. Não afeta a gravação.
+
+## Revisão da Etapa 2 (sessão nova, 07/11/2026)
+
+Provas rodadas pela revisão, sem ROM (contêiner de trabalho, sem o oráculo):
+- `cargo fmt --check`: sem saída. `cargo clippy --workspace --all-targets -- -D warnings`: exit 0. `cargo test --workspace`: todos `ok` (xtask 48, corpus 9, fidelidade 19, video 44+4+1, rom 13).
+- `cargo xtask anti-rom`: `anti-rom: nenhum arquivo suspeito`. Nenhum `.s1t`, `.s1e`, `.ram`, `.acc`, `.age`, `.bin` ou `.gen` rastreado (`git ls-files`).
+- `cargo xtask manifesto verificar`: `assinatura: OK`, `referências: OK`, `testes: OK (0 não assinados)`.
+- Núcleo: nenhum `HashMap`, `HashSet`, `f32`, `f64`, `#[allow]` nem cast com `as` em `crates/core/src`; lints `deny` no `Cargo.toml` do crate.
+- Patches: para cada commit que tocou `oracle/` desde c188a83 (a33b3c0, 6121249, 15e4e2d, 633007d, e93909d), toda linha adicionada em `oracle/runner` e `oracle/patches` está em algum arquivo de `docs/pedidos/*.patch`. Zero linhas fora dos patches. O git não distingue quem aplicou (autor único), então a prova é a coincidência com os patches.
+- Inventários: sem sequência hexadecimal longa nem mnemônico. Os únicos hexadecimais longos do repositório fora do manifesto são hashes SHA-1 em `corpus/lz-agua.meta`, neste arquivo e em `oraculos.md`.
+
+Afirmações desta base sem comando e resultado registrados (marcadas sem prova):
+- Perfil das demos (quadro e modo/zona) e o tamanho de 3,4 GB do trace de 11700 quadros: sem comando nem saída literal.
+- Prova do gravador (`REPRODUZ`, 2526 quadros) e das cinco zonas: o comando é `scripts/etapa2-gravar.sh`, mas a saída literal não está aqui. A regravação da zona mz depois da correção (rodada 4, `scripts/etapa2-rodada4.sh`) só aparece em `docs/estado.md`, sem saída.
+- "Testes do oráculo OK, incluindo o que falha sem a correção" (`oracle/scripts/testa.sh`): depende do host, a revisão não rodou.
+- `age` só oferece senha com a feature `cli-common` e a árvore tem cerca de 340 crates: sem comando.
+- Mapa A/B/C do GMV: só a página do TASVideos, nenhum TAS real conferido.
+- Contagens de testes antigas (25 e 40 do xtask) valiam na época. Hoje são 48.
