@@ -4,9 +4,12 @@
 # reproduz a partida (a RAM do ultimo quadro tem de ser identica) e, se a ZONA nao for "prova",
 # cifra o caso. O texto claro fica so em /dev/shm e e apagado no fim.
 #
-# ANTES, nas configuracoes do jgenesis (menu): regiao forcada Japao, NTSC, controle 1 de 3
-# botoes, controle 2 nenhum. Sem isso a prova acusa DIFERE.
-# A partida comeca no ligar do console (nao use savestate nem reset). Feche a janela no fim.
+# O script abre o jogo direto, com regiao Japao, NTSC e controle 1 de 3 botoes forcados so
+# para esta execucao (o arquivo de configuracao do jgenesis nao muda).
+# Teclas: setas, A = botao A, S = botao B, D = botao C, Enter = Start.
+# NAO use: F1 e F2 (reset), F5 e F6 (estado salvo), Tab (avanco rapido), ` (voltar), P e N
+# (pausa e passo). Eles quebram a reproducao. A partida comeca no ligar do console.
+# Para terminar, feche a janela pelo X, jogando antes uns 30 a 60 segundos.
 #
 # Uso: sh scripts/etapa2-gravar.sh ROM ZONA CASO
 #   ZONA: prova | ghz | mz | syz | lz | slz | sbz | especial | final | telas
@@ -24,8 +27,12 @@ cd "$repo"
 tmp=$(mktemp -d /dev/shm/websonic-gravar.XXXXXX)
 trap 'rm -rf "$tmp"' EXIT INT TERM
 
-echo "Abrindo o jgenesis. Abra a ROM pelo menu, jogue, e feche a janela no fim."
-WEBSONIC_GRAVAR="$tmp/g" "$gui" || true
+echo "Abrindo o jogo. Jogue e feche a janela pelo X no fim."
+WEBSONIC_GRAVAR="$tmp/g" "$gui" -f "$rom" \
+    --config-override genesis.forced_region=Japan \
+    --config-override genesis.forced_timing_mode=Ntsc \
+    --config-override input.genesis.p1_type=ThreeButton \
+    --config-override input.genesis.p2_type=None 2>&1 | grep -E "WEBSONIC|forced_region|forced_timing|p1_type|Cartridge region|rror" || true
 [ -s "$tmp/g.s1in" ] || { echo "Erro: nada foi gravado." >&2; exit 1; }
 n=$(wc -l < "$tmp/g.s1in")
 echo "quadros gravados: $n"

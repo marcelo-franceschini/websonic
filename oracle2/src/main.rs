@@ -47,11 +47,41 @@ type Entrada = unsafe extern "C" fn(c_uint, c_uint, c_uint, c_uint) -> i16;
 
 const ENV_SET_PIXEL_FORMAT: c_uint = 10;
 const ENV_SET_VARIABLES: c_uint = 16;
+const ENV_GET_VARIABLE: c_uint = 15;
+
+/// `struct retro_variable` do libretro.
+#[repr(C)]
+struct Variavel {
+    chave: *const c_char,
+    valor: *const c_char,
+}
 const MEMORIA_RAM_DO_SISTEMA: c_uint = 2;
 
-unsafe extern "C" fn ambiente(cmd: c_uint, _dados: *mut c_void) -> bool {
-    // Aceita o formato de pixel e a lista de variaveis; recusa o resto (o nucleo usa o padrao).
-    matches!(cmd, ENV_SET_PIXEL_FORMAT | ENV_SET_VARIABLES)
+unsafe extern "C" fn ambiente(cmd: c_uint, dados: *mut c_void) -> bool {
+    match cmd {
+        ENV_SET_PIXEL_FORMAT | ENV_SET_VARIABLES => true,
+        // O console de referencia e o Mega Drive japones NTSC: a regiao do nucleo e fixada em
+        // `ntsc-j` (o padrao `auto` escolhe pela ROM, que traz mais de uma regiao, e muda o
+        // registrador de versao que o jogo le). As outras opcoes ficam no padrao do nucleo.
+        ENV_GET_VARIABLE => {
+            let v = dados.cast::<Variavel>();
+            if v.is_null() {
+                return false;
+            }
+            // SAFETY: o nucleo passa um `retro_variable` valido, com `chave` terminada em zero.
+            unsafe {
+                if std::ffi::CStr::from_ptr((*v).chave).to_bytes()
+                    == b"genesis_plus_gx_region_detect"
+                {
+                    (*v).valor = c"ntsc-j".as_ptr();
+                    return true;
+                }
+                (*v).valor = std::ptr::null();
+            }
+            false
+        }
+        _ => false,
+    }
 }
 unsafe extern "C" fn video(_: *const c_void, _: c_uint, _: c_uint, _: usize) {}
 unsafe extern "C" fn audio_um(_: i16, _: i16) {}
