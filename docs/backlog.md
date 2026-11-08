@@ -42,3 +42,12 @@ Uma linha por item: o que é, dono, etapa-alvo. Só entra aqui o que não bloque
 - Mover `tas converter` e `tas conferir` do `xtask` para o `relatorio` (decidem o que fica no corpus; contraria D-R5). Dono: IA (patch) e Marcelo. Etapa-alvo: 5.
 - CI não cobre o pacote `relatorio` (workspace separado): `fmt`, `clippy` e `test` dele. Dono: Marcelo (`.github` é congelado). Etapa-alvo: 5.
 - `scripts/etapa2-fechamento.sh` lê o veredito do texto nos passos 4, 5 e 7 e `registrar` descarta o código de saída. Dono: IA. Etapa-alvo: 5.
+- Universo estatico de desvios do original (decodificar o codigo sem executar) para saber quais desvios nenhum caso executou. O decodificador do jgenesis nao e publico; pede patch no oraculo. Dono: IA. Etapa-alvo: 14 (criterio 2 do pronto).
+- Anotar `decisao!` em `NemDecToRAM` e `NemDec` (porta da VDP). O piloto da Etapa 5 anota so `KosDec` e `EniDec`. Dono: IA. Etapa-alvo: 6.
+- Universo de desvios do Z80 (o programa do Z80 entra no nucleo na Etapa 6). Dono: IA. Etapa-alvo: 6.
+- Aprovar ou nao a exclusao da pilha na comparacao do teste por rotina (`cobertura/exclusoes-propostas.txt`). Dono: Marcelo. Etapa-alvo: 5.
+- Estouro de orcamento do quadro so e registrado; adiar o resto do trabalho para o quadro seguinte depende de custo em ciclos. Dono: IA. Etapa-alvo: 15.
+- Volta do pino TH do controle por tempo (quando o jogo deixa TH como entrada). Dono: IA. Etapa-alvo: 15.
+- Barramento aberto: o valor no oraculo e a ultima palavra buscada pelo 68000; o nucleo nao busca instrucoes. Se o jogo ler barramento aberto, o inventario de barramento mostra e o valor passa a vir do tempo gravado. Dono: IA. Etapa-alvo: 6 a 12.
+- Os testes do `diferencial/` (memoria, operacoes, rotina) nao entram na lista de testes do manifesto, porque precisam do oraculo construido. Os arquivos entram (hash). Dono: IA. Etapa-alvo: 14.
+- Rodada completa dos bugs injetados (`cargo fidelidade mutantes --orcamento 0`) e dos 65536 pares por operacao. Dono: Marcelo. Etapa-alvo: auditoria.

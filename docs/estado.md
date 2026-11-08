@@ -2,9 +2,17 @@
 
 Documento de acompanhamento do progresso das etapas.
 
-## Etapa 5 (Núcleo base): plano apresentado, aguarda aprovação do Marcelo (08/11/2026)
+## Etapa 5 (Núcleo base): lado da IA pronto, faltam os blocos A e B do Marcelo (08/11/2026)
 
-Plano em `docs/plano-etapa-5.md`. Nada implementado. **Etapa 2: declarada concluída pelo Marcelo em 08/11/2026** (ele reconstruiu a imagem do contêiner; a IA não verificou a reconstrução). Haverá dois blocos de comandos para o Marcelo (A, depois da 5.4; B, no fecho).
+Plano aprovado em 08/11/2026 (`docs/plano-etapa-5.md`). Implementado e provado com dados sintéticos: memória espelhada (5.1), operações do 68000 (5.2), tempo gravado e laço de quadro (5.3), pontos de checagem (5.4), patch 0004 do oráculo com inventários e tempo (5.0), harness de teste por rotina (5.5), cobertura (5.6), bugs injetados (5.7) e lista de bugs conhecidos (5.8, 315 itens). Detalhes, desvios do plano e evidência em `docs/conhecimento/nucleo.md`.
+
+**Falta (Marcelo, host):**
+1. Bloco A: `sh scripts/etapa5-bloco-a.sh` (aplica `docs/pedidos/etapa5-oraculo.patch`, gera os inventários do 68000, do barramento e das interrupções e os `.s1tempo`).
+2. Bloco B: `sh scripts/etapa5-bloco-b.sh 2>&1 | tee /tmp/etapa5-bloco-b.txt` (aplica `etapa5-relatorio.patch`, roda testes, diferencial completo, teste por rotina com a ROM, cobertura, mutantes e bugs conhecidos).
+3. Assinatura: `sh scripts/etapa5-assinar.sh` (pede senhas; refaz os traces, o manifesto, assina e roda `cargo fidelidade fidelidade`).
+4. Congelamento e CI: `git apply docs/pedidos/etapa5-congelar.patch` e reconstruir a imagem do contêiner (corrige também o `esperado-cargo-config.txt` defasado desde a Etapa 2).
+5. Decisão do Marcelo: aprovar ou não a exclusão da pilha na comparação (`cobertura/exclusoes-propostas.txt`; recomendação: aprovar).
+6. Sessão de revisão da Etapa 5 (só do que ela mudou).
 
 ## Etapa 2 (Corpus e integridade): revisão do fechamento feita (08/11/2026); fecha quando o Marcelo reconstruir a imagem do contêiner
 
