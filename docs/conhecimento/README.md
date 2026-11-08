@@ -15,3 +15,4 @@
 - [oraculo.md](oraculo.md): oráculo (jgenesis modificado), formato do trace e dos eventos, mapa de rótulos, com evidência.
 - [nucleo.md](nucleo.md): memoria espelhada, operacoes do 68000, tempo gravado, pontos de checagem, teste por rotina, cobertura, bugs injetados e bugs conhecidos (Etapa 5), com evidencia.
 - [som.md](som.md): pontos do Z80 no tempo gravado, como o Z80 do oráculo avança, IDs e inventário do som (Etapa 6), com evidência.
+- [abertura.md](abertura.md): medidas do oráculo para o trecho do boot à primeira demo (Etapa 7), achados e resultado do experimento do nível 2.

@@ -8,11 +8,11 @@ Pré-condições conferidas em `docs/estado.md`: Etapa 3 feita (185 de 185 bloco
 
 **Começa** no quadro 0 do caso `boot-demos` (ligar do console, vetor de reset, `EntryPoint`, `$206`), sem nenhum botão apertado.
 
-**Termina** no fim do primeiro quadro em que o 68000 chega a `Level_StartGame` (`$3AD8`) com o modo de jogo igual ao da demo (`v_gamemode` = 8, `f_demo` diferente de zero). Esse é o início da primeira demo: a fase já foi carregada, o cartão de título já passou e o Sonic já foi criado, mas ele ainda não rodou.
+**Termina** no fim do primeiro quadro em que o 68000 chega a `Level_StartGame` (`$3AD8`) com o bit 7 de `v_gamemode` ainda ligado (modo `$88`, demo); o próprio `Level_StartGame` o desliga. Esse é o início da primeira demo: a fase já foi carregada, o cartão de título já passou e o Sonic já foi criado, mas ele ainda não rodou.
 
 Como o ponto final é achado, sem ler binário:
 1. Por rótulo: `oraculo rodar --parar-em Level_StartGame` no caso `boot-demos` (o mapa `refs/rotulos.txt` dá o endereço). A saída traz o quadro (`N_fim`) e o `mclk`. Só números.
-2. Por estado: o perfil por quadro (`--perfil-a-cada 1`) mostra o primeiro quadro com modo 8. O bloco 1 confere que os dois métodos concordam em `N_fim` (o modo 8 aparece no máximo poucos quadros antes, durante o cartão de título).
+2. Por estado: o perfil por quadro mostra o modo `$88` de 933 a 1166 e modo 8 a partir de 1167. O bloco 1 confirmou: `N_fim` = 1166 (`Level_StartGame` no quadro 1166, modo 8 no 1167). O patch 0006 dá o instante exato.
 
 Por que parar aí e não no primeiro `Level_MainLoop`: o laço principal da fase roda o objeto do Sonic, a física e os anéis, que são a Etapa 9. Parar em `Level_StartGame` cumpre "início da primeira demo" sem puxar a Etapa 9. O quadro seguinte, que já roda o Sonic, não entra.
 
@@ -75,7 +75,7 @@ Por quadro, do 0 a `N_fim`, o relatório confere:
 
 **Pergunta.** Um modelo que só lê o código do 68000 na ROM (sem executar) e soma custos prevê (a) o ciclo em que termina a espera da voz SEGA e (b) a duração do boot?
 
-**Marcas do oráculo (ciclos em mclk, divididos por 7 para ciclos do 68000):** `GameProgram`, `CheckSumOk`, `GameInit`, `GM_Sega`, `PlaySegaSound` (entrada) e `Sega_WaitPal` (primeira vez depois da voz). O bloco 1 já mede cada uma (primeira chegada). Duração do boot = marca `GM_Sega` menos o quadro 0. Fim da espera da voz = `Sega_WaitPal` menos `PlaySegaSound`.
+**Marcas do oráculo (ciclos em mclk, divididos por 7 para ciclos do 68000):** `GameProgram`, `CheckSumOk`, `GameInit`, `GM_Sega`, `PlaySegaSound` (entrada) e `Sega_WaitEnd` (primeira chegada, depois da voz). O bloco 1 já mede cada uma (primeira chegada). Duração do boot = marca `GM_Sega` menos o quadro 0. Espera da voz = primeira chegada em `Sega_WaitEnd` menos a de `PlaySegaSound` (o bloco 1 mediu 134 quadros). Correção: a marca `Sega_WaitPal` vem antes da voz e não serve para isso.
 
 **Modelo.** Módulo `crates/core/src/nivel2/`: decodifica o laço lendo os bytes da ROM carregada (só tamanhos de instrução e modos de endereçamento, nunca executa), soma a tabela de ciclos do manual do 68000 (Motorola M68000 Family Programmer's Reference Manual, tabelas de tempo) e soma o que o hardware acrescenta: espera por acesso do Z80 à ROM durante a voz, atualização da memória (refresh) e DMA. As voltas do laço vêm do valor inicial do contador, lido da ROM. O custo de cada trecho é calculado uma vez no carregamento.
 
@@ -141,3 +141,9 @@ Entre as sub-etapas a IA não para: implementa, prova com dados sintéticos, atu
 3. CI e site: o job `verificar` já roda `fmt`, `clippy` e `test` nativo e wasm no workspace principal, e o `publicar` monta `site/` com `cargo xtask`. Se o crate `web` ganhar dependência nova (apenas `sonic1-core` e `sonic1-video`), o fluxo não muda. Se a 7.7 mostrar que o workflow precisa de passo novo, o patch pronto vai em `docs/pedidos/etapa7-ci.patch` no bloco 4. Estimativa: não precisa.
 
 **Aprovação pedida junto com o bloco 1.** Responder "aprovado" cobre: este plano, D7.3 e D7.4, e a exclusão da pilha na comparação (D7.7, `cobertura/exclusoes-propostas.txt`). Se o Marcelo não aprovar a exclusão da pilha, o critério de zero divergência na RAM do 68000 não pode ser cumprido pelo núcleo atual (ele não guarda a pilha de chamadas) e a Etapa 7 pararia na 7.1.
+
+## 10. Ajustes depois do bloco 1 (08/11/2026)
+
+- **Voz SEGA sem RTE.** `PlaySegaSound` roda dentro do tratador de VBlank por cerca de 134 quadros. Nesses quadros não há ponto pós-VBlank. A comparação usa só o fechamento, onde o PC está no laço da voz e o estado é estável. O relatório separa os quadros por tipo de ponto.
+- **Marcas.** A parada em rótulo do oráculo dá o quadro, não o instante. O patch 0006 grava o `mclk` exato, linha e coluna. Os números do bloco 1 estão em `docs/conhecimento/abertura.md`.
+- **Marca da voz do experimento:** `PlaySegaSound` e `Sega_WaitEnd`. A previsão ingênua (18 por 65536 voltas de 14 ciclos, mais o excesso do Z80 e do refresh) é o que o modelo precisa acertar.
