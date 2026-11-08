@@ -19,6 +19,8 @@ use websonic_oracle::{Entradas, Oraculo};
 
 /// Posições da RAM do Z80 que o Z80 muda sozinho (decisão da Etapa 6).
 const RACE_Z80: [usize; 2] = [0x1FFD, 0x1FFF];
+/// `WaitForVBlank` (metadado de `refs/rotulos.txt`).
+const WAIT_FOR_VBLANK: u32 = 0x29A0;
 const NOMES_SEQ: [&str; 5] = ["video", "psg", "ym68", "ymz80", "z80"];
 const LIMITE_PASSOS_QUADRO: u64 = 50_000_000;
 
@@ -50,6 +52,16 @@ pub struct Relatorio {
     /// Contexto do primeiro acesso ao Z80 que difere: índice, oráculo e núcleo.
     pub z80_contexto: Option<String>,
     pub int6_oraculo: u32,
+    /// Comparação nas esperas de VBlank (D7.4): o laço principal chegou a `WaitForVBlank`.
+    pub esperas_iguais: u32,
+    pub esperas_diverge: u32,
+    pub esperas_z80_diverge: u32,
+    pub primeira_espera: Option<String>,
+    pub esperas_variaveis: BTreeMap<String, u32>,
+    pub esperas_oraculo: u32,
+    pub esperas_nucleo: u32,
+    /// Quadros cujo fechamento cai dentro do tratador de VBlank ou com VBlank no quadro.
+    pub fechamento_nao_comparavel: u32,
     pub int6_nucleo_tratadas: u32,
     pub int6_nucleo_ignoradas: u32,
     pub ignoradas_em: Vec<(u32, String)>,
@@ -64,6 +76,8 @@ impl Relatorio {
     /// Zero divergência fora dos trechos atômicos e nas sequências de escritas.
     pub fn zero(&self) -> bool {
         self.ram_diverge == 0
+            && self.esperas_diverge == 0
+            && self.esperas_z80_diverge == 0
             && self.z80_diverge == 0
             && self.escritas_diverge.is_none()
             && self.erro_nucleo.is_none()
@@ -194,21 +208,30 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
     let mut descarte = Vec::new();
     oracle_trace::drain_tempo(&mut descarte);
     let mut ultimo_pc = u32::MAX;
+    nucleo.registrar_esperas();
+    let mut esperas_o: std::collections::VecDeque<(Vec<u8>, Vec<u8>)> = Default::default();
+    let mut esperas_n: std::collections::VecDeque<(Vec<u8>, Vec<u8>)> = Default::default();
 
     while o.quadro_atual() < quadros {
         let mut marcas: Vec<(u64, usize)> = Vec::new();
         let mut passos = 0u64;
-        let q = loop {
+        let (q, mascara_fecha) = loop {
             let q = o.passo()?;
-            let pc = o.emulador().oracle_regs68().pc;
+            let regs = o.emulador().oracle_regs68();
+            let pc = regs.pc;
+            let mascara = (regs.sr >> 8) & 7;
             // Chegada: o PC mudou para o endereço da marca (laço de uma instrução conta uma vez).
             let chegou = pc != ultimo_pc;
             ultimo_pc = pc;
+            if chegou && pc == WAIT_FOR_VBLANK {
+                esperas_o.push_back((o.ram68k(), o.ram_z80()));
+                rel.esperas_oraculo += 1;
+            }
             if chegou && let Some(i) = MARCAS.iter().position(|m| m.2 == pc) {
                 marcas.push((o.emulador().oracle_mclk(), i));
             }
             if let Some(q) = q {
-                break q;
+                break (q, mascara);
             }
             passos += 1;
             if passos > LIMITE_PASSOS_QUADRO {
@@ -216,6 +239,7 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
             }
         };
         let mut brutos = Vec::new();
+        let mut int6_no_quadro = 0u32;
         oracle_trace::drain_tempo(&mut brutos);
         // Eventos de tempo na ordem do relógio mestre.
         let mut linha: Vec<(u64, EventoQuadro)> = Vec::new();
@@ -242,6 +266,7 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
                 } => {
                     if nivel == 6 {
                         rel.int6_oraculo += 1;
+                        int6_no_quadro += 1;
                     }
                     linha.push((
                         mclk,
@@ -301,6 +326,56 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
             rel.erro_nucleo = Some(format!("quadro {n}: {e:?}"));
         }
 
+        // Estados nas esperas de VBlank: o k-ésimo do oráculo contra o k-ésimo do núcleo.
+        for e in nucleo.tirar_esperas() {
+            rel.esperas_nucleo += 1;
+            esperas_n.push_back(e);
+        }
+        while !esperas_o.is_empty() && !esperas_n.is_empty() {
+            let (Some((ro, zo)), Some((rn, zn))) = (esperas_o.pop_front(), esperas_n.pop_front())
+            else {
+                break;
+            };
+            let k = rel.esperas_iguais + rel.esperas_diverge;
+            let (ro, rn) = (mascarar_ram(&ro), mascarar_ram(&rn));
+            let (zo, zn) = (mascarar_z80(&zo), mascarar_z80(&zn));
+            if let Some((p, total)) = primeira_diferenca(&ro, &rn) {
+                rel.esperas_diverge += 1;
+                let mut vistos: Vec<String> = Vec::new();
+                for (i, (x, y)) in ro.iter().zip(&rn).enumerate() {
+                    if x != y {
+                        let nome = nomes.de(0xFF_0000 + u32::try_from(i).unwrap_or(0));
+                        let base = nome.split('+').next().unwrap_or("").to_string();
+                        if !vistos.contains(&base) {
+                            vistos.push(base);
+                        }
+                    }
+                }
+                if rel.primeira_espera.is_none() {
+                    rel.primeira_espera = Some(format!(
+                        "espera {k} (quadro do oraculo ao fim: {}) primeira_variavel {} bytes_diferentes {total} variaveis {:?}",
+                        o.quadro_atual(),
+                        nomes.de(0xFF_0000 + u32::try_from(p).unwrap_or(0)),
+                        vistos
+                    ));
+                }
+                for v in vistos {
+                    *rel.esperas_variaveis.entry(v).or_default() += 1;
+                }
+            } else {
+                rel.esperas_iguais += 1;
+            }
+            if primeira_diferenca(&zo, &zn).is_some() {
+                rel.esperas_z80_diverge += 1;
+            }
+        }
+        // O fechamento do quadro só vale fora do tratador de VBlank e sem VBlank no quadro:
+        // o oráculo fecha o quadro na linha 232, no meio do tratador.
+        let comparavel = int6_no_quadro == 0 && mascara_fecha != 6;
+        if !comparavel {
+            rel.fechamento_nao_comparavel += 1;
+        }
+        let atomico = atomico || !comparavel;
         // RAM do 68000.
         let ram_o = mascarar_ram(&o.ram68k());
         let ram_n = mascarar_ram(nucleo.mem.ram());
@@ -473,6 +548,24 @@ pub fn imprimir(rel: &Relatorio) {
         "interrupcoes_nivel6: oraculo={} nucleo_tratadas={} nucleo_ignoradas={}",
         rel.int6_oraculo, rel.int6_nucleo_tratadas, rel.int6_nucleo_ignoradas
     );
+    println!(
+        "esperas_de_vblank: oraculo={} nucleo={} iguais={} diverge={} z80_diverge={}",
+        rel.esperas_oraculo,
+        rel.esperas_nucleo,
+        rel.esperas_iguais,
+        rel.esperas_diverge,
+        rel.esperas_z80_diverge
+    );
+    println!(
+        "fechamento_nao_comparavel={}",
+        rel.fechamento_nao_comparavel
+    );
+    if let Some(p) = &rel.primeira_espera {
+        println!("primeira_divergencia_em_espera: {p}");
+    }
+    for (nome, n) in &rel.esperas_variaveis {
+        println!("espera_variavel_divergente {nome} esperas={n}");
+    }
     for (q, m) in &rel.ignoradas_em {
         println!("interrupcao_ignorada quadro={q} modo={m}");
     }

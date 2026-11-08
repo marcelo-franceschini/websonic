@@ -142,6 +142,8 @@ pub struct Abertura {
     pub vblanks_tratados: u32,
     /// Onde as interrupções ignoradas caíram: quadro e estado (diagnóstico).
     pub ignoradas_em: Vec<(u32, String)>,
+    /// Diagnóstico: RAM do 68000 e do Z80 cada vez que o laço principal chega a uma espera de VBlank.
+    esperas: Option<Vec<(Vec<u8>, Vec<u8>)>>,
 }
 
 impl Abertura {
@@ -153,6 +155,7 @@ impl Abertura {
             interrupcoes_ignoradas: 0,
             vblanks_tratados: 0,
             ignoradas_em: Vec::new(),
+            esperas: None,
             quadro: 0,
             erro: None,
             marcas_ignoradas: 0,
@@ -220,22 +223,42 @@ impl Abertura {
         match (self.modo, m) {
             (Modo::Sega(Sega::Entrada), Marca::GmSega) => {
                 sega::gm_sega_inicio(&mut self.mem);
+                self.espera();
                 self.modo = Modo::Sega(Sega::FadeOut(22));
             }
             (Modo::Sega(Sega::Preparo), Marca::SegaWaitPal) => {
                 sega::gm_sega_preparo(&mut self.mem)?;
                 wb(&mut self.mem, ram::V_VBLANK_ROUTINE, vblank::ROTINA_SEGA);
+                self.espera();
                 self.modo = Modo::Sega(Sega::WaitPal);
             }
             (Modo::Sega(Sega::VozFim), Marca::SegaWaitEnd) => {
                 // O laço principal volta a rodar depois do VBlank atrasado.
                 ww(&mut self.mem, ram::V_GENERICTIMER, 30);
                 wb(&mut self.mem, ram::V_VBLANK_ROUTINE, vblank::ROTINA_SEGA);
+                self.espera();
                 self.modo = Modo::Sega(Sega::WaitEnd);
             }
             _ => self.marcas_ignoradas = self.marcas_ignoradas.saturating_add(1),
         }
         Ok(())
+    }
+
+    /// Liga o registro do estado em cada espera de VBlank (só para o comparador).
+    pub fn registrar_esperas(&mut self) {
+        self.esperas.get_or_insert_with(Vec::new);
+    }
+
+    /// Entrega e esvazia os estados registrados nas esperas.
+    pub fn tirar_esperas(&mut self) -> Vec<(Vec<u8>, Vec<u8>)> {
+        self.esperas.as_mut().map(std::mem::take).unwrap_or_default()
+    }
+
+    /// O laço principal chegou a `WaitForVBlank`: o estado de hoje é o de comparação.
+    fn espera(&mut self) {
+        if let Some(l) = &mut self.esperas {
+            l.push((self.mem.ram().to_vec(), self.mem.ram_z80().to_vec()));
+        }
     }
 
     fn ignorar(&mut self) {
@@ -263,6 +286,7 @@ impl Abertura {
                         ram::V_VBLANK_ROUTINE,
                         vblank::ROTINA_PALETTE_FADE,
                     );
+                    self.espera();
                     self.modo = Modo::Sega(Sega::FadeOut(n));
                 } else {
                     self.modo = Modo::Sega(Sega::Preparo);
@@ -273,6 +297,7 @@ impl Abertura {
                 vblank::tratar(&mut self.mem)?;
                 if sega::pal_cycle_sega(&mut self.mem) {
                     wb(&mut self.mem, ram::V_VBLANK_ROUTINE, vblank::ROTINA_SEGA);
+                    self.espera();
                 } else {
                     wb(&mut self.mem, ram::V_SOUNDQUEUE1, ram::SFX_SEGA);
                     wb(
@@ -280,6 +305,7 @@ impl Abertura {
                         ram::V_VBLANK_ROUTINE,
                         vblank::ROTINA_SEGA_PCM,
                     );
+                    self.espera();
                     self.modo = Modo::Sega(Sega::Voz);
                 }
             }
@@ -310,6 +336,7 @@ impl Abertura {
                     self.modo = Modo::Titulo;
                 } else {
                     wb(&mut self.mem, ram::V_VBLANK_ROUTINE, vblank::ROTINA_SEGA);
+                    self.espera();
                 }
             }
             Sega::Entrada | Sega::Preparo | Sega::VozFim => self.ignorar(),
