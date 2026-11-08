@@ -14,6 +14,7 @@
 //! - A saída são palavras de 16 bits big-endian.
 
 use super::{Bits, Bytes, Erro, Resultado, empurrar};
+use crate::decisao;
 
 /// Descomprime um fluxo Enigma. `tile_inicial` é somado a cada palavra (registrador de
 /// entrada do original).
@@ -58,11 +59,11 @@ pub fn descomprimir(
     };
 
     loop {
-        if bits.bit()? == 1 {
+        if decisao!("EniDec:copia_em_linha", bits.bit()? == 1) {
             let modo = bits.bits(2)?;
             let contagem = bits.bits(4)?;
-            if modo == 3 {
-                if contagem == 0xF {
+            if decisao!("EniDec:modo_lista", modo == 3) {
+                if decisao!("EniDec:fim", contagem == 0xF) {
                     break;
                 }
                 for _ in 0..=contagem {
@@ -80,7 +81,7 @@ pub fn descomprimir(
                     };
                 }
             }
-        } else if bits.bit()? == 0 {
+        } else if decisao!("EniDec:incremental", bits.bit()? == 0) {
             let contagem = bits.bits(4)?;
             for _ in 0..=contagem {
                 empurrar_palavra(&mut saida, incremental)?;

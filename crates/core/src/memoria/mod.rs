@@ -129,6 +129,11 @@ impl Memoria {
         }
     }
 
+    /// Os bytes da ROM carregada.
+    pub fn rom(&self) -> &[u8] {
+        &self.rom
+    }
+
     pub fn ram(&self) -> &[u8; TAMANHO_RAM] {
         &self.ram
     }

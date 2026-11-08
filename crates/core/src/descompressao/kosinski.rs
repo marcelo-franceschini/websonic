@@ -12,6 +12,7 @@
 //!   significativo) e um byte de distância, de 1 a 256.
 
 use super::{Bytes, Erro, Resultado, empurrar};
+use crate::decisao;
 
 /// Palavra de descrição com recarga antecipada.
 struct Descricao {
@@ -79,29 +80,32 @@ pub fn descomprimir(entrada: &[u8], limite_saida: usize) -> Result<Resultado, Er
     let mut descricao = Descricao::nova(&mut bytes)?;
     let mut saida = Vec::new();
     loop {
-        if descricao.bit(&mut bytes)? {
+        if decisao!("KosDec:literal", descricao.bit(&mut bytes)?) {
             let literal = bytes.byte()?;
             empurrar(&mut saida, literal, limite_saida)?;
             continue;
         }
-        if descricao.bit(&mut bytes)? {
+        if decisao!("KosDec:copia_separada", descricao.bit(&mut bytes)?) {
             let baixo = bytes.byte()?;
             let alto = bytes.byte()?;
             let campo = u32::from(alto & 0xF8).wrapping_shl(5) | u32::from(baixo);
             let distancia = usize::try_from(0x2000u32.wrapping_sub(campo))
                 .map_err(|_| Erro::FormatoInvalido("distancia"))?;
-            let contagem = if alto & 7 != 0 {
+            let contagem = if decisao!("KosDec:contagem_no_alto", alto & 7 != 0) {
                 usize::from(alto & 7)
                     .checked_add(2)
                     .ok_or(Erro::FormatoInvalido("contagem"))?
             } else {
-                match bytes.byte()? {
-                    0 => break,
-                    1 => continue,
-                    n => usize::from(n)
-                        .checked_add(1)
-                        .ok_or(Erro::FormatoInvalido("contagem"))?,
+                let n = bytes.byte()?;
+                if decisao!("KosDec:fim", n == 0) {
+                    break;
                 }
+                if decisao!("KosDec:pulo", n == 1) {
+                    continue;
+                }
+                usize::from(n)
+                    .checked_add(1)
+                    .ok_or(Erro::FormatoInvalido("contagem"))?
             };
             copiar(&mut saida, distancia, contagem, limite_saida)?;
         } else {

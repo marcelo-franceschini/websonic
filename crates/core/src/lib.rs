@@ -7,7 +7,9 @@
 #![forbid(unsafe_code)]
 
 pub mod aritmetica;
+pub mod cobertura;
 pub mod descompressao;
 pub mod memoria;
 pub mod ops68k;
 pub mod quadro;
+pub mod rotinas;
