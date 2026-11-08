@@ -57,6 +57,7 @@ impl Descricao {
 /// Copia `contagem` bytes da saída, `distancia` bytes para trás.
 fn copiar(
     saida: &mut Vec<u8>,
+    origens: &mut Vec<Option<usize>>,
     distancia: usize,
     contagem: usize,
     limite: usize,
@@ -70,12 +71,24 @@ fn copiar(
             .get(origem)
             .ok_or(Erro::FormatoInvalido("distancia maior que a saida"))?;
         empurrar(saida, byte, limite)?;
+        origens.push(Some(origem));
     }
     Ok(())
 }
 
 /// Descomprime um fluxo Kosinski.
 pub fn descomprimir(entrada: &[u8], limite_saida: usize) -> Result<Resultado, Erro> {
+    descomprimir_com_origens(entrada, limite_saida).map(|(r, _)| r)
+}
+
+/// Como [`descomprimir`], e diz de onde cada byte de saída veio: `None` para um literal e
+/// `Some(i)` para uma cópia do byte `i` da própria saída. A rotina original lê esse byte do
+/// destino, e quando o destino é a RAM do Z80 a leitura é um acesso do 68000 ao Z80.
+pub fn descomprimir_com_origens(
+    entrada: &[u8],
+    limite_saida: usize,
+) -> Result<(Resultado, Vec<Option<usize>>), Erro> {
+    let mut origens: Vec<Option<usize>> = Vec::new();
     let mut bytes = Bytes::novo(entrada);
     let mut descricao = Descricao::nova(&mut bytes)?;
     let mut saida = Vec::new();
@@ -83,6 +96,7 @@ pub fn descomprimir(entrada: &[u8], limite_saida: usize) -> Result<Resultado, Er
         if decisao!("KosDec:literal", descricao.bit(&mut bytes)?) {
             let literal = bytes.byte()?;
             empurrar(&mut saida, literal, limite_saida)?;
+            origens.push(None);
             continue;
         }
         if decisao!("KosDec:copia_separada", descricao.bit(&mut bytes)?) {
@@ -107,7 +121,7 @@ pub fn descomprimir(entrada: &[u8], limite_saida: usize) -> Result<Resultado, Er
                     .checked_add(1)
                     .ok_or(Erro::FormatoInvalido("contagem"))?
             };
-            copiar(&mut saida, distancia, contagem, limite_saida)?;
+            copiar(&mut saida, &mut origens, distancia, contagem, limite_saida)?;
         } else {
             let alto = u8::from(descricao.bit(&mut bytes)?);
             let baixo = u8::from(descricao.bit(&mut bytes)?);
@@ -116,11 +130,14 @@ pub fn descomprimir(entrada: &[u8], limite_saida: usize) -> Result<Resultado, Er
                 .ok_or(Erro::FormatoInvalido("contagem"))?;
             let deslocamento = bytes.byte()?;
             let distancia = 0x100usize.saturating_sub(usize::from(deslocamento));
-            copiar(&mut saida, distancia, contagem, limite_saida)?;
+            copiar(&mut saida, &mut origens, distancia, contagem, limite_saida)?;
         }
     }
-    Ok(Resultado {
-        saida,
-        consumidos: bytes.posicao(),
-    })
+    Ok((
+        Resultado {
+            saida,
+            consumidos: bytes.posicao(),
+        },
+        origens,
+    ))
 }

@@ -6,8 +6,9 @@
 
 use super::ram::*;
 use super::{ErroAbertura, rb, rw, wb, wl, ww};
+use crate::descompressao::kosinski;
 use crate::memoria::{Memoria, Tamanho};
-use crate::rotinas;
+use crate::rotinas::ErroRotina;
 
 /// Voltas máximas de um laço que espera um valor gravado, antes de desistir.
 const LIMITE_ESPERA: u32 = 1_000_000;
@@ -213,7 +214,7 @@ pub fn vdp_setup_game(m: &mut Memoria) -> Result<(), ErroAbertura> {
 pub fn dac_driver_load(m: &mut Memoria) -> Result<(), ErroAbertura> {
     ww(m, Z80_BUSREQ, 0x100);
     ww(m, Z80_RESET, 0x100);
-    rotinas::kos_dec(m, DAC_DRIVER, Z80_RAM).map_err(ErroAbertura::Rotina)?;
+    kos_dec_para_o_z80(m, DAC_DRIVER)?;
     ww(m, Z80_RESET, 0);
     ww(m, Z80_RESET, 0x100);
     ww(m, Z80_BUSREQ, 0);
@@ -228,5 +229,30 @@ pub fn joypad_init(m: &mut Memoria) -> Result<(), ErroAbertura> {
     wb(m, PORTA2_CONTROLE, 0x40);
     wb(m, PORTA3_CONTROLE, 0x40);
     ww(m, Z80_BUSREQ, 0);
+    Ok(())
+}
+
+/// `KosDec` com o destino na RAM do Z80. Cada byte copiado da própria saída é lido do destino
+/// (um acesso do 68000 à janela do Z80, que o tempo gravado conta) e depois escrito.
+fn kos_dec_para_o_z80(m: &mut Memoria, origem: u32) -> Result<(), ErroAbertura> {
+    let i = usize::try_from(origem & 0x3F_FFFF).unwrap_or(0);
+    let fluxo = m
+        .rom()
+        .get(i..)
+        .ok_or(ErroAbertura::Rotina(ErroRotina::OrigemForaDaRom))?
+        .to_vec();
+    let (r, origens) = kosinski::descomprimir_com_origens(&fluxo, 0x1_0000)
+        .map_err(|e| ErroAbertura::Rotina(ErroRotina::Descompressao(e)))?;
+    for (k, (byte, de)) in r.saida.iter().zip(origens.iter()).enumerate() {
+        if let Some(o) = de {
+            let a = Z80_RAM.wrapping_add(u32::try_from(*o).unwrap_or(0));
+            let _ = rb(m, a);
+        }
+        wb(
+            m,
+            Z80_RAM.wrapping_add(u32::try_from(k).unwrap_or(0)),
+            *byte,
+        );
+    }
     Ok(())
 }
