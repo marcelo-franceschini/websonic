@@ -60,3 +60,6 @@ Uma linha por item: o que é, dono, etapa-alvo. Só entra aqui o que não bloque
 - Etapa 6: patch do `relatorio` (congelado) para o manifesto incluir `diferencial-som/` e o relatório do som, e para o comando `som` do `cargo fidelidade`. Dono: IA (patch) e Marcelo. Etapa-alvo: 7.
 - Etapa 6: cobertura de desvios do driver do 68000 e do Z80 e bugs injetados do som (`decisao!` do driver) pedem rodar o harness por mutante, com a ROM. Dono: IA e Marcelo. Etapa-alvo: 14.
 - Etapa 6: o manifesto assinado da Etapa 5 não vale mais (o patch 0005 mudou arquivos de `oracle/`): refazer com `sh scripts/etapa5-assinar.sh`. Dono: Marcelo. Etapa-alvo: já.
+- Etapa 7: o experimento do nível 2 precisa de marcas com `mclk` exato (a parada em rótulo só dá o quadro); o comparador `diferencial-abertura` já tem o `mclk` de cada marca. Dono: IA. Etapa-alvo: 7 (7.8).
+- Etapa 7: patch do `relatorio` (congelado) para o manifesto incluir `diferencial-som/`, `diferencial-abertura/` e os relatórios, e comando `abertura`. Dono: IA (patch) e Marcelo. Etapa-alvo: 7 (7.9).
+- Etapa 7: o alvo `wasm32-wasip1` não está instalado no host; testes wasm do núcleo e do `web` rodam na imagem `websonic-dev:ci`. Dono: Marcelo. Etapa-alvo: 7.

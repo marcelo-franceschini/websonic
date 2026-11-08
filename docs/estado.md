@@ -2,6 +2,10 @@
 
 Documento de acompanhamento do progresso das etapas.
 
+## Etapa 7 (Telas de abertura): em andamento (08/11/2026)
+
+Plano aprovado em 08/11/2026 (`docs/plano-etapa-7.md`, com D7.3, D7.4 e a exclusão da pilha). Bloco 1 feito (`docs/conhecimento/abertura.md`): `N_fim` = quadro 1166 (`Level_StartGame`). Feitas com dados sintéticos: 7.0 (comparador `diferencial-abertura/` sem patch no oráculo, D7.9), 7.1 e 7.2 (boot e soma de verificação no núcleo). Falta a prova real do boot (bloco 2). Próximas: 7.3 (Sega), 7.4 a 7.6, 7.7 (navegador), 7.8 (experimento do nível 2).
+
 ## Etapa 6 (Driver de som): concluída, falta a sessão de revisão (08/11/2026)
 
 Plano aprovado em 08/11/2026 (`docs/plano-etapa-6.md`). Relatório do som com a ROM real: **78 IGUAL, 0 DIVERGE** (hash `ff49435d25246d1734cc344369bfe58f0c104735`), cobrindo todas as músicas, todos os efeitos e os comandos: escritas nos chips (incluindo o DAC) idênticas em conteúdo e ordem, estado do driver na RAM, RAM do Z80 e posição do Z80 idênticos. Máquina do Z80 (programas de partida e do DAC, bateria e voz SEGA) provada também contra o oráculo em ROM sintética. Detalhes, desvios do plano e evidência em `docs/conhecimento/som.md`. **Fechamento (Marcelo, 08/11/2026):** manifesto refeito e assinado (383 linhas, commit `4d9358f`), `assinatura: OK`, `veredito: PASSOU`, ocultos passam nas seis zonas. A seção de cobertura do relatório lista 98 decisões do som "sem teste" porque a cobertura só conta os testes do núcleo, não o harness com a ROM; isso é BACKLOG (cobertura do som, Etapa 14) e não entra no veredito. **Pendente, sem bloquear:** rodar os testes wasm na imagem (`cargo test --target wasm32-wasip1 -p sonic1-core -p sonic1-teste-som`). (BACKLOG) cobertura e mutantes do som, roteiros para seis bugs conhecidos, patch do relatório e do manifesto para o som. Bugs conhecidos do som: 8 de 20 com teste nomeado, os outros mapeados em `cobertura/bugs-som.txt`.
