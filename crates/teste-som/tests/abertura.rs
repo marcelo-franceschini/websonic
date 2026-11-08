@@ -164,6 +164,7 @@ fn quadros_com_marcas_levam_ao_modo_sega() {
         a.executar_quadro(&[EventoQuadro::Marca(m)]);
         assert_eq!(a.erro, None, "{m:?}");
     }
+    a.terminar();
     let ram = a.mem.ram();
     assert_eq!(&ram[0xFFFC..], &[0x69, 0x6E, 0x69, 0x74]);
     assert_eq!(ram[0xFFF8], 0);
@@ -188,6 +189,7 @@ fn execucao_e_deterministica_e_nunca_entra_em_panico_com_rom_pequena() {
         ] {
             a.executar_quadro(&[EventoQuadro::Marca(m)]);
         }
+        a.terminar();
         (a.mem.ram().to_vec(), a.mem.saidas().len(), a.erro)
     };
     assert_eq!(rodar(rom_sintetica(9)), rodar(rom_sintetica(9)));

@@ -21,6 +21,9 @@ use websonic_oracle::{Entradas, Oraculo};
 const RACE_Z80: [usize; 2] = [0x1FFD, 0x1FFF];
 /// `WaitForVBlank` (metadado de `refs/rotulos.txt`).
 const WAIT_FOR_VBLANK: u32 = 0x29A0;
+/// Estado do oráculo no fechamento de um quadro: RAM do 68000, RAM do Z80, número do quadro,
+/// se o fechamento é comparável e se o núcleo estava em trecho atômico.
+type Fechamento = (Vec<u8>, Vec<u8>, u32, bool, bool);
 const NOMES_SEQ: [&str; 5] = ["video", "psg", "ym68", "ymz80", "z80"];
 const LIMITE_PASSOS_QUADRO: u64 = 50_000_000;
 
@@ -209,6 +212,7 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
     let mut descarte = Vec::new();
     oracle_trace::drain_tempo(&mut descarte);
     let mut ultimo_pc = u32::MAX;
+    let mut pend: Option<Fechamento> = None;
     nucleo.registrar_esperas();
     let mut esperas_o: std::collections::VecDeque<(Vec<u8>, Vec<u8>)> = Default::default();
     let mut esperas_n: std::collections::VecDeque<(Vec<u8>, Vec<u8>)> = Default::default();
@@ -325,6 +329,9 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
 
         let atomico = nucleo.em_trecho_atomico();
         nucleo.executar_quadro(&eventos);
+        if o.quadro_atual() >= quadros {
+            nucleo.terminar();
+        }
         let atomico = atomico || nucleo.em_trecho_atomico();
         let n = q.numero;
         if let Some(e) = nucleo.erro
@@ -382,58 +389,74 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
         if !comparavel {
             rel.fechamento_nao_comparavel += 1;
         }
-        let atomico = atomico || !comparavel;
-        // RAM do 68000.
-        let ram_o = mascarar_ram(&o.ram68k());
-        let ram_n = mascarar_ram(nucleo.mem.ram());
-        match primeira_diferenca(&ram_o, &ram_n) {
-            None => rel.ram_iguais += 1,
-            Some((p, total)) => {
-                if !atomico {
-                    let mut vistos: Vec<String> = Vec::new();
-                    for (i, (x, y)) in ram_o.iter().zip(&ram_n).enumerate() {
-                        if x != y {
-                            let nome = nomes.de(0xFF_0000 + u32::try_from(i).unwrap_or(0));
-                            let base = nome.split('+').next().unwrap_or("").to_string();
-                            if !vistos.contains(&base) {
-                                vistos.push(base);
+        // O núcleo roda os eventos com um quadro de atraso: o estado dele agora é o do fechamento
+        // do quadro anterior. Compara com o que o oráculo tinha naquele fechamento.
+        let atual = (
+            o.ram68k(),
+            o.ram_z80(),
+            q.numero,
+            comparavel,
+            nucleo.em_trecho_atomico(),
+        );
+        let anterior = pend.replace(atual);
+        'cmp: {
+            let Some((ram_ant, z80_ant, n_ant, comparavel_ant, atomico_ant)) = anterior else {
+                break 'cmp;
+            };
+            let atomico = atomico || !comparavel_ant || atomico_ant;
+            let n = n_ant;
+            // RAM do 68000.
+            let ram_o = mascarar_ram(&ram_ant);
+            let ram_n = mascarar_ram(nucleo.mem.ram());
+            match primeira_diferenca(&ram_o, &ram_n) {
+                None => rel.ram_iguais += 1,
+                Some((p, total)) => {
+                    if !atomico {
+                        let mut vistos: Vec<String> = Vec::new();
+                        for (i, (x, y)) in ram_o.iter().zip(&ram_n).enumerate() {
+                            if x != y {
+                                let nome = nomes.de(0xFF_0000 + u32::try_from(i).unwrap_or(0));
+                                let base = nome.split('+').next().unwrap_or("").to_string();
+                                if !vistos.contains(&base) {
+                                    vistos.push(base);
+                                }
                             }
                         }
+                        for v in vistos {
+                            *rel.ram_variaveis.entry(v).or_default() += 1;
+                        }
                     }
-                    for v in vistos {
-                        *rel.ram_variaveis.entry(v).or_default() += 1;
-                    }
-                }
-                if atomico {
-                    rel.ram_diverge_atomico += 1;
-                } else {
-                    rel.ram_diverge += 1;
-                    if rel.primeira_ram.is_none() {
-                        let end = 0xFF_0000 + u32::try_from(p).unwrap_or(0);
-                        rel.primeira_ram = Some(format!(
-                            "quadro {n} campo ram68k primeira_variavel {} bytes_diferentes {total} hash_oraculo {} hash_nucleo {}",
-                            nomes.de(end),
-                            &em_hex(&sha1_de_partes(&[&ram_o]))[..8],
-                            &em_hex(&sha1_de_partes(&[&ram_n]))[..8]
-                        ));
+                    if atomico {
+                        rel.ram_diverge_atomico += 1;
+                    } else {
+                        rel.ram_diverge += 1;
+                        if rel.primeira_ram.is_none() {
+                            let end = 0xFF_0000 + u32::try_from(p).unwrap_or(0);
+                            rel.primeira_ram = Some(format!(
+                                "quadro {n} campo ram68k primeira_variavel {} bytes_diferentes {total} hash_oraculo {} hash_nucleo {}",
+                                nomes.de(end),
+                                &em_hex(&sha1_de_partes(&[&ram_o]))[..8],
+                                &em_hex(&sha1_de_partes(&[&ram_n]))[..8]
+                            ));
+                        }
                     }
                 }
             }
-        }
-        // RAM do Z80.
-        let z_o = mascarar_z80(&o.ram_z80());
-        let z_n = mascarar_z80(nucleo.mem.ram_z80());
-        match primeira_diferenca(&z_o, &z_n) {
-            None => rel.z80_iguais += 1,
-            Some((p, total)) => {
-                if atomico {
-                    rel.z80_diverge_atomico += 1;
-                } else {
-                    rel.z80_diverge += 1;
-                    if rel.primeira_z80.is_none() {
-                        rel.primeira_z80 = Some(format!(
-                            "quadro {n} campo ram_z80 +{p:#x} bytes_diferentes {total}"
-                        ));
+            // RAM do Z80.
+            let z_o = mascarar_z80(&z80_ant);
+            let z_n = mascarar_z80(nucleo.mem.ram_z80());
+            match primeira_diferenca(&z_o, &z_n) {
+                None => rel.z80_iguais += 1,
+                Some((p, total)) => {
+                    if atomico {
+                        rel.z80_diverge_atomico += 1;
+                    } else {
+                        rel.z80_diverge += 1;
+                        if rel.primeira_z80.is_none() {
+                            rel.primeira_z80 = Some(format!(
+                                "quadro {n} campo ram_z80 +{p:#x} bytes_diferentes {total}"
+                            ));
+                        }
                     }
                 }
             }

@@ -144,6 +144,8 @@ pub struct Abertura {
     pub ignoradas_em: Vec<(u32, String)>,
     /// Diagnóstico: RAM do 68000 e do Z80 cada vez que o laço principal chega a uma espera de VBlank.
     esperas: Option<Vec<(Vec<u8>, Vec<u8>)>>,
+    /// Eventos do quadro anterior, ainda não rodados (olhar adiante de um quadro).
+    pendentes: Vec<EventoQuadro>,
 }
 
 impl Abertura {
@@ -156,6 +158,7 @@ impl Abertura {
             vblanks_tratados: 0,
             ignoradas_em: Vec::new(),
             esperas: None,
+            pendentes: Vec::new(),
             quadro: 0,
             erro: None,
             marcas_ignoradas: 0,
@@ -174,9 +177,11 @@ impl Abertura {
         )
     }
 
-    /// Roda um quadro com os fatos gravados dele.
+    /// Entrega os fatos gravados de um quadro. Os fatos de leitura e os pontos do Z80 ficam na
+    /// fila na hora. Os eventos (marcas e interrupções) rodam um quadro depois: uma interrupção
+    /// no fim de um quadro faz acessos que o oráculo grava no quadro seguinte, e o tratador
+    /// precisa deles na fila. Chame [`Abertura::terminar`] depois do último quadro.
     pub fn executar_quadro(&mut self, eventos: &[EventoQuadro]) {
-        // O tempo gravado do quadro inteiro fica disponível antes de qualquer trecho rodar.
         for e in eventos {
             match *e {
                 EventoQuadro::Leitura { classe, valor } => {
@@ -186,11 +191,12 @@ impl Abertura {
                 _ => {}
             }
         }
-        for e in eventos {
+        let anteriores = std::mem::replace(&mut self.pendentes, eventos.to_vec());
+        for e in anteriores {
             if self.erro.is_some() {
                 break;
             }
-            let r = match *e {
+            let r = match e {
                 EventoQuadro::Marca(m) => self.marca(m),
                 EventoQuadro::Interrupcao { nivel: 6, .. } => self.vblank(),
                 EventoQuadro::Interrupcao { .. } => {
@@ -204,6 +210,11 @@ impl Abertura {
             }
         }
         self.quadro = self.quadro.saturating_add(1);
+    }
+
+    /// Roda os eventos do último quadro entregue.
+    pub fn terminar(&mut self) {
+        self.executar_quadro(&[]);
     }
 
     fn marca(&mut self, m: Marca) -> Result<(), ErroAbertura> {
