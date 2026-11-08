@@ -22,6 +22,10 @@ const V_SOUNDQUEUE0: u32 = BASE_RAM + 0x0A;
 const V_SOUNDQUEUE1: u32 = BASE_RAM + 0x0B;
 const V_SFX_TRACK_RAM: u32 = BASE_RAM + 0x220;
 const V_SPCSFX_FIM: u32 = BASE_RAM + 0x3A0;
+/// Posições da RAM do Z80 que o Z80 muda sozinho depois do último acesso do 68000 (estado e
+/// comando do DAC): o oráculo mostra o valor da saída do trecho e o núcleo, o do último ponto.
+/// A conferência do DAC está nas escritas no YM2612 e na posição do Z80 em cada ponto.
+const RACE_Z80: [usize; 2] = [0x1FFD, 0x1FFF];
 const LIMITE_PASSOS: u64 = 400_000_000;
 
 /// Evento de som na forma comparável: (tipo, a, b). Tipo 0 é YM do 68000, 1 YM do Z80, 2 PSG.
