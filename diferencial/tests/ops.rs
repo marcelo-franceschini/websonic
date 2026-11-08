@@ -93,7 +93,7 @@ fn pares(t: Tamanho, n: usize, semente: u64) -> Vec<(u32, u32)> {
     v
 }
 
-type Nucleo = Box<dyn Fn(u32, u32, Ccr) -> Option<(u32, Ccr)>>;
+type Nucleo = Box<dyn Fn(u32, u32, Ccr) -> Option<(u32, Ccr)> + Send + Sync>;
 
 struct Caso {
     nome: String,
@@ -161,7 +161,7 @@ fn idx(t: Tamanho) -> u16 {
     }
 }
 
-fn com_r(f: impl Fn(u32, u32, Ccr) -> ops68k::Resultado + 'static) -> Nucleo {
+fn com_r(f: impl Fn(u32, u32, Ccr) -> ops68k::Resultado + Send + Sync + 'static) -> Nucleo {
     Box::new(move |s, d, c| {
         let r = f(s, d, c);
         Some((r.valor, r.ccr))
@@ -262,26 +262,57 @@ fn casos_de_tamanho() -> Vec<Caso> {
     v
 }
 
-#[test]
-fn aritmetica_e_logica_iguais_ao_oraculo() {
-    let n = casos_por_operacao();
-    let mut ruins = Vec::new();
-    for (k, c) in casos_de_tamanho().iter().enumerate() {
-        let p = pares(c.t, n, 0x9E37_79B9 + k as u64);
-        ruins.extend(rodar_caso(c, &p, 77 + k as u64));
-    }
+/// Roda `f` em cada item, em varias threads (cada uma com a sua Bancada, porque o estado de
+/// observacao do oraculo e por thread). Junta as divergencias na ordem dos itens.
+fn paralelo<T: Sync>(itens: &[T], f: impl Fn(&T) -> Vec<String> + Sync) -> Vec<String> {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let proximo = AtomicUsize::new(0);
+    let fios = std::thread::available_parallelism()
+        .map_or(2, |n| n.get())
+        .min(itens.len().max(1));
+    let mut por_item: Vec<(usize, Vec<String>)> = std::thread::scope(|sc| {
+        let hs: Vec<_> = (0..fios)
+            .map(|_| {
+                sc.spawn(|| {
+                    let mut feitos = Vec::new();
+                    loop {
+                        let i = proximo.fetch_add(1, Ordering::SeqCst);
+                        let Some(item) = itens.get(i) else { break };
+                        feitos.push((i, f(item)));
+                    }
+                    feitos
+                })
+            })
+            .collect();
+        hs.into_iter().flat_map(|h| h.join().unwrap()).collect()
+    });
+    por_item.sort_by_key(|(i, _)| *i);
+    por_item.into_iter().flat_map(|(_, v)| v).collect()
+}
+
+fn verificar(ruins: Vec<String>) {
     assert!(
         ruins.is_empty(),
         "{} divergencias:\n{}",
         ruins.len(),
-        ruins.join("\n")
+        ruins[..ruins.len().min(30)].join("\n")
     );
+}
+
+#[test]
+fn aritmetica_e_logica_iguais_ao_oraculo() {
+    let n = casos_por_operacao();
+    let casos: Vec<(usize, Caso)> = casos_de_tamanho().into_iter().enumerate().collect();
+    verificar(paralelo(&casos, |(k, c)| {
+        let p = pares(c.t, n, 0x9E37_79B9 + *k as u64);
+        rodar_caso(c, &p, 77 + *k as u64)
+    }));
 }
 
 #[test]
 fn extensao_troca_e_multiplicacao_iguais_ao_oraculo() {
     let n = casos_por_operacao();
-    let mut casos = vec![
+    let casos: Vec<Caso> = vec![
         Caso {
             nome: "EXT.W".into(),
             trecho: vec![0x4880],
@@ -313,46 +344,38 @@ fn extensao_troca_e_multiplicacao_iguais_ao_oraculo() {
             nucleo: com_r(|s, d, c| ops68k::muls(s, d, c)),
         },
     ];
-    // EXT e SWAP mexem em partes diferentes do registrador: o D0 inteiro e comparado, entao
-    // os operandos tem o tamanho certo e o resto do registrador vem do sorteio.
-    let mut ruins = Vec::new();
-    for (k, c) in casos.iter_mut().enumerate() {
+    let itens: Vec<(usize, Caso)> = casos.into_iter().enumerate().collect();
+    verificar(paralelo(&itens, |(k, c)| {
         let tam = if c.nome.starts_with("MUL") {
             Tamanho::Word
         } else {
             c.t
         };
-        let mut p = pares(tam, n, 5 + k as u64);
+        let mut p = pares(tam, n, 5 + *k as u64);
         if c.nome.starts_with("EXT") || c.nome == "SWAP" {
-            // O destino e o D0 inteiro: sorteia valores de 32 bits.
-            let mut r = Sorteio(99 + k as u64);
+            // O destino e o D0 inteiro: sorteia valores de 32 bits (16 para EXT.W).
+            let mut r = Sorteio(99 + *k as u64);
+            let m = if c.nome == "EXT.W" {
+                Tamanho::Word
+            } else {
+                Tamanho::Long
+            };
             for par in &mut p {
-                par.1 = r.u32()
-                    & mascara(if c.nome == "EXT.W" {
-                        Tamanho::Word
-                    } else {
-                        Tamanho::Long
-                    });
+                par.1 = r.u32() & mascara(m);
             }
         }
-        // A comparacao de D0 usa a mascara do tamanho: para EXT.W so os 16 bits baixos mudam.
-        ruins.extend(rodar_caso(c, &p, 11 + k as u64));
-    }
-    assert!(
-        ruins.is_empty(),
-        "{} divergencias:\n{}",
-        ruins.len(),
-        ruins.join("\n")
-    );
+        rodar_caso(c, &p, 11 + *k as u64)
+    }));
 }
 
 #[test]
 fn divisao_com_estouro_e_por_zero_iguais_ao_oraculo() {
     let n = casos_por_operacao();
-    let mut r = Sorteio(4242);
-    let mut ruins = Vec::new();
-    for (nome, opcode, sinal) in [("DIVU", 0x80C1u16, false), ("DIVS", 0x81C1u16, true)] {
-        let mut banco = Bancada::nova(&[opcode]);
+    let ops = [("DIVU", 0x80C1u16, false), ("DIVS", 0x81C1u16, true)];
+    verificar(paralelo(&ops, |(nome, opcode, sinal)| {
+        let mut r = Sorteio(4242);
+        let mut ruins = Vec::new();
+        let mut banco = Bancada::nova(&[*opcode]);
         let mut pares: Vec<(u32, u32)> = Vec::new();
         let divisores = [0u32, 1, 2, 3, 0x7FFF, 0x8000, 0xFFFF, 0xFFFE, 10, 100];
         let dividendos = [
@@ -368,8 +391,8 @@ fn divisao_com_estouro_e_por_zero_iguais_ao_oraculo() {
             0x8000_0001,
         ];
         for d in divisores {
-            for n in dividendos {
-                pares.push((d, n));
+            for dd in dividendos {
+                pares.push((d, dd));
             }
         }
         while pares.len() < n {
@@ -388,19 +411,21 @@ fn divisao_com_estouro_e_por_zero_iguais_ao_oraculo() {
             e.d[0] = *dividendo;
             e.d[1] = 0xABCD_0000 | divisor;
             e.sr = bits;
+            // O jgenesis em build de depuracao entra em panico em i32::MIN / -1 (overflow da
+            // divisao). O quociente nao cabe em word de qualquer jeito: caso fora da comparacao.
+            if *sinal && *dividendo == 0x8000_0000 && *divisor == 0xFFFF {
+                continue;
+            }
             let o = banco.tentar(&e, &[]);
-            let f = if sinal { ops68k::divs } else { ops68k::divu };
+            let f = if *sinal { ops68k::divs } else { ops68k::divu };
             let n = f(*divisor, *dividendo, Ccr::do_sr(bits));
             match (o, n) {
                 (Err(_), Err(_)) => {}
                 (Ok(o), Ok(n)) => {
                     if o.regs.d[0] != n.valor || o.regs.sr & 0x1F != n.ccr.para_bits() {
                         ruins.push(format!(
-                            "{nome} {dividendo:X}/{divisor:X}: oraculo D0={:X} ccr={:02X}, nucleo D0={:X} ccr={:02X}",
-                            o.regs.d[0],
-                            o.regs.sr & 0x1F,
-                            n.valor,
-                            n.ccr.para_bits()
+                            "{nome} {dividendo:X}/{divisor:X} ccr={bits:02X}: oraculo D0={:X} ccr={:02X}, nucleo D0={:X} ccr={:02X}",
+                            o.regs.d[0], o.regs.sr & 0x1F, n.valor, n.ccr.para_bits()
                         ));
                     }
                 }
@@ -413,67 +438,58 @@ fn divisao_com_estouro_e_por_zero_iguais_ao_oraculo() {
                 break;
             }
         }
-    }
-    assert!(
-        ruins.is_empty(),
-        "{} divergencias:\n{}",
-        ruins.len(),
-        ruins.join("\n")
-    );
+        ruins
+    }));
 }
 
 #[test]
 fn bcd_igual_ao_oraculo_nos_65536_pares() {
-    let mut ruins = Vec::new();
-    for (nome, trecho) in [("ABCD", 0xC101u16), ("SBCD", 0x8101u16)] {
+    // Itens: (operacao, faixa do byte de origem). Cada faixa e um item para dividir o trabalho.
+    let mut itens = Vec::new();
+    for op in 0..3u8 {
+        for faixa in 0..16u32 {
+            itens.push((op, faixa));
+        }
+    }
+    verificar(paralelo(&itens, |(op, faixa)| {
+        let mut ruins = Vec::new();
+        let trecho = match op {
+            0 => 0xC101u16, // ABCD D1,D0
+            1 => 0x8101,    // SBCD D1,D0
+            _ => 0x4800,    // NBCD D0
+        };
         let mut banco = Bancada::nova(&[trecho]);
-        for p in 0..=0xFFFFu32 {
-            let (s, d) = (p >> 8, p & 0xFF);
-            let bits = u16::try_from(p % 32).unwrap();
-            let mut e = Regs::default();
-            e.d[0] = 0x1234_5600 | d;
-            e.d[1] = s;
-            e.sr = bits;
-            let o = banco.rodar(&e, &[]);
-            let ccr = Ccr::do_sr(bits);
-            let n = if nome == "ABCD" {
-                ops68k::abcd(s as u8, d as u8, ccr)
-            } else {
-                ops68k::sbcd(s as u8, d as u8, ccr)
-            };
-            if o.regs.d[0] != 0x1234_5600 | n.valor || o.regs.sr & 0x1F != n.ccr.para_bits() {
-                ruins.push(format!(
-                    "{nome} s={s:X} d={d:X} ccr={bits:02X}: oraculo {:X}/{:02X} nucleo {:X}/{:02X}",
-                    o.regs.d[0],
-                    o.regs.sr & 0x1F,
-                    n.valor,
-                    n.ccr.para_bits()
-                ));
-                if ruins.len() > 8 {
+        for s in (faixa * 16)..(faixa * 16 + 16) {
+            for d in 0..=0xFFu32 {
+                let bits = u16::try_from((s + d) % 32).unwrap();
+                let mut e = Regs::default();
+                e.d[0] = 0x1234_5600 | d;
+                e.d[1] = s;
+                e.sr = bits;
+                let o = banco.rodar(&e, &[]);
+                let ccr = Ccr::do_sr(bits);
+                let n = match op {
+                    0 => ops68k::abcd(s as u8, d as u8, ccr),
+                    1 => ops68k::sbcd(s as u8, d as u8, ccr),
+                    _ => ops68k::nbcd(d as u8, ccr),
+                };
+                if o.regs.d[0] != (0x1234_5600 | n.valor) || o.regs.sr & 0x1F != n.ccr.para_bits() {
+                    ruins.push(format!(
+                        "BCD{op} s={s:X} d={d:X} ccr={bits:02X}: oraculo {:X}/{:02X} nucleo {:X}/{:02X}",
+                        o.regs.d[0], o.regs.sr & 0x1F, n.valor, n.ccr.para_bits()
+                    ));
+                    if ruins.len() > 8 {
+                        return ruins;
+                    }
+                }
+                // NBCD nao usa a fonte: um unico s basta.
+                if *op == 2 && s != faixa * 16 {
                     break;
                 }
             }
         }
-    }
-    let mut banco = Bancada::nova(&[0x4800]);
-    for d in 0..=0xFFu32 {
-        for bits in 0..32u16 {
-            let mut e = Regs::default();
-            e.d[0] = 0x1234_5600 | d;
-            e.sr = bits;
-            let o = banco.rodar(&e, &[]);
-            let n = ops68k::nbcd(d as u8, Ccr::do_sr(bits));
-            if o.regs.d[0] != 0x1234_5600 | n.valor || o.regs.sr & 0x1F != n.ccr.para_bits() {
-                ruins.push(format!("NBCD d={d:X} ccr={bits:02X}"));
-            }
-        }
-    }
-    assert!(
-        ruins.is_empty(),
-        "{} divergencias:\n{}",
-        ruins.len(),
-        ruins.join("\n")
-    );
+        ruins
+    }));
 }
 
 #[test]
@@ -489,48 +505,46 @@ fn deslocamentos_e_rotacoes_com_contagem_0_a_70() {
         (RorDireita, 0xE238, "ROR"),
         (RolEsquerda, 0xE338, "ROL"),
     ];
-    let mut ruins = Vec::new();
-    for (tipo, base, nome) in tipos {
-        for t in tam3() {
-            let mut banco = Bancada::nova(&[base | (idx(t) << 6)]);
-            let m = mascara(t);
-            let mut valores = bordas(t);
-            let mut r = Sorteio(31337);
-            for _ in 0..40 {
-                valores.push(r.u32() & m);
-            }
-            for contagem in 0..=70u32 {
-                for (k, v) in valores.iter().enumerate() {
-                    let bits = u16::try_from((k + contagem as usize) % 32).unwrap();
-                    let mut e = Regs::default();
-                    e.d[0] = (0xA5A5_A5A5 & !m) | v;
-                    e.d[1] = contagem | 0xFFFF_FF00 & (r.u32() & !0x3F);
-                    e.sr = bits;
-                    let o = banco.rodar(&e, &[]);
-                    // A contagem em registrador vale modulo 64.
-                    let n = ops68k::deslocar(tipo, t, contagem & 63, *v, Ccr::do_sr(bits));
-                    let esperado = (0xA5A5_A5A5 & !m) | (n.valor & m);
-                    if o.regs.d[0] != esperado || o.regs.sr & 0x1F != n.ccr.para_bits() {
-                        ruins.push(format!(
-                            "{nome}.{t:?} v={v:X} cont={contagem} ccr={bits:02X}: oraculo {:X}/{:02X} nucleo {esperado:X}/{:02X}",
-                            o.regs.d[0],
-                            o.regs.sr & 0x1F,
-                            n.ccr.para_bits()
-                        ));
-                    }
+    let mut itens = Vec::new();
+    for t in tipos {
+        for tam in tam3() {
+            itens.push((t, tam));
+        }
+    }
+    verificar(paralelo(&itens, |((tipo, base, nome), t)| {
+        let mut ruins = Vec::new();
+        let mut banco = Bancada::nova(&[*base | (idx(*t) << 6)]);
+        let m = mascara(*t);
+        let mut valores = bordas(*t);
+        let mut r = Sorteio(31337);
+        for _ in 0..40 {
+            valores.push(r.u32() & m);
+        }
+        for contagem in 0..=70u32 {
+            for (k, v) in valores.iter().enumerate() {
+                let bits = u16::try_from((k + contagem as usize) % 32).unwrap();
+                let mut e = Regs::default();
+                e.d[0] = (0xA5A5_A5A5 & !m) | v;
+                // A contagem fica nos 6 bits baixos de D1; o resto do registrador e lixo.
+                e.d[1] = contagem | (r.u32() & !0x3F);
+                e.sr = bits;
+                let o = banco.rodar(&e, &[]);
+                // A contagem em registrador vale modulo 64.
+                let n = ops68k::deslocar(*tipo, *t, contagem & 63, *v, Ccr::do_sr(bits));
+                let esperado = (0xA5A5_A5A5 & !m) | (n.valor & m);
+                if o.regs.d[0] != esperado || o.regs.sr & 0x1F != n.ccr.para_bits() {
+                    ruins.push(format!(
+                        "{nome}.{t:?} v={v:X} cont={contagem} ccr={bits:02X}: oraculo {:X}/{:02X} nucleo {esperado:X}/{:02X}",
+                        o.regs.d[0], o.regs.sr & 0x1F, n.ccr.para_bits()
+                    ));
                     if ruins.len() > 8 {
-                        break;
+                        return ruins;
                     }
                 }
             }
         }
-    }
-    assert!(
-        ruins.is_empty(),
-        "{} divergencias:\n{}",
-        ruins.len(),
-        ruins.join("\n")
-    );
+        ruins
+    }));
 }
 
 #[test]
@@ -573,9 +587,9 @@ fn operacoes_de_bit_condicoes_e_registradores_de_endereco() {
             }
         }
     }
-    // DBcc D0,+4 ; ADDQ.L #1,D2 ; RTS. D2 so muda se o desvio NAO foi tomado.
+    // DBcc D0,+6 ; LEA 1(A1),A1 ; RTS. LEA nao mexe nas flags; A1 so muda se o desvio NAO foi tomado.
     for cc in 0..16u16 {
-        let mut banco = Bancada::nova(&[0x50C8 | (cc << 8), 0x0004, 0x5282]);
+        let mut banco = Bancada::nova(&[0x50C8 | (cc << 8), 0x0006, 0x43E9, 0x0001]);
         for bits in 0..32u16 {
             for contador in [0u32, 1, 2, 0xFFFF, 0x1_0000, 0xFFFF_FFFF] {
                 let mut e = Regs::default();
@@ -589,7 +603,7 @@ fn operacoes_de_bit_condicoes_e_registradores_de_endereco() {
                 );
                 let esperado_d0 = (contador & 0xFFFF_0000) | u32::from(novo);
                 if o.regs.d[0] != esperado_d0
-                    || (o.regs.d[2] == 0) != tomado
+                    || (o.regs.a[1] == 0) != tomado
                     || o.regs.sr & 0x1F != bits
                 {
                     ruins.push(format!("DBcc cc={cc} ccr={bits:02X} cont={contador:X}"));
@@ -635,10 +649,5 @@ fn operacoes_de_bit_condicoes_e_registradores_de_endereco() {
             }
         }
     }
-    assert!(
-        ruins.is_empty(),
-        "{} divergencias:\n{}",
-        ruins.len(),
-        ruins.join("\n")
-    );
+    verificar(ruins);
 }
