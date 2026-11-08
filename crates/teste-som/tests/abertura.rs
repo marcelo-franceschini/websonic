@@ -23,22 +23,42 @@ fn rom_sintetica(semente: u32) -> Vec<u8> {
         x ^= x << 5;
         *b = x.to_le_bytes()[0];
     }
-    poe(&mut rom, SETUP_VALUES, &[0x80, 0x00, 0x3F, 0xFF, 0x01, 0x00]);
+    poe(
+        &mut rom,
+        SETUP_VALUES,
+        &[0x80, 0x00, 0x3F, 0xFF, 0x01, 0x00],
+    );
     for i in 0..24u8 {
         poe(&mut rom, SETUP_VALUES_VDP + u32::from(i), &[0x10 + i]);
     }
     poe(&mut rom, SETUP_VALUES_VDP_END, &[0x40, 0x00, 0x00, 0x80]);
     for i in 0..(SETUP_VALUES_Z80_END - SETUP_VALUES_Z80) {
-        poe(&mut rom, SETUP_VALUES_Z80 + i, &[0xE0u8.wrapping_add(i as u8)]);
+        poe(
+            &mut rom,
+            SETUP_VALUES_Z80 + i,
+            &[0xE0u8.wrapping_add(i as u8)],
+        );
     }
-    poe(&mut rom, SETUP_VALUES_Z80_END, &[0x81, 0x04, 0x8F, 0x02, 0xC0, 0, 0, 0, 0x40, 0, 0, 0x10]);
+    poe(
+        &mut rom,
+        SETUP_VALUES_Z80_END,
+        &[0x81, 0x04, 0x8F, 0x02, 0xC0, 0, 0, 0, 0x40, 0, 0, 0x10],
+    );
     poe(&mut rom, SETUP_VALUES_PSG, &[0x9F, 0xBF, 0xDF, 0xFF]);
     // Tabela da VDP do jogo: 19 palavras.
     for i in 0..19u32 {
-        poe(&mut rom, VDP_SETUP_ARRAY + 2 * i, &[0x80 + (i as u8), 0x30 + i as u8]);
+        poe(
+            &mut rom,
+            VDP_SETUP_ARRAY + 2 * i,
+            &[0x80 + (i as u8), 0x30 + i as u8],
+        );
     }
     // Kosinski mínimo: três literais e o fim.
-    poe(&mut rom, DAC_DRIVER, &[0x17, 0x00, 0xAA, 0xBB, 0xCC, 0x00, 0x00, 0x00]);
+    poe(
+        &mut rom,
+        DAC_DRIVER,
+        &[0x17, 0x00, 0xAA, 0xBB, 0xCC, 0x00, 0x00, 0x00],
+    );
     // Fim da ROM e soma de verificação (modelo direto, independente do núcleo).
     let fim = u32::try_from(tam - 1).unwrap();
     poe(&mut rom, ROM_END_LOC, &fim.to_be_bytes());
@@ -59,7 +79,11 @@ fn ctrl(m: &Memoria) -> Vec<(u16, Tamanho)> {
     m.saidas()
         .iter()
         .filter_map(|s| match s {
-            Saida::Vdp { porta: PortaVdp::Controle, valor, tamanho } => Some((*valor, *tamanho)),
+            Saida::Vdp {
+                porta: PortaVdp::Controle,
+                valor,
+                tamanho,
+            } => Some((*valor, *tamanho)),
             _ => None,
         })
         .collect()
@@ -72,16 +96,30 @@ fn entry_point_escreve_os_registradores_na_ordem_e_o_programa_do_z80() {
     boot::entry_point(&mut m).unwrap();
     let c = ctrl(&m);
     // 24 registradores: o valor da tabela no byte baixo e o número do registrador no alto.
-    for i in 0..24usize {
-        let esperado = 0x8000 + 0x100 * u16::try_from(i).unwrap() + 0x10 + u16::try_from(i).unwrap();
-        assert_eq!(c[i].0, esperado, "registrador {i}");
+    for (i, par) in c.iter().take(24).enumerate() {
+        let esperado =
+            0x8000 + 0x100 * u16::try_from(i).unwrap() + 0x10 + u16::try_from(i).unwrap();
+        assert_eq!(par.0, esperado, "registrador {i}");
     }
     // O programa de partida do Z80 foi para a RAM dele, byte a byte.
     for i in 0..(SETUP_VALUES_Z80_END - SETUP_VALUES_Z80) {
-        assert_eq!(m.ram_z80()[usize::try_from(i).unwrap()], 0xE0u8.wrapping_add(i as u8));
+        assert_eq!(
+            m.ram_z80()[usize::try_from(i).unwrap()],
+            0xE0u8.wrapping_add(i as u8)
+        );
     }
     // 4 bytes de volume no PSG, na ordem.
-    let psg: Vec<u8> = m.saidas().iter().filter_map(|s| if let Saida::Psg(v) = s { Some(*v) } else { None }).collect();
+    let psg: Vec<u8> = m
+        .saidas()
+        .iter()
+        .filter_map(|s| {
+            if let Saida::Psg(v) = s {
+                Some(*v)
+            } else {
+                None
+            }
+        })
+        .collect();
     assert_eq!(psg, vec![0x9F, 0xBF, 0xDF, 0xFF]);
     // A RAM fica zerada.
     assert!(m.ram().iter().all(|b| *b == 0));
@@ -101,7 +139,10 @@ fn soma_errada_e_recusada() {
     let mut rom = rom_sintetica(7);
     rom[0x1000] ^= 1;
     let mut m = Memoria::nova(rom);
-    assert_eq!(boot::game_program(&mut m), Err(ErroAbertura::ChecksumErrado));
+    assert_eq!(
+        boot::game_program(&mut m),
+        Err(ErroAbertura::ChecksumErrado)
+    );
 }
 
 #[test]

@@ -71,7 +71,11 @@ pub fn entry_point(m: &mut Memoria) -> Result<(), ErroAbertura> {
     ww(m, Z80_RESET, passo);
     esperar_z80(m)?;
     for i in 0..SETUP_VALUES_Z80_END.wrapping_sub(SETUP_VALUES_Z80) {
-        wb(m, Z80_RAM.wrapping_add(i), rom_b(m, SETUP_VALUES_Z80.wrapping_add(i)));
+        wb(
+            m,
+            Z80_RAM.wrapping_add(i),
+            rom_b(m, SETUP_VALUES_Z80.wrapping_add(i)),
+        );
     }
     ww(m, Z80_RESET, 0);
     ww(m, Z80_BUSREQ, 0);
@@ -104,7 +108,9 @@ pub fn game_program(m: &mut Memoria) -> Result<(), ErroAbertura> {
     let porta_c = rb(m, PORTA3_CONTROLE);
     if porta_c & 0x40 != 0 {
         // Religar sem apagar o console é o botão reset: fora do escopo (exclusão aprovada).
-        return Err(ErroAbertura::NaoImplementado("GameProgram: porta C ja inicializada"));
+        return Err(ErroAbertura::NaoImplementado(
+            "GameProgram: porta C ja inicializada",
+        ));
     }
     let fim = rom_l(m, ROM_END_LOC);
     let mut a0 = END_OF_HEADER;
@@ -151,7 +157,11 @@ pub fn game_init(m: &mut Memoria) -> Result<(), ErroAbertura> {
 pub fn fill_vram(m: &mut Memoria, byte: u8, inicio: u32, fim: u32) -> Result<(), ErroAbertura> {
     ww(m, VDP_CONTROLE, 0x8F01);
     let n = fim.wrapping_sub(inicio).wrapping_sub(1);
-    wl(m, VDP_CONTROLE, 0x9400_9300 | ((n & 0xFF00) << 8) | (n & 0xFF));
+    wl(
+        m,
+        VDP_CONTROLE,
+        0x9400_9300 | ((n & 0xFF00) << 8) | (n & 0xFF),
+    );
     ww(m, VDP_CONTROLE, 0x9780);
     wl(
         m,
