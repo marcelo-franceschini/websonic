@@ -163,6 +163,7 @@ grep -v '^determinismo' "$traces/resumo-fechamento.tsv" > "$traces/hashes-fecham
 cargo fidelidade manifesto gerar --traces "$traces/hashes-fechamento.tsv" --ocultos "$ext/ocultos" \
     | tee -a "$resumo"
 # Assina com a chave que esta no ssh-agent (por isso -f aponta para a publica).
+rm -f refs/manifesto.txt.sig  # senao o ssh-keygen pergunta "Overwrite (y/n)?" e trava a rodada sem ninguem
 ssh-keygen -Y sign -f "$chave_assina.pub" -n websonic-manifesto refs/manifesto.txt
 registrar cargo fidelidade manifesto verificar --pular-testes
 grep -q '^assinatura: OK$' "$traces/ultimo.txt" \
