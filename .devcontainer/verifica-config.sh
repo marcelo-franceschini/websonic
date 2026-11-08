@@ -45,10 +45,12 @@ fi
 #      e a configuracao do cargo (.cargo, rust-toolchain.toml).
 # Etapa 1: entram o oraculo (oracle) e o formato do trace e comparador (crates/fidelidade).
 # 2.10: entram o segundo oraculo (oracle2) e o conversor do corpus (crates/corpus).
+# Etapa 5: entram o diferencial (compara o nucleo com o oraculo) e a pasta cobertura (mapa de
+# decisoes e equivalencias aprovadas).
 # O relatorio (crates/fidelidade/relatorio) ja fica coberto por crates/fidelidade.
 for item in CLAUDE.md .gitignore docs/requisitos.md hooks refs .github .devcontainer \
     .claude .mcp.json .vscode .cargo rust-toolchain.toml oracle crates/fidelidade \
-    oracle2 crates/corpus; do
+    oracle2 crates/corpus diferencial cobertura; do
     base="//workspaces/websonic/$item"
     grep -q "\"Edit($base)\"\|\"Edit($base/\*\*)\"" "$ms" || falha "falta a regra Edit de $item."
     grep -q "\"/workspaces/websonic/$item\"" "$ms" || falha "falta o denyWrite de $item."

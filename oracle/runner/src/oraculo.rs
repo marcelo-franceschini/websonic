@@ -604,10 +604,20 @@ impl Oraculo {
         let passos_inicio = self.passos;
         let eventos_inicio = self.eventos.len();
         let mut quadros_fechados = 0u32;
+        // Quando a rotina atravessa o fim de um quadro, os eventos do quadro fechado saem de
+        // `self.eventos`. Guarda-os aqui, sem os que ja existiam antes da chamada.
+        let mut dos_quadros_fechados: Vec<Evento> = Vec::new();
         let motivo = self.executar_ate(
             &[Parada::Pc68(chamada.sentinela)],
             chamada.max_passos,
-            &mut |_| quadros_fechados += 1,
+            &mut |q| {
+                let mut eventos = q.eventos;
+                if quadros_fechados == 0 {
+                    eventos.drain(..eventos_inicio.min(eventos.len()));
+                }
+                dos_quadros_fechados.extend(eventos);
+                quadros_fechados += 1;
+            },
         )?;
         if motivo != MotivoParada::Parada(Parada::Pc68(chamada.sentinela)) {
             return Err("a rotina nao retornou dentro do limite de passos".into());
@@ -620,11 +630,11 @@ impl Oraculo {
             .filter(|(_, (a, d))| a != d)
             .map(|(i, (a, d))| (0xFF_0000 + u32::try_from(i).unwrap_or(0), *a, *d))
             .collect();
-        // Se a rotina atravessou o fim de um quadro, os eventos anteriores ja foram entregues.
         let eventos = if quadros_fechados == 0 {
             self.eventos[eventos_inicio..].to_vec()
         } else {
-            self.eventos.clone()
+            dos_quadros_fechados.extend(self.eventos.iter().copied());
+            dos_quadros_fechados
         };
         Ok(ResultadoRotina {
             regs: self.emu.oracle_regs68(),

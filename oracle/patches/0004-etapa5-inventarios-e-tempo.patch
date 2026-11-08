@@ -1,0 +1,283 @@
+diff --git a/backend/genesis-core/src/api.rs b/backend/genesis-core/src/api.rs
+index d43f8b27..0efa4fef 100644
+--- a/backend/genesis-core/src/api.rs
++++ b/backend/genesis-core/src/api.rs
+@@ -261,6 +261,7 @@ impl GenesisEmulator {
+         let m68k_cycles = if m68k_wait {
+             let espera = self.bus.cycles.take_m68k_wait_cpu_cycles();
+             oracle_trace::emit(oracle_trace::kind::ESPERA_CONSUMIDA, espera, 0, 0, 0);
++            oracle_trace::tempo_espera(espera);
+             espera
+         } else if DEBUG && let Some(debugger) = &mut debugger {
+             let mut debug_bus = Debug68000Bus::new(&mut self.bus, &mut self.z80, debugger);
+diff --git a/backend/genesis-core/src/bus.rs b/backend/genesis-core/src/bus.rs
+index a95ab7d2..1cde4b11 100644
+--- a/backend/genesis-core/src/bus.rs
++++ b/backend/genesis-core/src/bus.rs
+@@ -402,6 +402,7 @@ impl GenesisBus {
+     fn m68k_read<const WORD: bool>(&mut self, address: u32) -> u16 {
+         let address = address & 0xFFFFFF;
+         log::trace!("Main bus {} read, address={address:06X}", if WORD { "word" } else { "byte" });
++        oracle_trace::barramento(oraculo_regiao(address, self.z80_signals.busack()), "leitura", if WORD { 2 } else { 1 });
+ 
+         let value = match address {
+             0x000000..=0x3FFFFF => {
+@@ -474,6 +475,7 @@ impl GenesisBus {
+                 // Unused bits should read open bus; Danny Sullivan's Indy Heat (Proto) and Time Killers
+                 // depend on this or they will fail to boot
+                 let busack_word = busack_bit | (self.open_bus & !(1 << 8));
++                oracle_trace::tempo_leitura(oracle_trace::leitura::BUSACK, busack_word);
+                 if WORD { busack_word } else { busack_word.msb().into() }
+             }
+             0xA12000..=0xA12FFF if let Some(sega_cd) = &mut self.sega_cd => {
+@@ -684,8 +686,10 @@ impl GenesisBus {
+             0x04..=0x07 => {
+                 // Highest 6 bits of VDP status register are open bus; VDPFIFOTesting DMA busy flag tests
+                 // depend on this
+-                self.vdp.read_status(self.m68k_opcode, self.cycles.m68k_divider.get())
+-                    | (self.open_bus & 0xFC00)
++                let status = self.vdp.read_status(self.m68k_opcode, self.cycles.m68k_divider.get())
++                    | (self.open_bus & 0xFC00);
++                oracle_trace::tempo_leitura(oracle_trace::leitura::VDP_STATUS, status);
++                status
+             }
+             0x08..=0x0B => self.vdp.hv_counter(self.m68k_opcode, self.cycles.m68k_divider.get()),
+             0x0C..=0x1F => {
+@@ -796,6 +800,7 @@ impl m68000_emu::BusInterface for GenesisBus {
+ 
+     #[inline]
+     fn write_byte(&mut self, address: u32, value: u8) {
++        oracle_trace::barramento(oraculo_regiao(address & 0xFFFFFF, self.z80_signals.busack()), "escrita", 1);
+         // O contexto vale no momento em que o 68000 escreve, nao quando a escrita pendente e aplicada.
+         if (0xE00000..=0xFFFFFF).contains(&address) {
+             oracle_trace::acesso_ram(address, 1, oracle_trace::acesso::ESCRITA);
+@@ -805,6 +810,7 @@ impl m68000_emu::BusInterface for GenesisBus {
+ 
+     #[inline]
+     fn write_word(&mut self, address: u32, value: u16) {
++        oracle_trace::barramento(oraculo_regiao(address & 0xFFFFFF, self.z80_signals.busack()), "escrita", 2);
+         if (0xE00000..=0xFFFFFF).contains(&address) {
+             oracle_trace::acesso_ram(address, 2, oracle_trace::acesso::ESCRITA);
+         }
+@@ -861,7 +867,11 @@ impl z80_emu::BusInterface for GenesisBus {
+             0x4000..=0x5FFF => {
+                 // YM2612 registers/ports (mirrored every 4 addresses)
+                 self.sync_ym2612();
+-                self.ym2612.read_register(address)
++                let ym = self.ym2612.read_register(address);
++                if oracle_trace::origem_e_68000() {
++                    oracle_trace::tempo_leitura(oracle_trace::leitura::YM_STATUS, ym.into());
++                }
++                ym
+             }
+             0x6000..=0x60FF => {
+                 // Bank number register
+@@ -984,3 +994,19 @@ impl z80_emu::BusInterface for GenesisBus {
+         self.z80_signals.reset
+     }
+ }
++
++/// Nome fixo da região do barramento do 68000 para o inventário de acessos (Etapa 5).
++fn oraculo_regiao(address: u32, busack: bool) -> &'static str {
++    match address {
++        0x000000..=0x3FFFFF => "rom",
++        0xA00000..=0xA0FFFF if busack => "z80_janela",
++        0xA00000..=0xA0FFFF => "z80_janela_sem_busack",
++        0xA10000..=0xA1001F => "io",
++        0xA11100..=0xA111FF => "z80_barramento",
++        0xA11200..=0xA112FF => "z80_reset",
++        0xA14000..=0xA14003 => "tmss",
++        0xC00000..=0xC0001F => "vdp",
++        0xE00000..=0xFFFFFF => "ram",
++        _ => "sem_dispositivo",
++    }
++}
+diff --git a/common/oracle-trace/src/lib.rs b/common/oracle-trace/src/lib.rs
+index 59db457f..bd3de240 100644
+--- a/common/oracle-trace/src/lib.rs
++++ b/common/oracle-trace/src/lib.rs
+@@ -366,3 +366,142 @@ pub fn gravador_fim_quadro(ram: &[u8]) {
+         }
+     });
+ }
++
++// ---------------------------------------------------------------------------------------------
++// Inventários de instruções e de barramento, e o arquivo de tempo (Etapa 5, patch 0004).
++// Só contagens, nomes de classe e endereços. Nenhum valor de memória.
++// ---------------------------------------------------------------------------------------------
++
++use std::collections::BTreeMap;
++
++/// Classe de leitura de hardware gravada no arquivo de tempo.
++pub mod leitura {
++    pub const BUSACK: u8 = 0;
++    pub const VDP_STATUS: u8 = 1;
++    pub const YM_STATUS: u8 = 2;
++}
++
++/// Um item do arquivo de tempo, na ordem em que aconteceu dentro do quadro.
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub enum TempoRaw {
++    Interrupcao { nivel: u8, pc_interrompido: u32, pc_tratador: u32, mclk: u64, linha: u16, coluna: u16 },
++    Leitura { classe: u8, valor: u16, mclk: u64 },
++    EsperaZ80 { ciclos: u32, mclk: u64 },
++}
++
++thread_local! {
++    static INSTRUCOES_LIGADO: Cell<bool> = const { Cell::new(false) };
++    static INSTRUCOES: RefCell<BTreeMap<(String, String), u64>> = const { RefCell::new(BTreeMap::new()) };
++    static BARRAMENTO_LIGADO: Cell<bool> = const { Cell::new(false) };
++    static BARRAMENTO: RefCell<BTreeMap<(String, String, String), u64>> = const { RefCell::new(BTreeMap::new()) };
++    static TEMPO_LIGADO: Cell<bool> = const { Cell::new(false) };
++    static TEMPO: RefCell<Vec<TempoRaw>> = const { RefCell::new(Vec::new()) };
++}
++
++pub fn instrucoes_ligar() {
++    INSTRUCOES_LIGADO.with(|a| a.set(true));
++}
++
++#[inline]
++pub fn instrucoes_ligadas() -> bool {
++    INSTRUCOES_LIGADO.with(Cell::get)
++}
++
++/// Conta uma instrução decodificada. Guarda só o nome da variante e o tamanho, tirados do
++/// texto de depuração (o resto, como operandos, é descartado).
++pub fn instrucao_debug<T: std::fmt::Debug>(instrucao: &T) {
++    let texto = format!("{instrucao:?}");
++    let nome: String = texto.chars().take_while(|c| c.is_ascii_alphanumeric()).collect();
++    let tamanho = texto
++        .split("size: ")
++        .nth(1)
++        .map(|r| r.chars().take_while(|c| c.is_ascii_alphanumeric()).collect::<String>())
++        .unwrap_or_else(|| "-".to_string());
++    INSTRUCOES.with(|m| *m.borrow_mut().entry((nome, tamanho)).or_insert(0) += 1);
++}
++
++#[must_use]
++pub fn mapa_instrucoes() -> Vec<(String, String, u64)> {
++    INSTRUCOES.with(|m| m.borrow().iter().map(|((n, t), c)| (n.clone(), t.clone(), *c)).collect())
++}
++
++pub fn barramento_ligar() {
++    BARRAMENTO_LIGADO.with(|a| a.set(true));
++}
++
++/// Conta um acesso do 68000 (`op` = "leitura", "escrita" ou "dma"). `regiao` é um nome fixo.
++#[inline]
++pub fn barramento(regiao: &str, op: &str, bytes: u32) {
++    if BARRAMENTO_LIGADO.with(Cell::get) {
++        BARRAMENTO.with(|m| {
++            *m.borrow_mut().entry((regiao.to_string(), op.to_string(), bytes.to_string())).or_insert(0) += 1;
++        });
++    }
++}
++
++/// Conta uma exceção do 68000 pelo número do vetor.
++pub fn excecao(vetor: u32) {
++    if BARRAMENTO_LIGADO.with(Cell::get) {
++        BARRAMENTO.with(|m| {
++            *m.borrow_mut().entry(("excecao".to_string(), "vetor".to_string(), vetor.to_string())).or_insert(0) += 1;
++        });
++    }
++}
++
++#[must_use]
++pub fn mapa_barramento() -> Vec<(String, String, String, u64)> {
++    BARRAMENTO.with(|m| m.borrow().iter().map(|((r, o, t), c)| (r.clone(), o.clone(), t.clone(), *c)).collect())
++}
++
++pub fn tempo_ligar() {
++    TEMPO_LIGADO.with(|a| a.set(true));
++}
++
++fn ctx_tempo() -> (u64, u16, u16) {
++    let c = CTX.with(Cell::get);
++    (c.mclk, c.line, c.col)
++}
++
++/// Interrupção tomada pelo 68000.
++pub fn tempo_interrupcao(nivel: u32, pc_interrompido: u32, pc_tratador: u32) {
++    if TEMPO_LIGADO.with(Cell::get) {
++        let (mclk, linha, coluna) = ctx_tempo();
++        TEMPO.with(|t| {
++            t.borrow_mut().push(TempoRaw::Interrupcao {
++                nivel: u8::try_from(nivel).unwrap_or(0),
++                pc_interrompido,
++                pc_tratador,
++                mclk,
++                linha,
++                coluna,
++            });
++        });
++    }
++}
++
++/// Leitura de estado de hardware feita pelo 68000. `valor` é o que o 68000 leu.
++pub fn tempo_leitura(classe: u8, valor: u16) {
++    if TEMPO_LIGADO.with(Cell::get) {
++        let (mclk, _, _) = ctx_tempo();
++        TEMPO.with(|t| t.borrow_mut().push(TempoRaw::Leitura { classe, valor, mclk }));
++    }
++}
++
++/// Espera do 68000 consumida (por exemplo, por acesso do Z80).
++pub fn tempo_espera(ciclos: u32) {
++    if TEMPO_LIGADO.with(Cell::get) {
++        let (mclk, _, _) = ctx_tempo();
++        TEMPO.with(|t| t.borrow_mut().push(TempoRaw::EsperaZ80 { ciclos, mclk }));
++    }
++}
++
++/// A origem do contexto atual é o 68000?
++#[must_use]
++pub fn origem_e_68000() -> bool {
++    CTX.with(Cell::get).src == src::CPU68
++}
++
++/// Entrega e limpa os itens de tempo acumulados.
++pub fn drain_tempo(saida: &mut Vec<TempoRaw>) {
++    TEMPO.with(|t| saida.append(&mut t.borrow_mut()));
++}
+diff --git a/cpu/m68000-emu/src/core.rs b/cpu/m68000-emu/src/core.rs
+index f3c468cf..ce1c4d98 100644
+--- a/cpu/m68000-emu/src/core.rs
++++ b/cpu/m68000-emu/src/core.rs
+@@ -798,6 +798,7 @@ impl<'cpu, 'bus, B: BusInterface> InstructionExecutor<'cpu, 'bus, B> {
+     }
+ 
+     fn handle_address_error(&mut self, address: u32, op_type: BusOpType) -> ExecuteResult<()> {
++        oracle_trace::excecao(ADDRESS_ERROR_VECTOR);
+         let sr = self.cpu.registers.status_register();
+         let supervisor_mode = self.cpu.registers.supervisor_mode;
+ 
+@@ -860,6 +861,7 @@ impl<'cpu, 'bus, B: BusInterface> InstructionExecutor<'cpu, 'bus, B> {
+     }
+ 
+     fn handle_trap(&mut self, vector: u32, pc: u32) -> ExecuteResult<()> {
++        oracle_trace::excecao(vector);
+         let sr = self.cpu.registers.status_register();
+         self.cpu.registers.trace_enabled = false;
+         self.cpu.registers.supervisor_mode = true;
+@@ -894,6 +896,7 @@ impl<'cpu, 'bus, B: BusInterface> InstructionExecutor<'cpu, 'bus, B> {
+             new_pc,
+             0,
+         );
++        oracle_trace::tempo_interrupcao(interrupt_level.into(), pc_interrompido, new_pc);
+ 
+         // Auto-vectored interrupt handling takes 49-59 cycles instead of 44:
+         //   https://gendev.spritesmind.net/forum/viewtopic.php?t=2202
+diff --git a/cpu/m68000-emu/src/core/instructions.rs b/cpu/m68000-emu/src/core/instructions.rs
+index 1754581b..ca44d488 100644
+--- a/cpu/m68000-emu/src/core/instructions.rs
++++ b/cpu/m68000-emu/src/core/instructions.rs
+@@ -335,6 +335,9 @@ impl<B: BusInterface> InstructionExecutor<'_, '_, B> {
+         self.opcode = opcode;
+ 
+         let instruction = table::decode(opcode);
++        if oracle_trace::instrucoes_ligadas() {
++            oracle_trace::instrucao_debug(&instruction);
++        }
+         self.instruction = Some(instruction);
+         log::trace!(
+             "[{}] Decoded opcode {opcode:04X} (PC={initial_pc:06X}): {instruction}",

@@ -35,6 +35,9 @@ const REFERENCIAS: &[&str] = &[
     "crates/corpus",
     "corpus",
     "descompressao",
+    "cobertura",
+    "diferencial",
+    "crates/teste-nucleo",
 ];
 /// Pasta de artefatos de compilação, nunca entra no manifesto.
 const PASTA_ALVO: &str = "target";

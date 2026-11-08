@@ -7,12 +7,17 @@
 //! - `manifesto`: gera e verifica o manifesto assinado.
 //! - `ocultos`: cifra, protege a chave e audita os testes ocultos.
 //! - `corpus-trace`: traces do corpus e prova de determinismo.
+//! - `cobertura`, `mutantes`, `bugs-conhecidos`: Etapa 5 (decisões do núcleo contra o original,
+//!   bugs injetados e lista de verificação dos trechos FixBugs).
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+mod bugs;
+mod cobertura;
 mod corpus;
 mod fidelidade;
 mod manifesto;
+mod mutantes;
 mod ocultos;
 mod sha256;
 
@@ -41,8 +46,13 @@ fn main() -> ExitCode {
         Some("manifesto") => manifesto::executar(resto),
         Some("ocultos") => ocultos::executar(resto),
         Some("corpus-trace") => corpus::executar(resto),
+        Some("cobertura") => cobertura::executar(resto),
+        Some("mutantes") => mutantes::executar(resto),
+        Some("bugs-conhecidos") => bugs::executar(resto),
         _ => {
-            eprintln!("uso: cargo fidelidade <fidelidade|manifesto|ocultos|corpus-trace>");
+            eprintln!(
+                "uso: cargo fidelidade <fidelidade|manifesto|ocultos|corpus-trace|cobertura|mutantes|bugs-conhecidos>"
+            );
             return ExitCode::from(2);
         }
     };

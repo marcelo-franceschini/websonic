@@ -5,6 +5,7 @@
 //!               [--salvar-estado ARQ] [--estado-a-cada N] [--carregar-estado ARQ]
 //!               [--perfil-a-cada N] [--video PREFIXO]   (com --rotulos: imprime modo, zona, ato e demo)
 //!               [--acessos ARQ] [--despejar-ram ARQ]   (mapa de acessos a RAM por contexto; RAM no fim)
+//!               [--instrucoes ARQ] [--barramento ARQ] [--tempo ARQ]   (Etapa 5: inventarios e tempo)
 //! oraculo comparar TRACE_A TRACE_B
 //! oraculo imagem --rom ARQ --estado ARQ --quadro N --saida ARQ.s1p [--entradas ARQ]
 //! oraculo descomprimir --rom ARQ --rotulos ARQ --manifesto ARQ [--saida ARQ]
@@ -124,10 +125,26 @@ fn rodar(args: &[String]) -> Result<ExitCode, String> {
     // Mapa de acessos a RAM por contexto (pedido P2): so enderecos e bits, nunca valores.
     let acessos = opcao(args, "--acessos");
     let despejar_ram = opcao(args, "--despejar-ram");
+    // Etapa 5: inventario de instrucoes (classe e tamanho), de acessos ao barramento fora da
+    // RAM e arquivo de tempo por quadro. Todos so com nomes, enderecos e contagens.
+    let instrucoes = opcao(args, "--instrucoes");
+    let barramento = opcao(args, "--barramento");
+    let tempo_arq = opcao(args, "--tempo");
     let mut oraculo = Oraculo::novo(rom, entradas)?;
     if acessos.is_some() {
         oracle_trace::acessos_ligar();
     }
+    if instrucoes.is_some() {
+        oracle_trace::instrucoes_ligar();
+    }
+    if barramento.is_some() {
+        oracle_trace::barramento_ligar();
+    }
+    if tempo_arq.is_some() {
+        oracle_trace::tempo_ligar();
+    }
+    let mut tempo = sonic1_core::quadro::tempo::TempoGravado::default();
+    let mut mclk_anterior = 0u64;
     if let Some(arq) = opcao(args, "--carregar-estado") {
         let bytes = std::fs::read(arq).map_err(|e| format!("nao li o estado: {e}"))?;
         oraculo.carregar_estado(&bytes)?;
@@ -166,6 +183,13 @@ fn rodar(args: &[String]) -> Result<ExitCode, String> {
         while oraculo.quadro_atual() < quadros {
             let q = oraculo.executar_quadro()?;
             let numero = q.numero;
+            if tempo_arq.is_some() {
+                let fim = q.mclk_fim;
+                tempo
+                    .quadros
+                    .push(tempo_do_quadro(numero, mclk_anterior, fim));
+                mclk_anterior = fim;
+            }
             registrar(q, &mut escritor)?;
             fechados += 1;
             if let Some((i, v)) = video.as_mut() {
@@ -196,6 +220,15 @@ fn rodar(args: &[String]) -> Result<ExitCode, String> {
     }
     if let Some(arq) = acessos {
         escrever_acessos(arq, &oracle_trace::mapa_acessos())?;
+    }
+    if let Some(arq) = instrucoes {
+        escrever_instrucoes(arq)?;
+    }
+    if let Some(arq) = barramento {
+        escrever_barramento(arq)?;
+    }
+    if let Some(arq) = tempo_arq {
+        std::fs::write(arq, tempo.para_bytes()).map_err(|e| e.to_string())?;
     }
     if let Some(arq) = despejar_ram {
         // So para uso do host (diagnostico). A saida nunca entra no git.
@@ -383,6 +416,83 @@ fn escrever_acessos(arq: &str, mapa: &[u16]) -> Result<(), String> {
         if *bits != 0 {
             writeln!(f, "{:06X}\t{bits:04X}", 0xFF_0000 + i).map_err(|e| e.to_string())?;
         }
+    }
+    f.flush().map_err(|e| e.to_string())
+}
+
+/// Monta o registro de tempo de um quadro com os itens que os ganchos acumularam nele.
+fn tempo_do_quadro(
+    numero: u32,
+    mclk_inicio: u64,
+    mclk_fim: u64,
+) -> sonic1_core::quadro::tempo::TempoQuadro {
+    use oracle_trace::TempoRaw;
+    use sonic1_core::memoria::ClasseLeitura;
+    use sonic1_core::quadro::tempo::{EventoTempo, TempoQuadro};
+    let mut brutos = Vec::new();
+    oracle_trace::drain_tempo(&mut brutos);
+    let eventos = brutos
+        .into_iter()
+        .filter_map(|r| match r {
+            TempoRaw::Interrupcao {
+                nivel,
+                pc_interrompido,
+                pc_tratador,
+                mclk,
+                linha,
+                coluna,
+            } => Some(EventoTempo::Interrupcao {
+                nivel,
+                pc_interrompido,
+                pc_tratador,
+                mclk,
+                linha,
+                coluna,
+            }),
+            TempoRaw::Leitura {
+                classe,
+                valor,
+                mclk,
+            } => {
+                let classe = match classe {
+                    oracle_trace::leitura::BUSACK => ClasseLeitura::Busack,
+                    oracle_trace::leitura::VDP_STATUS => ClasseLeitura::VdpStatus,
+                    oracle_trace::leitura::YM_STATUS => ClasseLeitura::YmStatus,
+                    _ => return None,
+                };
+                Some(EventoTempo::Leitura {
+                    classe,
+                    valor,
+                    mclk,
+                })
+            }
+            TempoRaw::EsperaZ80 { ciclos, mclk } => Some(EventoTempo::EsperaZ80 { ciclos, mclk }),
+        })
+        .collect();
+    TempoQuadro {
+        numero,
+        mclk_inicio,
+        mclk_fim,
+        eventos,
+    }
+}
+
+/// `Classe<TAB>Tamanho<TAB>contagem`, em ordem. O nome e a variante do decodificador do jgenesis.
+fn escrever_instrucoes(arq: &str) -> Result<(), String> {
+    use std::io::Write;
+    let mut f = BufWriter::new(File::create(arq).map_err(|e| e.to_string())?);
+    for (nome, tamanho, n) in oracle_trace::mapa_instrucoes() {
+        writeln!(f, "{nome}\t{tamanho}\t{n}").map_err(|e| e.to_string())?;
+    }
+    f.flush().map_err(|e| e.to_string())
+}
+
+/// `regiao<TAB>operacao<TAB>bytes<TAB>contagem`. Para excecoes: `excecao<TAB>vetor<TAB>N<TAB>contagem`.
+fn escrever_barramento(arq: &str) -> Result<(), String> {
+    use std::io::Write;
+    let mut f = BufWriter::new(File::create(arq).map_err(|e| e.to_string())?);
+    for (regiao, op, bytes, n) in oracle_trace::mapa_barramento() {
+        writeln!(f, "{regiao}\t{op}\t{bytes}\t{n}").map_err(|e| e.to_string())?;
     }
     f.flush().map_err(|e| e.to_string())
 }

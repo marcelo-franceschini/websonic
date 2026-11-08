@@ -63,7 +63,13 @@ jobs:
         run: sh .github/rodar-na-imagem.sh cargo test --workspace
 
       - name: Testes em WebAssembly (wasm32-wasip1)
-        run: sh .github/rodar-na-imagem.sh cargo test --target wasm32-wasip1 -p sonic1-core -p sonic1-rom
+        run: sh .github/rodar-na-imagem.sh cargo test --target wasm32-wasip1 -p sonic1-core -p sonic1-rom -p sonic1-teste-nucleo -p sonic1-teste-descompressao
+
+      - name: Relatorio de fidelidade (formatacao, clippy e testes do pacote)
+        run: |
+          sh .github/rodar-na-imagem.sh cargo fmt --check --manifest-path crates/fidelidade/relatorio/Cargo.toml
+          sh .github/rodar-na-imagem.sh cargo clippy --locked --manifest-path crates/fidelidade/relatorio/Cargo.toml --target-dir target/relatorio --all-targets -- -D warnings
+          sh .github/rodar-na-imagem.sh cargo test --locked --manifest-path crates/fidelidade/relatorio/Cargo.toml --target-dir target/relatorio
 
       - name: Montar o site
         run: sh .github/rodar-na-imagem.sh cargo xtask site
