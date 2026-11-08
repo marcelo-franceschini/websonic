@@ -38,3 +38,10 @@ Marcas (a parada devolve o quadro fechado e o `mclk` do **fim desse quadro**, n�
 - Prova sintética (ROM escrita por nós, `crates/teste-som/tests/abertura.rs`, 6 testes; `abertura_layout.rs` confere os endereços contra `refs/rotulos.txt`): 24 registradores da VDP na ordem; programa de partida do Z80 byte a byte; 4 volumes do PSG; soma de verificação contra um modelo de uma linha em 60 ROMs; soma errada recusada; modo Sega depois das duas marcas; determinismo; ROM minúscula dá erro e não pânico. Resultado: todos passam.
 - Comparador: `diferencial-abertura/` (`abertura comparar ROM QUADROS rotulos`). Prova de fumaça com ROM sintética (`tests/fumaca.rs`): programa parado não diverge; marca vista no oráculo sem o mesmo efeito no jogo é acusada.
 - Ainda sem prova com a ROM real. Bloco 2 (`scripts/etapa7-bloco2.sh`, 61 quadros, do ligar até a entrada de `GM_Sega`).
+
+## Bloco 2, rodada 2 (Marcelo, 08/11/2026, 62 quadros)
+
+- RAM do 68000: 60 quadros iguais, 0 `diverge` fora de trecho atômico (2 em trecho atômico). RAM do Z80: 54 iguais, 0 `diverge` (8 em trecho atômico).
+- Escritas até a entrada de `GM_Sega`: as 230 de vídeo do núcleo e as 4 do PSG são iguais às do oráculo, na ordem. As mudanças do BUSREQ e do RESET do Z80: as 13 do núcleo são o começo exato das 18 do oráculo (o oráculo registra só mudanças; hipótese confirmada). As escritas a mais do oráculo (vídeo 281, PSG 8, YM 64, Z80 18) vêm do começo de `GM_Sega` e da primeira interrupção, no quadro 61. Isso fecha 7.1 e 7.2 no que o comparador mede.
+- Marcas por quadro: `GameProgram` 3, `CheckSumOk` 52, `VDPSetupGame` 55, `DACDriverLoad` 56, `JoypadInit` 61, `MainGameLoop` 61, `GM_Sega` 61. Então a carga do programa do Z80 (descompressão) ocupa os quadros 56 a 61.
+- **Aberto:** `posicao_z80_divergencias=6106`. A máquina do Z80 do núcleo não está onde o oráculo viu o Z80 em cada ponto durante a carga do programa do Z80 (uma escrita na janela por byte). Diagnóstico adicionado ao comparador (primeiras divergências e contagem por tipo de acesso).

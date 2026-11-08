@@ -42,6 +42,9 @@ pub struct Relatorio {
     pub atraso_maximo: u64,
     pub erro_nucleo: Option<String>,
     pub divergencias_posicao_z80: usize,
+    /// As primeiras divergências de posição do Z80 (PC, ciclos que faltam, banco): diagnóstico.
+    pub z80_primeiras: Vec<String>,
+    pub z80_por_acesso: BTreeMap<String, u32>,
     /// Quadros em que cada marca chegou.
     pub marcas_vistas: BTreeMap<String, Vec<u32>>,
     /// Sequências do Z80 (sinal e estado), só para diagnóstico: oráculo e núcleo.
@@ -368,6 +371,18 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
         rel.quadros += 1;
     }
     rel.divergencias_posicao_z80 = nucleo.mem.divergencias_z80().len();
+    for d in nucleo.mem.divergencias_z80() {
+        let t = format!("{d:?}");
+        let chave = t.split(['{', '(']).next().unwrap_or("").to_string()
+            + t.split("acesso: ")
+                .nth(1)
+                .and_then(|x| x.split(',').next())
+                .unwrap_or("");
+        *rel.z80_por_acesso.entry(chave).or_default() += 1;
+        if rel.z80_primeiras.len() < 6 {
+            rel.z80_primeiras.push(t);
+        }
+    }
     for t in 0..5 {
         if esperadas[t].len() != obtidas[t].len() && rel.escritas_diverge.is_none() {
             rel.escritas_diverge = Some(format!(
@@ -402,6 +417,12 @@ pub fn imprimir(rel: &Relatorio) {
     println!("posicao_z80_divergencias={}", rel.divergencias_posicao_z80);
     for (m, v) in &rel.marcas_vistas {
         println!("marca {m} quadros={v:?}");
+    }
+    for (k, v) in &rel.z80_por_acesso {
+        println!("z80_divergencia {k} vezes={v}");
+    }
+    for p in &rel.z80_primeiras {
+        println!("z80_divergencia_inicial {p}");
     }
     println!("z80_oraculo (sinal,ativo)={:?}", rel.z80_oraculo);
     println!("z80_nucleo (sinal,ativo)={:?}", rel.z80_nucleo);
