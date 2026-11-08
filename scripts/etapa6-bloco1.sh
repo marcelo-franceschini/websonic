@@ -51,5 +51,6 @@ cargo run -q -p xtask -- inventario-som --traces "$tmp" --tempos "$acc"
 
 echo "##### 5. RESUMO (cole daqui ate o FIM) #####"
 # Sem as linhas de dado do YM2612 do 68000 (sao muitas e ja estao em inventario-hardware.md).
-awk '!/^\| 68000 \| [0-9] \| 0x/' docs/inventario-som.md
+wc -c docs/inventario-som.md
+awk '!/^\| 68000 \| [0-9] \| 0x/' docs/inventario-som.md | head -260
 echo "##### FIM #####"

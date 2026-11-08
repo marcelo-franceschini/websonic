@@ -190,9 +190,20 @@ pub fn renderizar(r: &Resumo, casos: &[String], tempos: &[String]) -> String {
     for (b, v) in &r.bancos {
         let _ = writeln!(md, "| {b:#05x} | {v} |");
     }
-    md.push_str("\n## Z80: endereços da janela tocados pelo 68000\n\n| Acesso | Endereço | Vezes |\n| --- | --- | --- |\n");
+    // Endereços de controle (fim da RAM e YM2612) um a um; o resto agrupado por página de 256 bytes.
+    md.push_str("\n## Z80: endereços da janela tocados pelo 68000\n\n| Acesso | Endereço ou página | Endereços distintos | Vezes |\n| --- | --- | --- | --- |\n");
+    let mut paginas: BTreeMap<(&str, u16), (u64, u64)> = BTreeMap::new();
     for ((n, e), v) in &r.janela {
-        let _ = writeln!(md, "| {n} | {e:#06x} | {v} |");
+        if *e >= 0x1FF0 || (0x4000..=0x4003).contains(e) {
+            let _ = writeln!(md, "| {n} | {e:#06x} | 1 | {v} |");
+        } else {
+            let p = paginas.entry((n, *e >> 8)).or_default();
+            p.0 += 1;
+            p.1 += v;
+        }
+    }
+    for ((n, pg), (d, v)) in &paginas {
+        let _ = writeln!(md, "| {n} | página {:#06x} | {d} | {v} |", pg << 8);
     }
     md.push_str("\n## Z80: posição vista em cada ponto (acesso, PC, ciclos que faltam)\n\n");
     let mut por_vezes: Vec<_> = r.posicoes.iter().collect();
@@ -362,7 +373,7 @@ mod testes {
         assert_eq!(r.maior_pontos_por_quadro, 3);
         let md = renderizar(&r, &["c".into()], &["t".into()]);
         assert!(md.contains("| BUSREQ pedido | 2 | 100 | 300 | 400 |"));
-        assert!(md.contains("| janela, leitura | 0x1ffd | 1 |"));
+        assert!(md.contains("| janela, leitura | 0x1ffd | 1 | 1 |"));
         assert!(super::super::inventario::filtro(&md).is_ok());
     }
 }

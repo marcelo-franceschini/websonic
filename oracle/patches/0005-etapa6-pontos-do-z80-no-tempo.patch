@@ -1,0 +1,205 @@
+From 0ad8b26511524f9abad7d7c0159da7012b79d2da Mon Sep 17 00:00:00 2001
+From: Marcelo <m@x>
+Date: Sun, 8 Nov 2026 18:02:10 -0300
+Subject: [PATCH] etapa6: pontos do Z80 no tempo (acessor do ciclo restante,
+ contagem de ciclos, ganchos nos acessos do 68000 ao Z80)
+
+---
+ backend/genesis-core/src/api.rs |  5 +++
+ backend/genesis-core/src/bus.rs | 32 ++++++++++++++++
+ common/oracle-trace/src/lib.rs  | 67 +++++++++++++++++++++++++++++++++
+ cpu/z80-emu/src/core.rs         |  6 +++
+ 4 files changed, 110 insertions(+)
+
+diff --git a/backend/genesis-core/src/api.rs b/backend/genesis-core/src/api.rs
+index 0efa4fef..da8d8da5 100644
+--- a/backend/genesis-core/src/api.rs
++++ b/backend/genesis-core/src/api.rs
+@@ -291,9 +291,14 @@ impl GenesisEmulator {
+                 } else {
+                     self.z80.tick(&mut self.bus);
+                 }
++                oracle_trace::z80_ciclo_contado();
+             }
+             self.bus.cycles.z80_cycle();
+         }
++        // Etapa 6: o Z80 como o 68000 vai ve-lo nos acessos desta instrucao e da proxima.
++        if oracle_trace::tempo_ligado() {
++            oracle_trace::z80_vista(self.z80.pc(), self.z80.t_cycles_wait());
++        }
+ 
+         // As escritas pendentes do 68000 sao aplicadas em tick_components: volta ao contexto do 68000.
+         oracle_trace::set_ctx(oraculo_mclk, oracle_trace::src::CPU68, oraculo_linha, oraculo_coluna);
+diff --git a/backend/genesis-core/src/bus.rs b/backend/genesis-core/src/bus.rs
+index 1cde4b11..84032886 100644
+--- a/backend/genesis-core/src/bus.rs
++++ b/backend/genesis-core/src/bus.rs
+@@ -455,6 +455,12 @@ impl GenesisBus {
+                 // For 68k access, $8000-$FFFF mirrors $0000-$7FFF
+                 let byte =
+                     <Self as z80_emu::BusInterface>::read_memory(self, (address & 0x7FFF) as u16);
++                oracle_trace::tempo_z80_ponto(
++                    oracle_trace::acesso_z80::LEITURA_JANELA,
++                    self.z80_bank.value(),
++                    (address & 0x7FFF) as u16,
++                    byte,
++                );
+                 if WORD {
+                     // All Z80 access is byte-size; word reads mirror the byte in both MSB and LSB
+                     u16::from_ne_bytes([byte; 2])
+@@ -585,6 +591,12 @@ impl GenesisBus {
+                 // Word-size writes write the MSB as a byte-size write
+                 let byte = if WORD { value.msb() } else { value as u8 };
+ 
++                oracle_trace::tempo_z80_ponto(
++                    oracle_trace::acesso_z80::ESCRITA_JANELA,
++                    self.z80_bank.value(),
++                    (address & 0x7FFF) as u16,
++                    byte,
++                );
+                 // For 68k access, $8000-$FFFF mirrors $0000-$7FFF
+                 <Self as z80_emu::BusInterface>::write_memory(
+                     self,
+@@ -598,6 +610,16 @@ impl GenesisBus {
+             }
+             0xA11100 => {
+                 self.z80_signals.busreq = if WORD { value.bit(8) } else { value.bit(0) };
++                oracle_trace::tempo_z80_ponto(
++                    if self.z80_signals.busreq {
++                        oracle_trace::acesso_z80::BUSREQ_PEDIDO
++                    } else {
++                        oracle_trace::acesso_z80::BUSREQ_LIBERADO
++                    },
++                    self.z80_bank.value(),
++                    0,
++                    0,
++                );
+                 oracle_trace::emit(
+                     oracle_trace::kind::BARRAMENTO_Z80,
+                     0,
+@@ -730,6 +752,16 @@ impl GenesisBus {
+ 
+     fn set_z80_reset(&mut self, z80_reset: bool) {
+         oracle_trace::emit(oracle_trace::kind::BARRAMENTO_Z80, 1, z80_reset.into(), 0, 0);
++        oracle_trace::tempo_z80_ponto(
++            if z80_reset {
++                oracle_trace::acesso_z80::RESET_LIGADO
++            } else {
++                oracle_trace::acesso_z80::RESET_SOLTO
++            },
++            self.z80_bank.value(),
++            0,
++            0,
++        );
+         if !self.z80_signals.reset && z80_reset {
+             // Z80 RESET also resets the YM2612
+             // Fantastic Dizzy depends on this or music will not mute correctly when you pause the game
+diff --git a/common/oracle-trace/src/lib.rs b/common/oracle-trace/src/lib.rs
+index bd3de240..c80644f7 100644
+--- a/common/oracle-trace/src/lib.rs
++++ b/common/oracle-trace/src/lib.rs
+@@ -387,6 +387,27 @@ pub enum TempoRaw {
+     Interrupcao { nivel: u8, pc_interrompido: u32, pc_tratador: u32, mclk: u64, linha: u16, coluna: u16 },
+     Leitura { classe: u8, valor: u16, mclk: u64 },
+     EsperaZ80 { ciclos: u32, mclk: u64 },
++    /// Ponto do Z80 (Etapa 6, patch 0005): um acesso do 68000 que toca o Z80.
++    Z80Ponto {
++        acesso: u8,
++        pc: u16,
++        espera: u16,
++        ativos: u32,
++        banco: u16,
++        endereco: u16,
++        byte: u8,
++        mclk: u64,
++    },
++}
++
++/// Tipos de acesso do 68000 que viram ponto do Z80.
++pub mod acesso_z80 {
++    pub const BUSREQ_PEDIDO: u8 = 0;
++    pub const BUSREQ_LIBERADO: u8 = 1;
++    pub const RESET_LIGADO: u8 = 2;
++    pub const RESET_SOLTO: u8 = 3;
++    pub const LEITURA_JANELA: u8 = 4;
++    pub const ESCRITA_JANELA: u8 = 5;
+ }
+ 
+ thread_local! {
+@@ -396,6 +417,11 @@ thread_local! {
+     static BARRAMENTO: RefCell<BTreeMap<(String, String, String), u64>> = const { RefCell::new(BTreeMap::new()) };
+     static TEMPO_LIGADO: Cell<bool> = const { Cell::new(false) };
+     static TEMPO: RefCell<Vec<TempoRaw>> = const { RefCell::new(Vec::new()) };
++    // Etapa 6: o Z80 visto no fim da ultima atualizacao (PC e ciclos que faltam da instrucao) e a
++    // contagem de ciclos do Z80 executados (nao parados por DMA), total e no ultimo ponto.
++    static Z80_VISTA: Cell<(u16, u16)> = const { Cell::new((0, 0)) };
++    static Z80_ATIVOS: Cell<u64> = const { Cell::new(0) };
++    static Z80_ATIVOS_NO_PONTO: Cell<u64> = const { Cell::new(0) };
+ }
+ 
+ pub fn instrucoes_ligar() {
+@@ -501,6 +527,47 @@ pub fn origem_e_68000() -> bool {
+     CTX.with(Cell::get).src == src::CPU68
+ }
+ 
++/// O arquivo de tempo esta ligado?
++#[must_use]
++pub fn tempo_ligado() -> bool {
++    TEMPO_LIGADO.with(Cell::get)
++}
++
++/// Conta um ciclo do Z80 executado (nao parado por DMA).
++#[inline]
++pub fn z80_ciclo_contado() {
++    Z80_ATIVOS.with(|a| a.set(a.get().wrapping_add(1)));
++}
++
++/// Guarda o PC do Z80 e os ciclos que faltam da instrucao em curso, depois de o Z80 alcançar o 68000.
++pub fn z80_vista(pc: u16, espera: u32) {
++    Z80_VISTA.with(|v| v.set((pc, u16::try_from(espera).unwrap_or(u16::MAX))));
++}
++
++/// Grava um ponto do Z80: um acesso do 68000 que toca o Z80. `endereco` e `byte` valem so nos
++/// acessos a janela. Os ciclos ativos sao contados desde o ponto anterior.
++pub fn tempo_z80_ponto(acesso: u8, banco: u32, endereco: u16, byte: u8) {
++    if TEMPO_LIGADO.with(Cell::get) {
++        let (mclk, _, _) = ctx_tempo();
++        let (pc, espera) = Z80_VISTA.with(Cell::get);
++        let total = Z80_ATIVOS.with(Cell::get);
++        let antes = Z80_ATIVOS_NO_PONTO.with(|a| a.replace(total));
++        let ativos = u32::try_from(total.wrapping_sub(antes)).unwrap_or(u32::MAX);
++        TEMPO.with(|t| {
++            t.borrow_mut().push(TempoRaw::Z80Ponto {
++                acesso,
++                pc,
++                espera,
++                ativos,
++                banco: u16::try_from(banco & 0x1FF).unwrap_or(0),
++                endereco,
++                byte,
++                mclk,
++            });
++        });
++    }
++}
++
+ /// Entrega e limpa os itens de tempo acumulados.
+ pub fn drain_tempo(saida: &mut Vec<TempoRaw>) {
+     TEMPO.with(|t| saida.append(&mut t.borrow_mut()));
+diff --git a/cpu/z80-emu/src/core.rs b/cpu/z80-emu/src/core.rs
+index efce2d6c..984357ea 100644
+--- a/cpu/z80-emu/src/core.rs
++++ b/cpu/z80-emu/src/core.rs
+@@ -330,6 +330,12 @@ impl Z80 {
+         self.registers.pc
+     }
+ 
++    /// Ciclos que faltam para a instrucao em curso terminar (so leitura, para o oraculo).
++    #[must_use]
++    pub fn t_cycles_wait(&self) -> u32 {
++        self.t_cycles_wait
++    }
++
+     pub fn set_pc(&mut self, pc: u16) {
+         self.registers.pc = pc;
+     }

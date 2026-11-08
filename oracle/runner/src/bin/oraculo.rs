@@ -428,7 +428,7 @@ fn tempo_do_quadro(
 ) -> sonic1_core::quadro::tempo::TempoQuadro {
     use oracle_trace::TempoRaw;
     use sonic1_core::memoria::ClasseLeitura;
-    use sonic1_core::quadro::tempo::{EventoTempo, TempoQuadro};
+    use sonic1_core::quadro::tempo::{AcessoZ80, EventoTempo, TempoQuadro};
     let mut brutos = Vec::new();
     oracle_trace::drain_tempo(&mut brutos);
     let eventos = brutos
@@ -467,6 +467,33 @@ fn tempo_do_quadro(
                 })
             }
             TempoRaw::EsperaZ80 { ciclos, mclk } => Some(EventoTempo::EsperaZ80 { ciclos, mclk }),
+            TempoRaw::Z80Ponto {
+                acesso,
+                pc,
+                espera,
+                ativos,
+                banco,
+                endereco,
+                byte,
+                mclk,
+            } => Some(EventoTempo::PontoZ80 {
+                acesso: match acesso {
+                    oracle_trace::acesso_z80::BUSREQ_PEDIDO => AcessoZ80::BusReqPedido,
+                    oracle_trace::acesso_z80::BUSREQ_LIBERADO => AcessoZ80::BusReqLiberado,
+                    oracle_trace::acesso_z80::RESET_LIGADO => AcessoZ80::ResetLigado,
+                    oracle_trace::acesso_z80::RESET_SOLTO => AcessoZ80::ResetSolto,
+                    oracle_trace::acesso_z80::LEITURA_JANELA => AcessoZ80::LeituraJanela,
+                    oracle_trace::acesso_z80::ESCRITA_JANELA => AcessoZ80::EscritaJanela,
+                    _ => return None,
+                },
+                pc,
+                espera,
+                ativos,
+                banco,
+                endereco,
+                byte,
+                mclk,
+            }),
         })
         .collect();
     TempoQuadro {
