@@ -51,3 +51,4 @@ Uma linha por item: o que é, dono, etapa-alvo. Só entra aqui o que não bloque
 - Barramento aberto: o valor no oraculo e a ultima palavra buscada pelo 68000; o nucleo nao busca instrucoes. Se o jogo ler barramento aberto, o inventario de barramento mostra e o valor passa a vir do tempo gravado. Dono: IA. Etapa-alvo: 6 a 12.
 - Os testes do `diferencial/` (memoria, operacoes, rotina) nao entram na lista de testes do manifesto, porque precisam do oraculo construido. Os arquivos entram (hash). Dono: IA. Etapa-alvo: 14.
 - Rodada completa dos bugs injetados (`cargo fidelidade mutantes --orcamento 0`) e dos 65536 pares por operacao. Dono: Marcelo. Etapa-alvo: auditoria.
+- Etapa 5: decodificação estática do universo de desvios do original; anotar decisões do NemDec (Etapa 6); testes BK_nnnn por item (Etapas 6 a 12).

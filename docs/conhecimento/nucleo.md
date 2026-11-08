@@ -121,3 +121,12 @@ Plano: `docs/plano-etapa-5.md`. Cada afirmação cita o teste ou o comando. Nada
 - Falha 2 (mapa de decisões vazio): `chamar_rotina` do oráculo perdia os eventos dos quadros já fechados quando a rotina atravessava o fim de um quadro (descompressão longa). As sequências de desvio ficavam truncadas e nenhuma batia. Patch `docs/pedidos/etapa5-oraculo-2.patch` (arquivo congelado do runner) e teste `diferencial/tests/quadros.rs` (3641 eventos sem o patch, 40000 com ele).
 - Falha 3 (WebAssembly): o teste de metadados lia arquivo em tempo de execução. Agora usa `include_str!`.
 - Cobertura do original "executados: 0": os traces do corpus só são regenerados no passo de assinatura. A extração roda de novo depois dele.
+
+## Fechamento da Etapa 5 (executado pelo Marcelo)
+
+- Bloco B2: `KosDec` 6 casos, `EniDec` 34, `NemDecToRAM` 145, todos sem falha (6 `AUSENTE` no Nemesis são rótulos que não existem na REV01). Mapa de decisões: 7 de 9, conferido de novo com `--mapa`. `EniDec:incremental` e `EniDec:modo_lista` não têm desvio condicional no original (despacho por `JMP` com tabela de saltos): exclusão proposta em `cobertura/exclusoes-propostas.txt`.
+- Cobertura do corpus: 1788 desvios condicionais distintos executados (1790 com as rotinas), 575 em um caminho só. O universo é só o que o oráculo executou (backlog: decodificação estática).
+- Os traces completos não ficam em disco (de 0,6 a 3,3 GB por caso). `scripts/etapa5-cobertura.sh` os gera, extrai e apaga.
+- Assinatura: a senha da chave antiga foi perdida. Chave nova `websonic_assinatura_nova`, `refs/assinante.pub` trocado. Manifesto de 352 linhas, `assinatura: OK`, veredito do relatório `PASSOU`, 6 casos ocultos passam, segundo oráculo com 3 diferenças registradas e 0 sem decisão.
+- Bugs conhecidos: 0 de 315 cobertos. Esperado: o teste de cada item (`BK_nnnn` no nome) entra nas Etapas 6 a 12.
+- Patch de congelamento aplicado (`verifica-config.sh` e `checa-core.sh` OK). A imagem do contêiner precisa ser reconstruída.
