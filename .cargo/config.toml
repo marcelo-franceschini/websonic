@@ -5,3 +5,8 @@ runner = "wasmtime"
 # Atalho: cargo xtask <site|anti-rom>
 [alias]
 xtask = "run --quiet --package xtask --"
+
+# Atalho: cargo fidelidade <fidelidade|manifesto|ocultos|corpus-trace>
+# O pacote fica numa pasta congelada (crates/fidelidade/relatorio), que nao aceita escrita do
+# compilador, por isso o alvo e target/relatorio. --locked: o Cargo.lock do pacote e referencia.
+fidelidade = "run --quiet --locked --manifest-path crates/fidelidade/relatorio/Cargo.toml --target-dir target/relatorio --"

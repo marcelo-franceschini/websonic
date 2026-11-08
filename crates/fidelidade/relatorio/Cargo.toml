@@ -1,0 +1,23 @@
+[package]
+name = "sonic1-relatorio"
+description = "Relatorio de fidelidade: comando de fidelidade, manifesto assinado, testes ocultos e traces do corpus"
+edition = "2024"
+version = "0.0.0"
+publish = false
+license = "MIT"
+
+[[bin]]
+name = "relatorio"
+path = "src/main.rs"
+
+[dependencies]
+sonic1-fidelidade = { path = ".." }
+sonic1-corpus = { path = "../../corpus" }
+age = { version = "0.12.1", default-features = false }
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+
+# Workspace proprio, como o oracle/runner. O pacote fica dentro de uma pasta congelada
+# (crates/fidelidade), por isso o alvo de compilacao e target/relatorio (ver .cargo/config.toml).
+[workspace]

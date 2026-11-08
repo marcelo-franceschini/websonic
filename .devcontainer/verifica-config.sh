@@ -44,8 +44,11 @@ fi
 # 0.7: entram tambem a configuracao do Claude Code no projeto (.claude, .mcp.json, .vscode)
 #      e a configuracao do cargo (.cargo, rust-toolchain.toml).
 # Etapa 1: entram o oraculo (oracle) e o formato do trace e comparador (crates/fidelidade).
+# 2.10: entram o segundo oraculo (oracle2) e o conversor do corpus (crates/corpus).
+# O relatorio (crates/fidelidade/relatorio) ja fica coberto por crates/fidelidade.
 for item in CLAUDE.md .gitignore docs/requisitos.md hooks refs .github .devcontainer \
-    .claude .mcp.json .vscode .cargo rust-toolchain.toml oracle crates/fidelidade; do
+    .claude .mcp.json .vscode .cargo rust-toolchain.toml oracle crates/fidelidade \
+    oracle2 crates/corpus; do
     base="//workspaces/websonic/$item"
     grep -q "\"Edit($base)\"\|\"Edit($base/\*\*)\"" "$ms" || falha "falta a regra Edit de $item."
     grep -q "\"/workspaces/websonic/$item\"" "$ms" || falha "falta o denyWrite de $item."

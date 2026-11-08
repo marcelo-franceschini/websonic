@@ -89,3 +89,24 @@ Plano: `docs/plano-fechamento-etapa-2.md`. Tudo com dados sintéticos; a ROM nã
 - **Partida gravada**: `scripts/etapa2-gravar.sh ROM corpus CASO` grava o caso público no `corpus/` (sem cifrar) e escreve o `.meta`. Não foi rodado aqui (precisa de janela e ROM).
 - **Segundo oráculo**: ver as linhas D1a, D1b e D1c em `oraculos.md`.
 - **Não verificado aqui.** `ssh-keygen` e `ssh-agent` não existem neste contêiner: o teste de assinatura do pacote `relatorio` pula, e o fluxo com `ssh-agent` do `scripts/etapa2-fechamento.sh` só foi lido, não rodado. O host roda os dois.
+
+## Fechamento da Etapa 2, sub-etapa 2.11 (rodada do host, 08/11/2026)
+
+Resumo literal do `scripts/etapa2-fechamento.sh` (`/tmp/etapa2-fechamento.txt`). Só vereditos, contagens, hashes e nomes.
+
+- **Partida gravada.** `partida-ghz1`: 8309 quadros, `gravacao: REPRODUZ (RAM do ultimo quadro identica)`. Entrou em `corpus/` com `.meta` (`entradas_sha1: 21fef791b9c51ee361fa99559a9fb81b3c786716`).
+- **TAS conferidos contra a REV01 (`tas conferir --aplicar`): os dois foram DESCARTADOS.**
+  - `tas-3570m`: não chegou a `id_Ending` nem a `id_Credits`. Último modo lido 12 (fase) no quadro 54720.
+  - `tas-1937m`: não chegou a `id_Ending` nem a `id_Credits`. Último modo lido 8 (demo) no quadro 66960.
+  - Os dois saíram do corpus e estão em `corpus/descartados.txt`, com a fonte e o motivo.
+  - A causa da perda de sincronia **não foi investigada**. Hipóteses, sem prova: diferença de tempo entre o Gens 11b e o jgenesis, ou entradas do GMV (A/B/C de 6 botões) lidas de outro jeito.
+  - O requisito diz "TAS convertidos e conferidos contra a REV01". A conversão e a conferência foram feitas. Nenhum TAS ficou aceito no corpus. Ver backlog.
+- **D1 em 7 amostras novas** (quadros 6100, 6600, 7100, 7600, 8400, 10200, 11000): `quadros com variavel fora de pilha e tempo: 0 de 7`. Somados aos 14 anteriores, são 21 quadros sem variável de lógica fora de pilha e tempo. A causa continua hipótese.
+- **Traces** (`corpus-trace`): `boot-demos` 52ed49ce85b0fc5d69afb977d6d9470a41035c45 (7200), `demos-quatro` a3b53824de96516e7e118469460c6228a70c4b90 (11700), `lz-agua` 9f8d8be138a8099ec8bee31981fc8fce7ca11f52 (2000), `partida-ghz1` ae0740757eb2558c9935b2c53fb5019f6e9b6e26 (8309). `determinismo: PASSOU`.
+- **Manifesto**: 266 linhas, assinado com a chave de assinatura. `assinatura: OK`, `referências: OK`, `testes: OK (0 não assinados)`, `manifesto: PASSOU`.
+- **Relatório completo** (`cargo fidelidade fidelidade`): `traces: PASSOU`, `segundo oráculo: 3 diferença(s) registrada(s), 0 sem decisão`, `veredito: PASSOU`.
+- **Auditoria dos ocultos**: `ghz`, `lz`, `mz`, `sbz`, `slz`, `syz`: `passou (1 casos)` cada. Limite antigo continua: prova decifração e execução, não fidelidade.
+- **Chave dos ocultos**: protegida com senha (`ocultos.key.age`); a cópia sem senha foi apagada.
+- **Chave de assinatura**: o Marcelo deixou a senha vazia nas duas rodadas. A chave **continua sem senha**. Pendente (backlog).
+- **Falha achada e corrigida na rodada**: o `ssh-keygen -Y sign` perguntava "Overwrite (y/n)?" e parou a primeira tentativa. O script agora apaga a assinatura antiga antes (commit 4722d95).
+- **Ainda não feito**: reconstruir a imagem do contêiner (o congelamento só vale na imagem nova).

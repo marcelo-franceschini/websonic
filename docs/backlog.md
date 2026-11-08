@@ -28,7 +28,6 @@ Uma linha por item: o que é, dono, etapa-alvo. Só entra aqui o que não bloque
 - A auditoria dos ocultos usa um sistema sob teste mínimo (`scripts/sut-reproduz.sh`: o oráculo roda o caso sem erro). Trocar pelo núcleo comparado com o oráculo. O "passou" tem de vir do comparador congelado, não do sistema sob teste. Dono: IA. Etapa-alvo: 5.
 - Teste `assinatura_valida_e_adulterada` passa vazio sem `ssh-keygen` (a imagem não tem openssh) e não cobre chave de outro assinante nem namespace errado; não há teste de ponta a ponta de `manifesto verificar` e `fidelidade` falhando. Dono: IA. Etapa-alvo: 5.
 - Saída literal da regravação da zona mz (rodada 4) e do `REPRODUZ` das seis zonas não está na base de conhecimento. Dono: Marcelo (colar a saída de `sh scripts/etapa2-rodada4.sh`, só vereditos). Etapa-alvo: 5.
-- Fechamento da Etapa 2: executar `docs/plano-fechamento-etapa-2.md` (2.10 no contêiner, script do host, 2.11, revisão do fechamento). Dono: IA e Marcelo. Etapa-alvo: 2.
 - Sessões da IA rodam no host desde a Etapa 1, contra o requisito "Onde a IA roda: dentro do contêiner de trabalho". No host não há bloqueio técnico. Dono: Marcelo (abrir as sessões no contêiner). Etapa-alvo: já.
 - D1, causa: nenhum teste olhou o ciclo da interrupção; D1a, D1b e D1c continuam hipótese. Dono: IA. Etapa-alvo: 15.
 - Contêiner de auditoria (`.devcontainer/auditoria/devcontainer.json`, pedido P3 do plano da Etapa 2, nunca entregue). Dono: IA (patch) e Marcelo. Etapa-alvo: 9.
@@ -38,3 +37,6 @@ Uma linha por item: o que é, dono, etapa-alvo. Só entra aqui o que não bloque
 - TAS 5121M ("100%", BK2), junto com o conversor de BK2. Dono: IA. Etapa-alvo: 14.
 - Exclusão da pilha na comparação do núcleo contra o oráculo: decisão do Marcelo (requisitos, critério 2). Recomendação da IA: aprovar. Etapa-alvo: 5.
 - Arquivo NOVO numa pasta de referência do manifesto (por exemplo um `.rs` a mais em `oracle2/src`) não é acusado: o manifesto só confere os arquivos listados. Pede patch no `relatorio` (congelado) para comparar o conjunto de arquivos. Dono: IA (patch) e Marcelo. Etapa-alvo: 5.
+- TAS: os dois (3570M e 1937M) perderam a sincronia contra a REV01 e saíram do corpus (`corpus/descartados.txt`). Investigar a causa (tempo Gens 11b contra jgenesis, leitura dos botões do GMV de 6 botões) ou trazer outro TAS. Dono: IA. Etapa-alvo: 14 (a revisão do fechamento decide se bloqueia antes).
+- Chave de assinatura `~/.ssh/websonic_assinatura` continua sem senha (o Marcelo deixou vazio). Rodar `ssh-keygen -p -f ~/.ssh/websonic_assinatura`. Dono: Marcelo. Etapa-alvo: já.
+- Reconstruir a imagem do contêiner para o congelamento valer. Dono: Marcelo. Etapa-alvo: já.

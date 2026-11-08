@@ -1,0 +1,3 @@
+# nome<TAB>fonte<TAB>motivo. Entradas conferidas contra a REV01 que perderam a sincronia.
+tas-3570m	https://tasvideos.org/3570M (publicacao 3570M, Baseline, 14:13.87)	nao chegou a id_Ending nem a id_Credits; ultimo modo lido 12 no quadro 54720
+tas-1937m	https://tasvideos.org/1937M (publicacao 1937M, no zips, 17:36.58)	nao chegou a id_Ending nem a id_Credits; ultimo modo lido 8 no quadro 66960
