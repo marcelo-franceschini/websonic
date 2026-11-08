@@ -135,6 +135,8 @@ pub struct Abertura {
     /// Quantas vezes cada tipo de evento chegou sem uso (diagnóstico do relatório).
     pub marcas_ignoradas: u32,
     pub interrupcoes_ignoradas: u32,
+    /// VBlanks que rodaram o tratador (diagnóstico do relatório).
+    pub vblanks_tratados: u32,
 }
 
 impl Abertura {
@@ -144,6 +146,7 @@ impl Abertura {
             cursor: 0,
             modo: Modo::Boot,
             interrupcoes_ignoradas: 0,
+            vblanks_tratados: 0,
             quadro: 0,
             erro: None,
             marcas_ignoradas: 0,
@@ -220,6 +223,7 @@ impl Abertura {
             }
             (Modo::Sega(Sega::VozEmCurso), Marca::SegaWaitEnd) => {
                 // O driver devolveu o controle: o tratador acaba e o laço principal segue.
+                self.vblanks_tratados = self.vblanks_tratados.saturating_add(1);
                 vblank::tratar(&mut self.mem)?;
                 ww(&mut self.mem, ram::V_GENERICTIMER, 30);
                 wb(&mut self.mem, ram::V_VBLANK_ROUTINE, vblank::ROTINA_SEGA);
@@ -239,6 +243,7 @@ impl Abertura {
         };
         match passo {
             Sega::FadeOut(n) => {
+                self.vblanks_tratados = self.vblanks_tratados.saturating_add(1);
                 vblank::tratar(&mut self.mem)?;
                 sega::fade_out_to_black(&mut self.mem);
                 let n = n.saturating_sub(1);
@@ -254,6 +259,7 @@ impl Abertura {
                 }
             }
             Sega::WaitPal => {
+                self.vblanks_tratados = self.vblanks_tratados.saturating_add(1);
                 vblank::tratar(&mut self.mem)?;
                 if sega::pal_cycle_sega(&mut self.mem) {
                     wb(&mut self.mem, ram::V_VBLANK_ROUTINE, vblank::ROTINA_SEGA);
@@ -269,6 +275,7 @@ impl Abertura {
             }
             Sega::Voz => self.modo = Modo::Sega(Sega::VozEmCurso),
             Sega::WaitEnd => {
+                self.vblanks_tratados = self.vblanks_tratados.saturating_add(1);
                 vblank::tratar(&mut self.mem)?;
                 // `Sega_WaitEnd`: temporizador zerado ou Start apertado leva ao título.
                 let acabou = rw(&mut self.mem, ram::V_GENERICTIMER) == 0;

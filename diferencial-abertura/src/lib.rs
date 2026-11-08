@@ -45,6 +45,13 @@ pub struct Relatorio {
     /// As primeiras divergências de posição do Z80 (PC, ciclos que faltam, banco): diagnóstico.
     pub z80_primeiras: Vec<String>,
     pub z80_por_acesso: BTreeMap<String, u32>,
+    /// Nomes das variáveis que divergem na RAM do 68000, com a contagem de quadros.
+    pub ram_variaveis: BTreeMap<String, u32>,
+    /// Contexto do primeiro acesso ao Z80 que difere: índice, oráculo e núcleo.
+    pub z80_contexto: Option<String>,
+    pub int6_oraculo: u32,
+    pub int6_nucleo_tratadas: u32,
+    pub int6_nucleo_ignoradas: u32,
     /// Quadros em que cada marca chegou.
     pub marcas_vistas: BTreeMap<String, Vec<u32>>,
     /// Sequências do Z80 (sinal e estado), só para diagnóstico: oráculo e núcleo.
@@ -175,6 +182,8 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
     oracle_trace::tempo_ligar();
     let mut o = Oraculo::novo(rom.clone(), Entradas::default())?;
     let mut nucleo = Abertura::nova(rom);
+    nucleo.mem.registrar_acessos_z80();
+    let mut acessos_oraculo: Vec<AcessoZ80> = Vec::new();
     let mut rel = Relatorio::default();
     let mut esperadas: [Vec<Escrita>; 5] = Default::default();
     let mut obtidas: [Vec<Escrita>; 5] = Default::default();
@@ -249,6 +258,7 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
                     mclk,
                 } => {
                     if let Some(acesso) = acesso_de(acesso) {
+                        acessos_oraculo.push(acesso);
                         linha.push((
                             mclk,
                             EventoQuadro::PontoZ80(PontoZ80 {
@@ -293,6 +303,21 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
         match primeira_diferenca(&ram_o, &ram_n) {
             None => rel.ram_iguais += 1,
             Some((p, total)) => {
+                if !atomico {
+                    let mut vistos: Vec<String> = Vec::new();
+                    for (i, (x, y)) in ram_o.iter().zip(&ram_n).enumerate() {
+                        if x != y {
+                            let nome = nomes.de(0xFF_0000 + u32::try_from(i).unwrap_or(0));
+                            let base = nome.split('+').next().unwrap_or("").to_string();
+                            if !vistos.contains(&base) {
+                                vistos.push(base);
+                            }
+                        }
+                    }
+                    for v in vistos {
+                        *rel.ram_variaveis.entry(v).or_default() += 1;
+                    }
+                }
                 if atomico {
                     rel.ram_diverge_atomico += 1;
                 } else {
@@ -370,6 +395,21 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
         rel.atraso_maximo = rel.atraso_maximo.max(atraso);
         rel.quadros += 1;
     }
+    rel.int6_nucleo_tratadas = nucleo.vblanks_tratados;
+    rel.int6_nucleo_ignoradas = nucleo.interrupcoes_ignoradas;
+    let log = nucleo.mem.acessos_z80();
+    if let Some(i) =
+        (0..acessos_oraculo.len().min(log.len())).find(|&i| acessos_oraculo[i] != log[i])
+    {
+        let de = i.saturating_sub(4);
+        rel.z80_contexto = Some(format!(
+            "indice {i} de {} (oraculo) e {} (nucleo); oraculo {:?}; nucleo {:?}",
+            acessos_oraculo.len(),
+            log.len(),
+            &acessos_oraculo[de..(i + 8).min(acessos_oraculo.len())],
+            &log[de..(i + 8).min(log.len())]
+        ));
+    }
     rel.divergencias_posicao_z80 = nucleo.mem.divergencias_z80().len();
     for d in nucleo.mem.divergencias_z80() {
         let t = format!("{d:?}");
@@ -424,8 +464,23 @@ pub fn imprimir(rel: &Relatorio) {
     for p in &rel.z80_primeiras {
         println!("z80_divergencia_inicial {p}");
     }
-    println!("z80_oraculo (sinal,ativo)={:?}", rel.z80_oraculo);
-    println!("z80_nucleo (sinal,ativo)={:?}", rel.z80_nucleo);
+    println!(
+        "interrupcoes_nivel6: oraculo={} nucleo_tratadas={} nucleo_ignoradas={}",
+        rel.int6_oraculo, rel.int6_nucleo_tratadas, rel.int6_nucleo_ignoradas
+    );
+    let mut v: Vec<_> = rel.ram_variaveis.iter().collect();
+    v.sort_by_key(|(_, n)| std::cmp::Reverse(**n));
+    for (nome, n) in v.iter().take(20) {
+        println!("ram68k_variavel_divergente {nome} quadros={n}");
+    }
+    if let Some(c) = &rel.z80_contexto {
+        println!("z80_primeiro_acesso_diferente {c}");
+    }
+    println!(
+        "z80_mudancas: oraculo={} nucleo={}",
+        rel.z80_oraculo.len(),
+        rel.z80_nucleo.len()
+    );
     if let Some(e) = &rel.erro_nucleo {
         println!("erro_do_nucleo: {e}");
     }

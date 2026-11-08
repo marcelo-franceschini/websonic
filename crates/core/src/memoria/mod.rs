@@ -110,6 +110,8 @@ pub struct Memoria {
     z80: MaquinaZ80,
     pontos_z80: VecDeque<PontoZ80>,
     divergencias_z80: Vec<DivergenciaZ80>,
+    /// Diagnóstico (desligado por padrão): os acessos do 68000 ao Z80, na ordem.
+    log_acessos_z80: Option<Vec<AcessoZ80>>,
 }
 
 fn indice(endereco: u32, mascara: u32) -> usize {
@@ -139,6 +141,7 @@ impl Memoria {
             z80: MaquinaZ80::nova(),
             pontos_z80: VecDeque::new(),
             divergencias_z80: Vec::new(),
+            log_acessos_z80: None,
         }
     }
 
@@ -256,7 +259,19 @@ impl Memoria {
         }
     }
 
+    /// Liga o registro dos acessos do 68000 ao Z80 (só para diagnóstico).
+    pub fn registrar_acessos_z80(&mut self) {
+        self.log_acessos_z80.get_or_insert_with(Vec::new);
+    }
+
+    pub fn acessos_z80(&self) -> &[AcessoZ80] {
+        self.log_acessos_z80.as_deref().unwrap_or(&[])
+    }
+
     fn sincronizar_z80(&mut self, acesso: AcessoZ80) {
+        if let Some(l) = &mut self.log_acessos_z80 {
+            l.push(acesso);
+        }
         let Some(p) = self.pontos_z80.pop_front() else {
             return;
         };
