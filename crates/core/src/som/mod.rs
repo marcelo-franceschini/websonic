@@ -3,4 +3,5 @@
 //! Nada aqui sintetiza áudio. O módulo produz as escritas nos chips de som, na ordem em que o
 //! original as faz, e mantém o estado do driver na RAM espelhada.
 
+pub mod driver;
 pub mod z80;

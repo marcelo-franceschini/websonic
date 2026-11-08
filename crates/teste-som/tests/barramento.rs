@@ -25,13 +25,13 @@ fn busack_e_visibilidade_da_ram_do_z80_concordam_com_o_modelo() {
         for _ in 0..60 {
             match rng.proximo() % 4 {
                 0 => {
-                    let pedir = rng.proximo() % 2 == 0;
+                    let pedir = rng.proximo().is_multiple_of(2);
                     m.escrever(0xA1_1100, Tamanho::Word, if pedir { 0x100 } else { 0 })
                         .unwrap();
                     modelo.busreq = pedir;
                 }
                 1 => {
-                    let soltar = rng.proximo() % 2 == 0;
+                    let soltar = rng.proximo().is_multiple_of(2);
                     m.escrever(0xA1_1200, Tamanho::Word, if soltar { 0x100 } else { 0 })
                         .unwrap();
                     modelo.reset = !soltar;
