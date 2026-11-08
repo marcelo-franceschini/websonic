@@ -10,6 +10,7 @@ use oracle_trace::TempoRaw;
 use sonic1_core::abertura::ram::{PILHA_FIM, PILHA_INICIO};
 use sonic1_core::abertura::{Abertura, EventoQuadro, MARCAS};
 use sonic1_core::memoria::{ClasseLeitura, PortaVdp, Saida, Tamanho};
+use sonic1_core::nivel2::{laco_da_limpeza, laco_da_soma, laco_da_voz};
 use sonic1_core::quadro::tempo::AcessoZ80;
 use sonic1_core::som::z80::PontoZ80;
 use sonic1_fidelidade::hash::{em_hex, sha1_de_partes};
@@ -56,6 +57,8 @@ pub struct Relatorio {
     pub z80_contexto: Option<String>,
     pub z80_fila: Option<String>,
     pub int6_oraculo: u32,
+    /// Experimento do nível 2: (nome, medido em ciclos do 68000, previsto).
+    pub nivel2: Vec<(String, u64, u64)>,
     /// Comparação nas esperas de VBlank (D7.4): o laço principal chegou a `WaitForVBlank`.
     pub esperas_iguais: u32,
     pub esperas_diverge: u32,
@@ -199,6 +202,22 @@ fn escrita_do_nucleo(s: &Saida) -> Option<Escrita> {
 /// Roda o oráculo e o núcleo juntos por `quadros` quadros.
 pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, String> {
     oracle_trace::tempo_ligar();
+    // Experimento do nível 2 (7.8): o modelo lê o código na ROM e prevê o custo de três laços.
+    let soma = laco_da_soma(&rom, 0x31C);
+    let limpeza = laco_da_limpeza(&rom, 0x364);
+    let voz = laco_da_voz(&rom, 0x7_1FAC);
+    let mut extras: Vec<(&'static str, u32)> = Vec::new();
+    for (nome, p, ini) in [
+        ("soma_da_rom", soma, 0x31Cu32),
+        ("limpeza_da_ram", limpeza, 0x364),
+        ("espera_da_voz", voz, 0x7_1FAC),
+    ] {
+        if let Some(p) = p {
+            extras.push((nome, ini));
+            extras.push((nome, p.fim));
+        }
+    }
+    let mut extras_mclk: BTreeMap<(&'static str, u32), u64> = BTreeMap::new();
     let mut o = Oraculo::novo(rom.clone(), Entradas::default())?;
     let mut nucleo = Abertura::nova(rom);
     nucleo.mem.registrar_acessos_z80();
@@ -228,6 +247,11 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
             // Chegada: o PC mudou para o endereço da marca (laço de uma instrução conta uma vez).
             let chegou = pc != ultimo_pc;
             ultimo_pc = pc;
+            if chegou && let Some((nome, _)) = extras.iter().find(|(_, a)| *a == pc) {
+                extras_mclk
+                    .entry((*nome, pc))
+                    .or_insert_with(|| o.emulador().oracle_mclk());
+            }
             if chegou && pc == WAIT_FOR_VBLANK {
                 esperas_o.push_back((o.ram68k(), o.ram_z80()));
                 rel.esperas_oraculo += 1;
@@ -504,6 +528,21 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
         rel.atraso_maximo = rel.atraso_maximo.max(atraso);
         rel.quadros += 1;
     }
+    for (nome, p, ini) in [
+        ("soma_da_rom", soma, 0x31Cu32),
+        ("limpeza_da_ram", limpeza, 0x364),
+        ("espera_da_voz", voz, 0x7_1FAC),
+    ] {
+        if let Some(p) = p
+            && let (Some(a), Some(b)) = (
+                extras_mclk.get(&(nome, ini)),
+                extras_mclk.get(&(nome, p.fim)),
+            )
+        {
+            rel.nivel2
+                .push((nome.to_string(), b.saturating_sub(*a) / 7, p.ciclos));
+        }
+    }
     rel.int6_nucleo_tratadas = nucleo.vblanks_tratados;
     rel.int6_nucleo_ignoradas = nucleo.interrupcoes_ignoradas;
     rel.ignoradas_em = nucleo.ignoradas_em.clone();
@@ -606,6 +645,17 @@ pub fn imprimir(rel: &Relatorio) {
     }
     for (nome, n) in &rel.esperas_variaveis {
         println!("espera_variavel_divergente {nome} esperas={n}");
+    }
+    for (nome, medido, previsto) in &rel.nivel2 {
+        let erro = i128::from(*previsto) - i128::from(*medido);
+        let ppm = if *medido == 0 {
+            0
+        } else {
+            erro * 1_000_000 / i128::from(*medido)
+        };
+        println!(
+            "nivel2 {nome} medido_ciclos={medido} previsto_ciclos={previsto} erro_ciclos={erro} erro_ppm={ppm}"
+        );
     }
     for (q, m) in &rel.ignoradas_em {
         println!("interrupcao_ignorada quadro={q} modo={m}");

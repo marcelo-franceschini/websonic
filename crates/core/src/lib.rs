@@ -11,6 +11,7 @@ pub mod aritmetica;
 pub mod cobertura;
 pub mod descompressao;
 pub mod memoria;
+pub mod nivel2;
 pub mod ops68k;
 pub mod quadro;
 pub mod rotinas;
