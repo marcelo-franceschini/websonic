@@ -2,7 +2,11 @@
 
 Documento de acompanhamento do progresso das etapas.
 
-## Etapa 5 (Núcleo base): lado da IA pronto, faltam os blocos A e B do Marcelo (08/11/2026)
+## Etapa 6 (Driver de som): plano escrito, sub-etapa 6.0 feita, aguarda o bloco 1 e a aprovação (08/11/2026)
+
+Plano em `docs/plano-etapa-6.md` (a aprovação do Marcelo vem junto com os resultados do bloco 1). Feito pela IA com dados sintéticos: formato `.s1tempo` versão 2 com pontos do Z80 no núcleo, patch 0005 do oráculo (`docs/pedidos/etapa6-oraculo.patch`, 5 testes novos passam numa cópia limpa), `cargo xtask inventario-som` e `ids-som` (73 IDs), `scripts/etapa6-bloco1.sh`. **Falta (Marcelo, host):** `sh scripts/etapa6-bloco1.sh 2>&1 | tee /tmp/etapa6-bloco1.txt`, commit do patch aplicado e responder "aprovado". Depois seguem 6.1 a 6.5 (IA), o bloco 2 (relatório do som com a ROM) e o fecho. Etapas 3 e 5 conferidas como concluídas nesta sessão (ver abaixo).
+
+## Etapa 5 (Núcleo base): concluída, falta a sessão de revisão (texto do cabeçalho corrigido em 08/11/2026)
 
 Plano aprovado em 08/11/2026 (`docs/plano-etapa-5.md`). Implementado e provado com dados sintéticos: memória espelhada (5.1), operações do 68000 (5.2), tempo gravado e laço de quadro (5.3), pontos de checagem (5.4), patch 0004 do oráculo com inventários e tempo (5.0), harness de teste por rotina (5.5), cobertura (5.6), bugs injetados (5.7) e lista de bugs conhecidos (5.8, 315 itens). Detalhes, desvios do plano e evidência em `docs/conhecimento/nucleo.md`.
 

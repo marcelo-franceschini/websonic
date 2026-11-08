@@ -11,12 +11,16 @@
 //! ```
 //! Tipos: 1 interrupção (aux = nível, valor = PC interrompido, extra = PC do tratador);
 //! 2 leitura de hardware (aux = classe, 0 BUSACK, 1 estado da VDP, 2 estado do YM; valor = o que
-//! o 68000 leu); 3 espera do Z80 consumida (valor = ciclos do 68000).
+//! o 68000 leu); 3 espera do Z80 consumida (valor = ciclos do 68000);
+//! 4 ponto do Z80 (versão 2; aux = tipo do acesso, linha = PC do Z80, coluna = ciclos que faltam da
+//! instrução, reservado = banco, valor = ciclos executados desde o ponto anterior, extra = endereço
+//! e byte da janela).
 
 use crate::memoria::ClasseLeitura;
 
 pub const MAGIA: &[u8; 8] = b"S1TEMPO\0";
-pub const VERSAO: u16 = 1;
+/// Versao 2 (Etapa 6) acrescenta o ponto do Z80. O leitor aceita 1 e 2.
+pub const VERSAO: u16 = 2;
 const TAMANHO_EVENTO: usize = 24;
 
 /// Um evento de tempo dentro de um quadro.
@@ -39,6 +43,60 @@ pub enum EventoTempo {
         ciclos: u32,
         mclk: u64,
     },
+    /// Ponto do Z80: um acesso do 68000 que toca o Z80 (BUSREQ, RESET ou janela da RAM do Z80).
+    /// Diz onde o Z80 estava e quantos ciclos ele executou desde o ponto anterior.
+    PontoZ80 {
+        acesso: AcessoZ80,
+        /// Endereco do proximo trecho do Z80 (PC visto pelo oraculo).
+        pc: u16,
+        /// Ciclos que faltam para a instrucao em curso terminar.
+        espera: u16,
+        /// Ciclos do Z80 executados desde o ponto anterior (os parados por DMA nao contam).
+        ativos: u32,
+        /// Registrador de banco da janela de ROM (9 bits).
+        banco: u16,
+        /// Endereco no espaco do Z80 (15 bits), so nos acessos a janela.
+        endereco: u16,
+        /// Byte lido ou escrito, so nos acessos a janela.
+        byte: u8,
+        mclk: u64,
+    },
+}
+
+/// Tipo de acesso do 68000 que vira ponto do Z80.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AcessoZ80 {
+    BusReqPedido,
+    BusReqLiberado,
+    ResetLigado,
+    ResetSolto,
+    LeituraJanela,
+    EscritaJanela,
+}
+
+impl AcessoZ80 {
+    fn codigo(self) -> u8 {
+        match self {
+            Self::BusReqPedido => 0,
+            Self::BusReqLiberado => 1,
+            Self::ResetLigado => 2,
+            Self::ResetSolto => 3,
+            Self::LeituraJanela => 4,
+            Self::EscritaJanela => 5,
+        }
+    }
+
+    fn de_codigo(c: u8) -> Option<Self> {
+        Some(match c {
+            0 => Self::BusReqPedido,
+            1 => Self::BusReqLiberado,
+            2 => Self::ResetLigado,
+            3 => Self::ResetSolto,
+            4 => Self::LeituraJanela,
+            5 => Self::EscritaJanela,
+            _ => return None,
+        })
+    }
 }
 
 /// O tempo de um quadro.
@@ -106,6 +164,8 @@ impl TempoGravado {
                     .to_le_bytes(),
             );
             for e in &q.eventos {
+                // O campo reservado carrega o banco do Z80 nos pontos do Z80 e zero nos outros.
+                let mut reservado = 0u16;
                 let (tipo, aux, linha, coluna, valor, mclk, extra) = match *e {
                     EventoTempo::Interrupcao {
                         nivel,
@@ -129,12 +189,33 @@ impl TempoGravado {
                         mclk,
                     } => (2, classe_para_u8(classe), 0, 0, u32::from(valor), mclk, 0),
                     EventoTempo::EsperaZ80 { ciclos, mclk } => (3, 0, 0, 0, ciclos, mclk, 0),
+                    EventoTempo::PontoZ80 {
+                        acesso,
+                        pc,
+                        espera,
+                        ativos,
+                        banco,
+                        endereco,
+                        byte,
+                        mclk,
+                    } => {
+                        reservado = banco;
+                        (
+                            4,
+                            acesso.codigo(),
+                            pc,
+                            espera,
+                            ativos,
+                            mclk,
+                            (u32::from(endereco) << 8) | u32::from(byte),
+                        )
+                    }
                 };
                 s.push(tipo);
                 s.push(aux);
                 s.extend_from_slice(&linha.to_le_bytes());
                 s.extend_from_slice(&coluna.to_le_bytes());
-                s.extend_from_slice(&[0, 0]);
+                s.extend_from_slice(&reservado.to_le_bytes());
                 s.extend_from_slice(&valor.to_le_bytes());
                 s.extend_from_slice(&mclk.to_le_bytes());
                 s.extend_from_slice(&extra.to_le_bytes());
@@ -148,7 +229,9 @@ impl TempoGravado {
         if l.pegar(8)? != MAGIA {
             return Err(ErroTempo::MagiaInvalida);
         }
-        if l.u16()? != VERSAO {
+        // A versao 1 nao tem pontos do Z80; o resto do formato e igual.
+        let versao = l.u16()?;
+        if !matches!(versao, 1 | 2) {
             return Err(ErroTempo::VersaoDesconhecida);
         }
         let mut quadros = Vec::new();
@@ -168,7 +251,7 @@ impl TempoGravado {
                 let aux = r.pegar(1)?[0];
                 let linha = r.u16()?;
                 let coluna = r.u16()?;
-                r.u16()?;
+                let reservado = r.u16()?;
                 let valor = r.u32()?;
                 let mclk = r.u64()?;
                 let extra = r.u32()?;
@@ -188,6 +271,16 @@ impl TempoGravado {
                     },
                     3 => EventoTempo::EsperaZ80 {
                         ciclos: valor,
+                        mclk,
+                    },
+                    4 if versao == 2 => EventoTempo::PontoZ80 {
+                        acesso: AcessoZ80::de_codigo(aux).ok_or(ErroTempo::TipoInvalido)?,
+                        pc: linha,
+                        espera: coluna,
+                        ativos: valor,
+                        banco: reservado,
+                        endereco: u16::try_from((extra >> 8) & 0xFFFF).unwrap_or(0),
+                        byte: u8::try_from(extra & 0xFF).unwrap_or(0),
                         mclk,
                     },
                     _ => return Err(ErroTempo::TipoInvalido),
@@ -261,6 +354,16 @@ mod testes {
                             ciclos: 14,
                             mclk: 700_200,
                         },
+                        EventoTempo::PontoZ80 {
+                            acesso: AcessoZ80::EscritaJanela,
+                            pc: 0x0123,
+                            espera: 7,
+                            ativos: 59_000,
+                            banco: 0x1FF,
+                            endereco: 0x1FFD,
+                            byte: 0x88,
+                            mclk: 700_300,
+                        },
                     ],
                 },
                 TempoQuadro {
@@ -304,6 +407,37 @@ mod testes {
         let mut v = bom;
         // Tipo do primeiro evento (depois do cabecalho de 10 bytes e do quadro de 25 bytes).
         v[10 + 25] = 9;
+        assert_eq!(TempoGravado::de_bytes(&v), Err(ErroTempo::TipoInvalido));
+    }
+
+    /// Um arquivo da versao 1 (sem pontos do Z80) continua legivel; ponto do Z80 nele e invalido.
+    #[test]
+    fn versao_1_e_aceita_sem_pontos_do_z80() {
+        let sem_ponto = TempoGravado {
+            quadros: vec![TempoQuadro {
+                numero: 0,
+                mclk_inicio: 0,
+                mclk_fim: 10,
+                eventos: vec![EventoTempo::EsperaZ80 { ciclos: 1, mclk: 2 }],
+            }],
+        };
+        let mut v1 = sem_ponto.para_bytes();
+        v1[8] = 1;
+        assert_eq!(TempoGravado::de_bytes(&v1), Ok(sem_ponto));
+        let mut com_ponto = exemplo().para_bytes();
+        com_ponto[8] = 1;
+        assert_eq!(
+            TempoGravado::de_bytes(&com_ponto),
+            Err(ErroTempo::TipoInvalido)
+        );
+    }
+
+    #[test]
+    fn ponto_do_z80_com_acesso_desconhecido_e_recusado() {
+        let mut v = exemplo().para_bytes();
+        // O ponto e o quarto evento do primeiro quadro: cabecalho de 10 bytes, quadro de 25 bytes
+        // e tres eventos de 24 bytes antes dele; o campo `aux` e o segundo byte do evento.
+        v[10 + 25 + 3 * 24 + 1] = 9;
         assert_eq!(TempoGravado::de_bytes(&v), Err(ErroTempo::TipoInvalido));
     }
 

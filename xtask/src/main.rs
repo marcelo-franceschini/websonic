@@ -8,6 +8,7 @@
 //! - `inventario-memoria`: inventário da memória compartilhada (ver `inventario_memoria.rs`).
 //! - `bugs-conhecidos`: lista de verificação dos trechos `FixBugs` (ver `bugs_conhecidos.rs`).
 //! - `inventario-68000`, `inventario-barramento`, `inventario-interrupcoes`: ver `inventarios5.rs`.
+//! - `inventario-som`, `ids-som`: inventário do som e lista de IDs (Etapa 6; ver `inventario_som.rs` e `ids_som.rs`).
 //! - `corpus-meta`: escreve o `.meta` de um caso do corpus (ver `corpus.rs`).
 //! - `tas`: converte e confere TAS do TASVideos (ver `tas.rs`).
 //! - `descompressao-relatorio`: compara os descompressores com o oráculo (ver `descompressao.rs`).
@@ -22,8 +23,10 @@ mod anti_rom;
 mod bugs_conhecidos;
 mod corpus;
 mod descompressao;
+mod ids_som;
 mod inventario;
 mod inventario_memoria;
+mod inventario_som;
 mod inventarios5;
 mod rotulos;
 mod site;
@@ -68,9 +71,11 @@ fn main() -> ExitCode {
         Some("inventario-68000") => inventarios5::instrucoes(&resto()),
         Some("inventario-barramento") => inventarios5::barramento(&resto()),
         Some("inventario-interrupcoes") => inventarios5::interrupcoes(&resto()),
+        Some("inventario-som") => inventario_som::executar(&resto()),
+        Some("ids-som") => ids_som::executar(&resto()),
         _ => {
             eprintln!(
-                "uso: cargo xtask <site|anti-rom|rotulos|descompressao-relatorio|corpus-meta|tas|inventario|inventario-memoria|inventario-68000|inventario-barramento|inventario-interrupcoes|bugs-conhecidos|video-estado|video-comparar>"
+                "uso: cargo xtask <site|anti-rom|rotulos|descompressao-relatorio|corpus-meta|tas|inventario|inventario-memoria|inventario-68000|inventario-barramento|inventario-interrupcoes|inventario-som|ids-som|bugs-conhecidos|video-estado|video-comparar>"
             );
             return ExitCode::from(2);
         }

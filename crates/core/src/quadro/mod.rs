@@ -212,6 +212,8 @@ impl Nucleo {
                     self.mem.enfileirar_leitura(classe, valor)
                 }
                 EventoTempo::EsperaZ80 { .. } => {}
+                // Os pontos do Z80 são do módulo de som (Etapa 6).
+                EventoTempo::PontoZ80 { .. } => {}
             }
         }
         let antes = self.entregas.len();
