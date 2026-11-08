@@ -306,14 +306,20 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
                 TempoRaw::EsperaZ80 { .. } => {}
             }
         }
+        // Os eventos brutos ficam na ordem em que o oráculo os emitiu (a ordem dos pontos do Z80
+        // importa mais que o relógio de cada um). Cada marca entra antes do primeiro evento cujo
+        // relógio é maior que o dela.
         for (mclk, i) in &marcas {
-            linha.push((*mclk, EventoQuadro::Marca(MARCAS[*i].0)));
+            let pos = linha
+                .iter()
+                .position(|(m, _)| m > mclk)
+                .unwrap_or(linha.len());
+            linha.insert(pos, (*mclk, EventoQuadro::Marca(MARCAS[*i].0)));
             rel.marcas_vistas
                 .entry(MARCAS[*i].1.to_string())
                 .or_default()
                 .push(q.numero);
         }
-        linha.sort_by_key(|(m, _)| *m);
         let eventos: Vec<EventoQuadro> = linha.into_iter().map(|(_, e)| e).collect();
 
         let atomico = nucleo.em_trecho_atomico();
