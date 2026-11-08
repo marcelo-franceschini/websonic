@@ -98,9 +98,18 @@ Plano: `docs/plano-etapa-5.md`. Cada afirmação cita o teste ou o comando. Nada
 | --- | --- |
 | 5.1 memória | provado contra o oráculo (ROM sintética) |
 | 5.2 operações | provado contra o oráculo (ROM sintética, 1500 casos por operação e tamanho; bloco B repete com 6000 em release) |
-| 5.3 e 5.4 | testes sintéticos; inventários reais pendentes (bloco A) |
+| 5.3 e 5.4 | testes sintéticos; inventários reais gerados no bloco A (ver abaixo); pontos reais entram nas Etapas 6 a 12 |
 | 5.5 | harness provado com rotinas sintéticas; pilotos com a ROM pendentes (bloco B) |
 | 5.6 e 5.7 | provados no piloto com dados sintéticos; relatório com a ROM pendente (bloco B) |
 | 5.8 | lista gerada; relatório roda |
 | WebAssembly | não rodou nesta sessão (o host não tem o alvo); bloco B roda na imagem |
 | Congelamento e CI | patches prontos (`etapa5-relatorio`, `etapa5-congelar`); aplicar e reconstruir a imagem |
+
+## Bloco A (executado pelo Marcelo)
+
+- Patch 0004 do oráculo aplicado, testes do oráculo OK.
+- Casos: boot-demos 7200 quadros, lz-agua 2000, partida-ghz1 8309, demos-quatro 11700 (29209 no total). Tempo gravado: de 58 MB a 345 MB por caso (só local, nunca no git).
+- `docs/inventario-68000.md`: 56 classes de instrução executadas. Fora da família aritmética e lógica já coberta por `ops68k`, o jogo usa MOVEM, LEA, EXG, MOVE USP, MOVE de e para SR e CCR, deslocamento aritmético na memória (13 vezes) e rotação com X.
+- `docs/inventario-barramento.md`: 17 linhas. Acessos fora da RAM: E/S, VDP, janela do Z80, barramento do Z80 e reset do Z80. Sem acesso a SRAM ou a registradores de Sega CD.
+- `docs/inventario-interrupcoes.md`: 82 rotinas e níveis, 337 quadros de lag em 29209. A maioria das interrupções cai em `WaitForVBlank`. Rotinas de descompressão (`Kos_*`, `NemDec_*`, `EniDec_*`) e de desenho de sprites são as outras interrompidas. Candidatas a ponto de checagem nas Etapas 6 a 12.
+- Diferencial de operações: as duas falhas vistas numa execução antiga em depuração não se repetem em release (1500 casos, 10 s).

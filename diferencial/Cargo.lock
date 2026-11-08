@@ -1063,6 +1063,7 @@ dependencies = [
  "genesis-core",
  "jgenesis-common",
  "oracle-trace",
+ "sonic1-core",
  "sonic1-fidelidade",
  "sonic1-formato-video",
 ]
