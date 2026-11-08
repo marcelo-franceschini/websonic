@@ -6,6 +6,7 @@
 //! - `video-estado` e `video-comparar`: renderizador contra o oráculo (ver `video.rs`).
 //! - `inventario`: inventário de hardware a partir dos traces (ver `inventario.rs`).
 //! - `inventario-memoria`: inventário da memória compartilhada (ver `inventario_memoria.rs`).
+//! - `inventario-68000`, `inventario-barramento`, `inventario-interrupcoes`: ver `inventarios5.rs`.
 //! - `corpus-meta`: escreve o `.meta` de um caso do corpus (ver `corpus.rs`).
 //! - `tas`: converte e confere TAS do TASVideos (ver `tas.rs`).
 //! - `descompressao-relatorio`: compara os descompressores com o oráculo (ver `descompressao.rs`).
@@ -21,6 +22,7 @@ mod corpus;
 mod descompressao;
 mod inventario;
 mod inventario_memoria;
+mod inventarios5;
 mod rotulos;
 mod site;
 mod tas;
@@ -60,9 +62,12 @@ fn main() -> ExitCode {
         Some("video-comparar") => video::comparar(&resto()),
         Some("inventario") => inventario::executar(&resto()),
         Some("inventario-memoria") => inventario_memoria::executar(&resto()),
+        Some("inventario-68000") => inventarios5::instrucoes(&resto()),
+        Some("inventario-barramento") => inventarios5::barramento(&resto()),
+        Some("inventario-interrupcoes") => inventarios5::interrupcoes(&resto()),
         _ => {
             eprintln!(
-                "uso: cargo xtask <site|anti-rom|rotulos|descompressao-relatorio|corpus-meta|tas|inventario|inventario-memoria|video-estado|video-comparar>"
+                "uso: cargo xtask <site|anti-rom|rotulos|descompressao-relatorio|corpus-meta|tas|inventario|inventario-memoria|inventario-68000|inventario-barramento|inventario-interrupcoes|video-estado|video-comparar>"
             );
             return ExitCode::from(2);
         }
