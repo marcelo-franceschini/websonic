@@ -25,7 +25,7 @@
 
 ## Manifesto, ocultos e inventario (2.6 a 2.8, lado da IA)
 
-- `cargo fidelidade manifesto gerar|verificar`: `arquivo/trace/zona/oculto/teste` com SHA-256 (implementacao propria, vetores do padrao conferidos com `sha256sum`). Assinatura SSHSIG por `ssh-keygen -Y`, namespace `websonic-manifesto`. Prova (06/11/2026, chave descartavel): `assinatura: OK`, `referencias: OK`, `testes: OK`; os casos plantados (assinatura adulterada ou ausente, arquivo mudado ou ausente, teste ignorado ou faltando, teste novo "nao assinado") estao em `cargo test -p xtask` (40 testes).
+- `cargo fidelidade manifesto gerar|verificar`: `arquivo/trace/zona/oculto/teste` com SHA-256 (implementacao propria, vetores do padrao conferidos com `sha256sum`). Assinatura SSHSIG por `ssh-keygen -Y`, namespace `websonic-manifesto`. Prova (06/11/2026, chave descartavel): `assinatura: OK`, `referencias: OK`, `testes: OK`; os casos plantados (assinatura adulterada ou ausente, arquivo mudado ou ausente, teste ignorado ou faltando, teste novo "nao assinado") estao em `cargo test -p xtask` (testes do xtask (contagem antiga, hoje 34 no relatorio e 48 no xtask na época)).
 - `cargo fidelidade ocultos cifrar|auditar|chaves`: crate `age` 0.12.1 (so a chave publica cifra). A auditoria decifra para `/dev/shm`, apaga e imprime so `zona: passou|falhou (N casos)`; erros viram `erro: E1|E2|E3`. Nao existe `decifrar` de proposito. A identidade era um arquivo 0600 sem senha; isso mudou na 2.10 (ver o fim deste arquivo). A afirmacao antiga de que o `age` so oferece senha com a feature `cli-common` estava errada: `age::scrypt` existe sem features (conferido em 07/11/2026 no codigo do crate 0.12.1). Custo: o xtask passou a ter ~340 crates na arvore de dependencias.
 - `cargo xtask inventario --traces DIR`: decodifica os eventos de VDP (registradores, comandos, DMA pelo reg 23), YM, PSG, nivel de interrupcao e BUSREQ/RESET. Nao cobre DMA como evento (R6) nem E/S do 68000 (P2). Teste: 4 casos sinteticos.
 - Casos de lag e DMA do VDP que o renderizador da Etapa 4 vai precisar: o trace so tem as escritas nas portas, nao o conteudo dos DMAs. Registrado para o plano da Etapa 4.
@@ -110,3 +110,12 @@ Resumo literal do `scripts/etapa2-fechamento.sh` (`/tmp/etapa2-fechamento.txt`).
 - **Chave de assinatura**: o Marcelo deixou a senha vazia nas duas rodadas. A chave **continua sem senha**. Pendente (backlog).
 - **Falha achada e corrigida na rodada**: o `ssh-keygen -Y sign` perguntava "Overwrite (y/n)?" e parou a primeira tentativa. O script agora apaga a assinatura antiga antes (commit 4722d95).
 - **Ainda não feito**: reconstruir a imagem do contêiner (o congelamento só vale na imagem nova).
+
+### Saída literal da conferência dos TAS (rodada de 07/11/2026, registro da correção B2)
+
+Linhas `modos (quadro=modo)` do `tas conferir`. Modo sem o bit 7: 0 Sega, 4 título, 8 demo, 12 fase, 16 special stage. `id_Ending` e `id_Credits` nunca apareceram.
+
+- `tas-3570m`: 60=0 360=4 960=8 3000=0 3300=4 3900=8 5940=0 6300=4 6900=8 7440=4 8100=16 9600=0 9900=4 10500=8 12540=0 12840=4 13440=8 14220=4 14400=12 39120=0 39360=4 39600=12
+- `tas-1937m`: 60=0 360=4 960=8 3000=0 3300=4 3900=8 5940=0 6300=4 6900=8 7800=4 8400=16 9960=0 10200=4 10800=8 12840=0 13200=4 13800=8 14940=4 15540=8 17580=0 17880=4 18480=16 20040=0 20340=4 20940=8 22980=0 23280=4 23880=8 25920=0 26220=4 26820=8 28860=0 29220=4 29820=16 30480=4 30720=12 50700=0 51000=4 51600=8 53640=0 53940=4 54540=8 56580=0 56880=4 57480=8 59520=4 60120=16 61680=0 61920=4 62520=8 64560=0 64920=4 65520=8
+
+Leitura (hipótese, sem prova): a sequência é a de um jogo que **reinicia** (0 Sega, 4 título, 8 demo, de novo 0) a cada uns 2900 quadros. Os dois TAS entram na fase (modo 12) uma vez e depois voltam ao ciclo Sega, título, demo. Isso aponta para causa comum: a partida do TAS perde a sincronia logo no começo da primeira fase (fase GHZ aos quadros 14400 e 30720) e o jogo cai no reinício. Candidatos: leitura dos botões do GMV de 6 botões (mapa A/B/C), tempo diferente entre Gens 11b e jgenesis, ou estado inicial. Nenhum foi testado.

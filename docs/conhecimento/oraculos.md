@@ -50,3 +50,7 @@
 
 - D1, sexta rodada (host, 07/11/2026, `scripts/etapa2-d1c.sh ROM`, principal no quadro N contra segundo oráculo no quadro N+1, `boot-demos`). Quadros 100, 600, 1100, 1600, 2100, 2600, 3100, 3600, 4100, 4600, 5100 e 5600 (este rodado à parte, o script demora porque cada amostra roda os dois oráculos desde o quadro 0). Em todos: `outros=nenhum`. Total entre 3 e 50 bytes: pilha entre 2 e 47, tempo entre 1 e 3. Com os quadros 120 e 2000 da rodada anterior, são 14 quadros distintos, todos sem variável de lógica fora da pilha e das três variáveis de tempo. Não cobre os quadros 5601 a 7200.
 - Estado do D1 depois das seis rodadas: **fase de 1 quadro** entre os oráculos (apoiada em 14 quadros), **pilha** (diferença de ciclo, esperada) e **3 variáveis de tempo** (`v_vblank_routine`, `v_jpadhold1`, `v_jpadpress1`). A causa continua hipótese: nenhum teste olhou o ciclo da interrupção. Decisão registrada: vale o oráculo principal. Falta o aceite do Marcelo para a exclusão da pilha (`FFFCC0..FFFDFF`) na comparação entre oráculos.
+
+## D1, sétima rodada (fechamento da Etapa 2, 08/11/2026)
+
+Amostras novas, principal quadro N contra segundo oráculo quadro N+1: 6100 (total 2, pilha 2), 6600 (18, 17, tempo 1), 7100 (29, 28, 1), 7600 (41, 38, 3), 8400 (24, 23, 1), 10200 (45, 42, 3), 11000 (41, 38, 3). Todas com `outros=nenhum`. `quadros com variavel fora de pilha e tempo: 0 de 7`. Com as rodadas anteriores são 21 quadros. A causa continua hipótese.

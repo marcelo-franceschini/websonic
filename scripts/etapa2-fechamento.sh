@@ -93,6 +93,11 @@ dizer "=== 2. CHAVES ==="
 if ssh-keygen -y -P '' -f "$chave_assina" > /dev/null 2>&1; then
     echo "A chave de assinatura NAO tem senha. Defina uma agora (ssh-keygen vai pedir)." >&2
     ssh-keygen -p -f "$chave_assina"
+    # O ssh-keygen -p aceita senha vazia. Confere que a chave agora exige senha; senao aborta.
+    if ssh-keygen -y -P '' -f "$chave_assina" > /dev/null 2>&1; then
+        echo "Erro: a chave de assinatura continua SEM senha (senha vazia). Rode de novo e digite uma senha." >&2
+        exit 1
+    fi
     dizer "chave de assinatura: senha criada"
 else
     dizer "chave de assinatura: tem senha"

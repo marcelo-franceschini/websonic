@@ -40,3 +40,6 @@ Uma linha por item: o que é, dono, etapa-alvo. Só entra aqui o que não bloque
 - TAS: os dois (3570M e 1937M) perderam a sincronia contra a REV01 e saíram do corpus (`corpus/descartados.txt`). Investigar a causa (tempo Gens 11b contra jgenesis, leitura dos botões do GMV de 6 botões) ou trazer outro TAS. Dono: IA. Etapa-alvo: 14 (a revisão do fechamento decide se bloqueia antes).
 - Chave de assinatura `~/.ssh/websonic_assinatura` continua sem senha (o Marcelo deixou vazio). Rodar `ssh-keygen -p -f ~/.ssh/websonic_assinatura`. Dono: Marcelo. Etapa-alvo: já.
 - Reconstruir a imagem do contêiner para o congelamento valer. Dono: Marcelo. Etapa-alvo: já.
+- Mover `tas converter` e `tas conferir` do `xtask` para o `relatorio` (decidem o que fica no corpus; contraria D-R5). Dono: IA (patch) e Marcelo. Etapa-alvo: 5.
+- CI não cobre o pacote `relatorio` (workspace separado): `fmt`, `clippy` e `test` dele. Dono: Marcelo (`.github` é congelado). Etapa-alvo: 5.
+- `scripts/etapa2-fechamento.sh` lê o veredito do texto nos passos 4, 5 e 7 e `registrar` descarta o código de saída. Dono: IA. Etapa-alvo: 5.
