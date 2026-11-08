@@ -1,0 +1,3 @@
+# Exclusoes PROPOSTAS pela IA. Valem so depois da aprovacao do Marcelo (requisitos, criterio 2).
+# grupo<TAB>o que exclui<TAB>motivo
+pilha-da-chamada	512 bytes da RAM abaixo do SP de entrada, na comparacao do teste por rotina	a chamada isolada empilha o retorno e as rotinas empilham registradores; o nucleo nao tem pilha de 68000. Recomendacao da IA: aprovar.

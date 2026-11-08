@@ -11,3 +11,7 @@ sonic1-core = { path = "../core" }
 
 [lints]
 workspace = true
+
+# A cobertura das decisoes do nucleo so e medida quando os testes rodam (nao muda o comportamento).
+[dev-dependencies]
+sonic1-core = { path = "../core", features = ["cobertura", "mutacao"] }

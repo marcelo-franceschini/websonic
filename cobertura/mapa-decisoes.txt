@@ -1,0 +1,2 @@
+# Decisao do nucleo para desvio do original. id<TAB>endereco_hex<TAB>direto|inverso
+# Vazio ate a primeira rodada do `diferencial rotina` com a ROM real (bloco B da Etapa 5).
