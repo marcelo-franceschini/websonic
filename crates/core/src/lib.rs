@@ -13,3 +13,4 @@ pub mod memoria;
 pub mod ops68k;
 pub mod quadro;
 pub mod rotinas;
+pub mod som;

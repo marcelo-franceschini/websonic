@@ -31,3 +31,13 @@ Plano: `docs/plano-etapa-6.md`. Cada afirmação cita o teste ou o comando. Nada
 | --- | --- |
 | 6.0 patch 0005 | provado em ROM sintética; aplicar no bloco 1 |
 | 6.0 inventário do som | gerador provado em ROM sintética; dados reais no bloco 1 |
+
+## Barramento e programa do Z80 no núcleo (6.1 e 6.2)
+
+- `crates/core/src/som/z80.rs`: `Banco` (9 bits), `MaquinaZ80` com os dois programas, `PontoZ80` e `DivergenciaZ80`. `Memoria` consome um ponto do Z80 gravado a cada acesso do 68000 que toca o Z80 (BUSREQ, RESET, janela), avança a máquina pelos ciclos gravados e confere PC, ciclos que faltam e banco. Sem ponto na fila, o Z80 fica parado (comportamento da Etapa 5 intacto).
+- O layout dos trechos do programa B foi montado a partir da ordem das instruções e do tamanho de cada uma (manual do Z80). **Conferência com dados reais:** todos os endereços de desvio do Z80 que o oráculo executou no corpus (`docs/inventario-som.md`) caem em endereços de instrução que o layout prevê (`1E` DJNZ, `20` JR, `37` JP P, `3F` JR NC, `8E`, `A4`, `CA` DJNZ, `AC`, `B3`, `B6`, `D0`, `D3` e, no programa A, `25` JP (HL)).
+- Prova com o oráculo (ROM sintética, programas montados à mão a partir do manual, tabelas e amostras inventadas): `diferencial-som/tests/z80.rs`, 3 testes passam: o programa A inteiro (LDIR de 8153 voltas, salto para si mesmo), o programa B tocando as três amostras de DPCM em instantes variados, e o programa B tocando a voz SEGA pela janela de ROM. Em todos: zero divergências de posição em todos os pontos (PC, ciclos que faltam, banco), as escritas do Z80 no YM2612 idênticas e na mesma ordem, e a RAM do Z80 idêntica no fim.
+- Falha achada e corrigida no jogo: o reconhecimento do programa no endereço zero só valia depois de um reset, então o programa A, ao saltar para zero, recomeçava em vez de cair no salto para si mesmo. Agora todo trecho em zero reconhece o programa de novo.
+- `diferencial-som/` é um workspace novo (GPLv3, como o oráculo) porque `diferencial/` foi congelado na Etapa 5.
+- Modelo independente do barramento: `crates/teste-som/src/modelo_barramento.rs`, cruzado com o núcleo em 200 sequências pseudoaleatórias (BUSACK e visibilidade da RAM do Z80) e 500 sequências do registrador de banco (`crates/teste-som/tests/barramento.rs`).
+- WebAssembly: o alvo `wasm32-wasip1` não está instalado no host; roda na imagem (bloco do Marcelo).

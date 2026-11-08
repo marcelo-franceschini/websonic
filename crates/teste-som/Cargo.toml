@@ -1,0 +1,13 @@
+[package]
+name = "sonic1-teste-som"
+description = "Vetores, propriedades e modelo independente do som (so dados sinteticos, nada da ROM)"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+sonic1-core = { path = "../core" }
+
+[lints]
+workspace = true

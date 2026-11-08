@@ -11,6 +11,8 @@
 
 pub mod porta;
 
+use crate::quadro::tempo::AcessoZ80;
+use crate::som::z80::{Ambiente, DivergenciaZ80, MaquinaZ80, PontoZ80};
 use porta::{Dispositivo, Porta};
 use std::collections::{BTreeMap, VecDeque};
 
@@ -75,6 +77,11 @@ pub enum Saida {
         tamanho: Tamanho,
     },
     Psg(u8),
+    /// Escrita do Z80 no YM2612 (o programa do DAC). `porta` é o endereço baixo (0 a 3).
+    YmZ80 {
+        porta: u8,
+        valor: u8,
+    },
     /// Escrita do 68000 no YM2612 pela janela do Z80. `porta` é o endereço baixo (0 a 3).
     Ym {
         porta: u8,
@@ -100,6 +107,9 @@ pub struct Memoria {
     avisos: BTreeMap<Aviso, u64>,
     gravadas: BTreeMap<ClasseLeitura, VecDeque<u16>>,
     ultima_gravada: BTreeMap<ClasseLeitura, u16>,
+    z80: MaquinaZ80,
+    pontos_z80: VecDeque<PontoZ80>,
+    divergencias_z80: Vec<DivergenciaZ80>,
 }
 
 fn indice(endereco: u32, mascara: u32) -> usize {
@@ -126,6 +136,9 @@ impl Memoria {
             avisos: BTreeMap::new(),
             gravadas: BTreeMap::new(),
             ultima_gravada: BTreeMap::new(),
+            z80: MaquinaZ80::nova(),
+            pontos_z80: VecDeque::new(),
+            divergencias_z80: Vec::new(),
         }
     }
 
@@ -167,6 +180,68 @@ impl Memoria {
 
     pub fn avisos(&self) -> &BTreeMap<Aviso, u64> {
         &self.avisos
+    }
+
+    /// Pontos do Z80 gravados pelo oráculo (tempo gravado, nível 1), na ordem. Cada acesso do 68000
+    /// que toca o Z80 consome o próximo: avança a máquina do Z80 pelos ciclos gravados e confere
+    /// onde ela está.
+    pub fn enfileirar_ponto_z80(&mut self, p: PontoZ80) {
+        self.pontos_z80.push_back(p);
+    }
+
+    pub fn pontos_z80_pendentes(&self) -> usize {
+        self.pontos_z80.len()
+    }
+
+    pub fn divergencias_z80(&self) -> &[DivergenciaZ80] {
+        &self.divergencias_z80
+    }
+
+    pub fn z80(&self) -> &MaquinaZ80 {
+        &self.z80
+    }
+
+    pub fn z80_mut(&mut self) -> &mut MaquinaZ80 {
+        &mut self.z80
+    }
+
+    /// Avança o Z80 por `ciclos` ciclos com o estado atual de BUSREQ e RESET.
+    pub fn avancar_z80(&mut self, ciclos: u64) {
+        let mut amb = Ambiente {
+            ram: &mut self.ram_z80,
+            rom: &self.rom,
+            busreq: self.busreq,
+            reset: self.reset_z80,
+            saidas: &mut self.saidas,
+        };
+        self.z80.avancar(&mut amb, ciclos);
+    }
+
+    fn sincronizar_z80(&mut self, acesso: AcessoZ80) {
+        let Some(p) = self.pontos_z80.pop_front() else {
+            return;
+        };
+        if p.acesso != acesso {
+            self.divergencias_z80.push(DivergenciaZ80::AcessoDiferente {
+                esperado: p.acesso,
+                obtido: acesso,
+            });
+            return;
+        }
+        self.avancar_z80(u64::from(p.ativos));
+        let obtido = (
+            self.z80.pc(),
+            u16::try_from(self.z80.espera()).unwrap_or(u16::MAX),
+            self.z80.banco().valor(),
+        );
+        let esperado = (p.pc, p.espera, p.banco);
+        if obtido != esperado {
+            self.divergencias_z80.push(DivergenciaZ80::Posicao {
+                acesso,
+                esperado,
+                obtido,
+            });
+        }
     }
 
     fn avisar(&mut self, aviso: Aviso) {
@@ -277,6 +352,7 @@ impl Memoria {
                 }
             }
             0xA0_0000..=0xA0_FFFF if self.busack() => {
+                self.sincronizar_z80(AcessoZ80::LeituraJanela);
                 let b = self.ler_janela_z80(a);
                 if palavra {
                     u16::from_be_bytes([b, b])
@@ -410,16 +486,23 @@ impl Memoria {
             0x00_0000..=0x3F_FFFF => self.avisar(Aviso::EscritaNaRom),
             0xA0_0000..=0xA0_FFFF if self.busack() => {
                 // Escrita em palavra grava o byte alto, como o oráculo.
+                self.sincronizar_z80(AcessoZ80::EscritaJanela);
                 let b = if palavra { alto } else { baixo };
                 self.escrever_janela_z80(a, b);
             }
             0xA1_0000..=0xA1_001F => self.escrever_io(a | 1, baixo),
             0xA1_1100 => {
-                self.busreq = if palavra {
+                let pedido = if palavra {
                     alto & 1 != 0
                 } else {
                     baixo & 1 != 0
                 };
+                self.sincronizar_z80(if pedido {
+                    AcessoZ80::BusReqPedido
+                } else {
+                    AcessoZ80::BusReqLiberado
+                });
+                self.busreq = pedido;
                 self.saidas.push(Saida::BusReq(self.busreq));
             }
             0xA1_1200 => {
@@ -428,6 +511,11 @@ impl Memoria {
                 } else {
                     baixo & 1 != 0
                 };
+                self.sincronizar_z80(if liberado {
+                    AcessoZ80::ResetSolto
+                } else {
+                    AcessoZ80::ResetLigado
+                });
                 self.reset_z80 = !liberado;
                 self.saidas.push(Saida::ResetZ80(self.reset_z80));
             }

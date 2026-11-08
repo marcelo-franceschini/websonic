@@ -1,0 +1,21 @@
+[package]
+name = "sonic1-diferencial-som"
+description = "Testes diferenciais do som (Etapa 6): o oraculo (jgenesis modificado) contra o nucleo (GPLv3, workspace proprio)"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "GPL-3.0-only"
+
+[dependencies]
+websonic-oracle = { path = "../oracle/runner" }
+genesis-core = { path = "../target/oracle-fonte/backend/genesis-core" }
+oracle-trace = { path = "../target/oracle-fonte/common/oracle-trace" }
+sonic1-core = { path = "../crates/core", features = ["cobertura", "mutacao"] }
+sonic1-fidelidade = { path = "../crates/fidelidade" }
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+
+# Workspace proprio, como o diferencial da Etapa 5: liga o oraculo (GPLv3) ao nucleo e nunca
+# entra no build do jogo nem do site. Fica fora de `diferencial/` porque aquele ja esta congelado.
+[workspace]
