@@ -62,3 +62,11 @@ Marcas (a parada devolve o quadro fechado e o `mclk` do **fim desse quadro**, n�
 - Rodada 3d: nas esperas de VBlank, **129 iguais, 0 divergem** (RAM do 68000 e do Z80). Durante a Sega o estado do jogo bate com o oráculo. O fechamento do quadro cai dentro do tratador de VBlank em 262 de 330 quadros (por isso a D7.4).
 - Rodada 3e: o primeiro desalinhamento entre os acessos do núcleo ao Z80 e os pontos gravados está no acesso 10794. Os quatro acessos do VBlank que fica pendente depois da voz encontram a fila de pontos vazia. Causa: o oráculo grava a interrupção no fim de um quadro (instante em que ela é aceita) e os acessos do tratador no quadro seguinte.
 - Correção (D7.12): `Abertura::executar_quadro` deixa na fila as leituras e os pontos do Z80 na hora e roda os eventos (marcas e interrupções) um quadro depois. `Abertura::terminar` roda os do último quadro. O comparador compara o fechamento de cada quadro um quadro depois, com o que o oráculo tinha naquele fechamento.
+
+## 7.3 provada com a ROM real (Marcelo, 08/11/2026, rodada 3f, quadros 0 a 329)
+
+- Nas 129 esperas de VBlank da Sega: RAM do 68000 e RAM do Z80 iguais ao oráculo, 0 divergências.
+- Posição do Z80 em todo acesso do 68000: `posicao_z80_divergencias=0`.
+- Escritas do Z80 no YM2612 (a voz SEGA pelo DAC): 54000 contra 54000, iguais em conteúdo e ordem. Escritas de vídeo, PSG, YM do 68000 e mudanças do BUSREQ e do RESET: iguais até onde o núcleo vai (as 6875 de vídeo, 8 do PSG, 64 do YM do 68000, 529 mudanças do Z80). As que faltam (51 de vídeo, 4 do PSG, 64 do YM, 5 do Z80) são do começo do título, quadros 328 e 329, que é a sub-etapa 7.5.
+- O VBlank que fica pendente depois da voz roda como quadro de lag, só com o driver de som (`v_vblank_routine` já é zero). O núcleo roda os eventos um quadro depois dos pontos do Z80 (D7.12).
+- Veredito do relatório continua `DIVERGE` só porque as contagens finais incluem o título.

@@ -63,3 +63,5 @@ Uma linha por item: o que é, dono, etapa-alvo. Só entra aqui o que não bloque
 - Etapa 7: o experimento do nível 2 precisa de marcas com `mclk` exato (a parada em rótulo só dá o quadro); o comparador `diferencial-abertura` já tem o `mclk` de cada marca. Dono: IA. Etapa-alvo: 7 (7.8).
 - Etapa 7: patch do `relatorio` (congelado) para o manifesto incluir `diferencial-som/`, `diferencial-abertura/` e os relatórios, e comando `abertura`. Dono: IA (patch) e Marcelo. Etapa-alvo: 7 (7.9).
 - Etapa 7: o alvo `wasm32-wasip1` não está instalado no host; testes wasm do núcleo e do `web` rodam na imagem `websonic-dev:ci`. Dono: Marcelo. Etapa-alvo: 7.
+- Etapa 7: o comparador compara o estado nas esperas de VBlank e, nos quadros sem VBlank e fora do tratador, o fechamento. Quadros com VBlank, fora das esperas, ficam sem comparação de RAM (262 de 330 na Sega). Marcas intermediárias nos trechos longos da fase da demo podem ser necessárias. Dono: IA. Etapa-alvo: 7 (7.6).
+- Etapa 7: o comparador ainda não compara a imagem de 320x224 nem VRAM, CRAM e VSRAM (precisa alimentar o `sonic1-video` com as escritas do núcleo e as posições gravadas, D7.3). Dono: IA. Etapa-alvo: 7 (7.7).
