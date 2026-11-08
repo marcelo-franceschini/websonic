@@ -33,6 +33,6 @@ fn marca_no_oraculo_sem_o_mesmo_efeito_no_jogo_e_acusada() {
     p.resize(0x80, 0x4E71);
     p.push(0x60FE);
     let rel = em_thread(move || comparar(rom(&p), 3, &Nomes::carregar("")).unwrap());
-    assert_eq!(rel.marcas_vistas.get("GameProgram"), Some(&1));
+    assert_eq!(rel.marcas_vistas.get("GameProgram").map(Vec::len), Some(1));
     assert!(!rel.zero());
 }

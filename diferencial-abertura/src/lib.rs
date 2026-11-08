@@ -19,6 +19,7 @@ use websonic_oracle::{Entradas, Oraculo};
 
 /// Posições da RAM do Z80 que o Z80 muda sozinho (decisão da Etapa 6).
 const RACE_Z80: [usize; 2] = [0x1FFD, 0x1FFF];
+const NOMES_SEQ: [&str; 5] = ["video", "psg", "ym68", "ymz80", "z80"];
 const LIMITE_PASSOS_QUADRO: u64 = 50_000_000;
 
 /// Escrita comparável: (tipo, a, b, c). Tipo 0 vídeo, 1 PSG, 2 YM do 68000, 3 YM do Z80, 4 Z80.
@@ -41,7 +42,11 @@ pub struct Relatorio {
     pub atraso_maximo: u64,
     pub erro_nucleo: Option<String>,
     pub divergencias_posicao_z80: usize,
-    pub marcas_vistas: BTreeMap<String, u32>,
+    /// Quadros em que cada marca chegou.
+    pub marcas_vistas: BTreeMap<String, Vec<u32>>,
+    /// Sequências do Z80 (sinal e estado), só para diagnóstico: oráculo e núcleo.
+    pub z80_oraculo: Vec<(u32, u32)>,
+    pub z80_nucleo: Vec<(u32, u32)>,
 }
 
 impl Relatorio {
@@ -169,7 +174,10 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
     let mut nucleo = Abertura::nova(rom);
     let mut rel = Relatorio::default();
     let mut esperadas: [Vec<Escrita>; 5] = Default::default();
-    let mut obtidas_ate: [usize; 5] = [0; 5];
+    let mut obtidas: [Vec<Escrita>; 5] = Default::default();
+    let mut verificadas = [0usize; 5];
+    // Estado inicial do console: BUSREQ solto e Z80 em RESET.
+    let mut z80_estado = [0u32, 1u32];
     let mut descarte = Vec::new();
     oracle_trace::drain_tempo(&mut descarte);
     let mut ultimo_pc = u32::MAX;
@@ -258,9 +266,10 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
         }
         for (mclk, i) in &marcas {
             linha.push((*mclk, EventoQuadro::Marca(MARCAS[*i].0)));
-            *rel.marcas_vistas
+            rel.marcas_vistas
                 .entry(MARCAS[*i].1.to_string())
-                .or_default() += 1;
+                .or_default()
+                .push(q.numero);
         }
         linha.sort_by_key(|(m, _)| *m);
         let eventos: Vec<EventoQuadro> = linha.into_iter().map(|(_, e)| e).collect();
@@ -315,40 +324,60 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
                 }
             }
         }
-        // Escritas: o núcleo pode estar atrasado (trecho atômico), nunca à frente nem diferente.
-        for (k, e) in escritas_do_quadro(&q).into_iter().enumerate() {
-            let _ = k;
+        // Escritas: o núcleo pode estar atrasado ou adiantado dentro de um trecho atômico, nunca
+        // diferente. Cada item é conferido assim que os dois lados o têm.
+        for e in escritas_do_quadro(&q) {
             esperadas[usize::from(e.0)].push(e);
             rel.escritas_oraculo[usize::from(e.0)] += 1;
+            if e.0 == 4 {
+                rel.z80_oraculo.push((e.1, e.2));
+            }
         }
-        let saidas = nucleo.mem.tirar_saidas();
-        for s in &saidas {
+        for s in &nucleo.mem.tirar_saidas() {
             if let Some(e) = escrita_do_nucleo(s) {
-                let t = usize::from(e.0);
-                let i = obtidas_ate[t];
-                rel.escritas_nucleo[t] += 1;
-                match esperadas[t].get(i) {
-                    Some(x) if *x == e => {}
-                    outro if rel.escritas_diverge.is_none() => {
-                        rel.escritas_diverge = Some(format!(
-                            "quadro {n} sequencia {} indice {i} nucleo {:?} oraculo {:?}",
-                            ["video", "psg", "ym68", "ymz80", "z80"][t],
-                            e,
-                            outro
-                        ));
+                // O oráculo só registra mudanças no BUSREQ e no RESET do Z80.
+                if e.0 == 4 {
+                    let estado = &mut z80_estado[usize::try_from(e.1).unwrap_or(0).min(1)];
+                    if *estado == e.2 {
+                        continue;
                     }
-                    _ => {}
+                    *estado = e.2;
+                    rel.z80_nucleo.push((e.1, e.2));
                 }
-                obtidas_ate[t] = i + 1;
+                obtidas[usize::from(e.0)].push(e);
+                rel.escritas_nucleo[usize::from(e.0)] += 1;
+            }
+        }
+        for t in 0..5 {
+            let ate = esperadas[t].len().min(obtidas[t].len());
+            while verificadas[t] < ate {
+                let i = verificadas[t];
+                if esperadas[t][i] != obtidas[t][i] && rel.escritas_diverge.is_none() {
+                    rel.escritas_diverge = Some(format!(
+                        "quadro {n} sequencia {} indice {i} nucleo {:?} oraculo {:?}",
+                        NOMES_SEQ[t], obtidas[t][i], esperadas[t][i]
+                    ));
+                }
+                verificadas[t] += 1;
             }
         }
         let atraso: u64 = (0..5)
-            .map(|t| esperadas[t].len().saturating_sub(obtidas_ate[t]) as u64)
+            .map(|t| esperadas[t].len().abs_diff(obtidas[t].len()) as u64)
             .sum();
         rel.atraso_maximo = rel.atraso_maximo.max(atraso);
         rel.quadros += 1;
     }
     rel.divergencias_posicao_z80 = nucleo.mem.divergencias_z80().len();
+    for t in 0..5 {
+        if esperadas[t].len() != obtidas[t].len() && rel.escritas_diverge.is_none() {
+            rel.escritas_diverge = Some(format!(
+                "contagem final sequencia {} oraculo {} nucleo {}",
+                NOMES_SEQ[t],
+                esperadas[t].len(),
+                obtidas[t].len()
+            ));
+        }
+    }
     Ok(rel)
 }
 
@@ -363,7 +392,7 @@ pub fn imprimir(rel: &Relatorio) {
         "ram_z80: iguais={} diverge={} diverge_em_trecho_atomico={}",
         rel.z80_iguais, rel.z80_diverge, rel.z80_diverge_atomico
     );
-    for (i, n) in ["video", "psg", "ym68", "ymz80", "z80"].iter().enumerate() {
+    for (i, n) in NOMES_SEQ.iter().enumerate() {
         println!(
             "escritas_{n}: oraculo={} nucleo={}",
             rel.escritas_oraculo[i], rel.escritas_nucleo[i]
@@ -372,8 +401,10 @@ pub fn imprimir(rel: &Relatorio) {
     println!("atraso_maximo_de_escritas={}", rel.atraso_maximo);
     println!("posicao_z80_divergencias={}", rel.divergencias_posicao_z80);
     for (m, v) in &rel.marcas_vistas {
-        println!("marca {m} vezes={v}");
+        println!("marca {m} quadros={v:?}");
     }
+    println!("z80_oraculo (sinal,ativo)={:?}", rel.z80_oraculo);
+    println!("z80_nucleo (sinal,ativo)={:?}", rel.z80_nucleo);
     if let Some(e) = &rel.erro_nucleo {
         println!("erro_do_nucleo: {e}");
     }

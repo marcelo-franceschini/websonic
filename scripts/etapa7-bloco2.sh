@@ -4,7 +4,7 @@
 # Uso: sh scripts/etapa7-bloco2.sh "$HOME/sonic1-ext/rom/Sonic The Hedgehog (W) (REV01) [!].gen" [QUADROS]
 set -u
 rom=${1:?uso: etapa7-bloco2.sh ROM [QUADROS]}
-quadros=${2:-61}
+quadros=${2:-62}
 repo=$(cd "$(dirname "$0")/.." && pwd -P)
 ext=${SONIC1_EXT_DIR:-$HOME/sonic1-ext}
 cd "$repo"

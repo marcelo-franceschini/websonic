@@ -140,14 +140,19 @@ pub fn check_sum_ok(m: &mut Memoria) -> Result<(), ErroAbertura> {
     Ok(())
 }
 
-/// `GameInit`: limpa o resto da RAM, prepara VDP, Z80 e controles e escolhe o modo Sega.
-pub fn game_init(m: &mut Memoria) -> Result<(), ErroAbertura> {
+/// `GameInit` (primeira parte): limpa a RAM que o reset não preserva. As partes seguintes
+/// (`VDPSetupGame`, `DACDriverLoad`, `JoypadInit`) são chamadas uma a uma pelo laço de quadro,
+/// cada uma na marca do rótulo da rotina seguinte.
+pub fn game_init_limpar(m: &mut Memoria) -> Result<(), ErroAbertura> {
     let fim = usize::try_from(V_CROSSRESETRAM & 0xFFFF).unwrap_or(0);
     if let Some(r) = m.ram_mut().get_mut(..fim) {
         r.fill(0);
     }
-    vdp_setup_game(m);
-    dac_driver_load(m)?;
+    Ok(())
+}
+
+/// `GameInit` (última parte): escolhe o modo Sega e entra em `MainGameLoop`.
+pub fn game_init_fim(m: &mut Memoria) -> Result<(), ErroAbertura> {
     joypad_init(m)?;
     wb(m, V_GAMEMODE, 0); // id_Sega
     Ok(())
@@ -186,7 +191,7 @@ pub fn fill_vram(m: &mut Memoria, byte: u8, inicio: u32, fim: u32) -> Result<(),
 }
 
 /// `VDPSetupGame`: registradores da VDP do jogo, CRAM e VRAM limpas.
-fn vdp_setup_game(m: &mut Memoria) {
+pub fn vdp_setup_game(m: &mut Memoria) -> Result<(), ErroAbertura> {
     let n = VDP_SETUP_ARRAY_END.wrapping_sub(VDP_SETUP_ARRAY) / 2;
     for i in 0..n {
         let w = rom_w(m, VDP_SETUP_ARRAY.wrapping_add(i.wrapping_mul(2)));
@@ -201,12 +206,11 @@ fn vdp_setup_game(m: &mut Memoria) {
     }
     wl(m, V_SCRPOSY_VDP, 0);
     wl(m, V_SCRPOSX_VDP, 0);
-    // A espera do fim do preenchimento pode faltar se o tempo gravado acabou: a rotina segue.
-    let _ = fill_vram(m, 0, 0, 0x1_0000);
+    fill_vram(m, 0, 0, 0x1_0000)
 }
 
 /// `DACDriverLoad`: descomprime o programa do Z80 na RAM dele.
-fn dac_driver_load(m: &mut Memoria) -> Result<(), ErroAbertura> {
+pub fn dac_driver_load(m: &mut Memoria) -> Result<(), ErroAbertura> {
     ww(m, Z80_BUSREQ, 0x100);
     ww(m, Z80_RESET, 0x100);
     rotinas::kos_dec(m, DAC_DRIVER, Z80_RAM).map_err(ErroAbertura::Rotina)?;

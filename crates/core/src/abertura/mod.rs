@@ -15,19 +15,50 @@ pub mod ram;
 use crate::memoria::{ClasseLeitura, ErroAcesso, Memoria, Tamanho};
 use crate::som::z80::PontoZ80;
 
-/// Pontos do original que o oráculo marca (primeira ou qualquer chegada do PC).
+/// Pontos do original que o oráculo marca (chegada do PC ao endereço do rótulo).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Marca {
     /// `GameProgram`: fim da preparação do console e começo da verificação da ROM.
     GameProgram,
     /// `CheckSumOk`: fim da verificação da ROM.
     ChecksumOk,
+    /// `VDPSetupGame`: a limpeza da RAM de `GameInit` acabou.
+    VdpSetupGame,
+    /// `DACDriverLoad`: o `VDPSetupGame` acabou.
+    DacDriverLoad,
+    /// `JoypadInit`: a carga do programa do Z80 acabou.
+    JoypadInit,
+    /// `MainGameLoop`: `GameInit` acabou.
+    MainGameLoop,
+    /// `GM_Sega`: começo da tela da Sega.
+    GmSega,
 }
 
 /// Rótulo e endereço de cada marca (metadado de `refs/rotulos.txt`, conferido por teste).
-pub const MARCAS: [(Marca, &str, u32); 2] = [
+pub const MARCAS: [(Marca, &str, u32); 7] = [
     (Marca::GameProgram, "GameProgram", 0x300),
     (Marca::ChecksumOk, "CheckSumOk", 0x33E),
+    (Marca::VdpSetupGame, "VDPSetupGame", 0x1222),
+    (Marca::DacDriverLoad, "DACDriverLoad", 0x134A),
+    (Marca::JoypadInit, "JoypadInit", 0x11B6),
+    (Marca::MainGameLoop, "MainGameLoop", 0x388),
+    (Marca::GmSega, "GM_Sega", 0x2DD2),
+];
+
+type Passo = fn(&mut Memoria) -> Result<(), ErroAbertura>;
+
+/// O laço principal do boot, em ordem. Cada passo roda quando a marca do rótulo seguinte chega,
+/// isto é, no fim do trecho que ele reproduz.
+const SEQUENCIA: [(Marca, Passo); 6] = [
+    (Marca::GameProgram, |m| {
+        boot::entry_point(m)?;
+        boot::game_program(m)
+    }),
+    (Marca::ChecksumOk, boot::check_sum_ok),
+    (Marca::VdpSetupGame, boot::game_init_limpar),
+    (Marca::DacDriverLoad, boot::vdp_setup_game),
+    (Marca::JoypadInit, boot::dac_driver_load),
+    (Marca::MainGameLoop, boot::game_init_fim),
 ];
 
 /// Um fato do tempo gravado dentro de um quadro, na ordem em que aconteceu.
@@ -58,20 +89,11 @@ impl From<ErroAcesso> for ErroAbertura {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Estado {
-    /// Antes de `GameProgram`: o 68000 está em `EntryPoint`.
-    Inicio,
-    /// Dentro do laço de soma de verificação.
-    Checksum,
-    /// `GM_Sega` ainda não implementado: o núcleo para aqui.
-    Sega,
-}
-
 /// O console no trecho da abertura.
 pub struct Abertura {
     pub mem: Memoria,
-    estado: Estado,
+    /// Próximo passo da `SEQUENCIA`; `SEQUENCIA.len()` quando o boot acabou.
+    cursor: usize,
     quadro: u32,
     pub erro: Option<ErroAbertura>,
     /// Quantas vezes cada tipo de evento chegou sem uso (diagnóstico do relatório).
@@ -82,7 +104,7 @@ impl Abertura {
     pub fn nova(rom: Vec<u8>) -> Self {
         Self {
             mem: Memoria::nova(rom),
-            estado: Estado::Inicio,
+            cursor: 0,
             quadro: 0,
             erro: None,
             marcas_ignoradas: 0,
@@ -95,7 +117,7 @@ impl Abertura {
 
     /// Está dentro de um trecho atômico? (a marca final do trecho ainda não chegou)
     pub fn em_trecho_atomico(&self) -> bool {
-        matches!(self.estado, Estado::Inicio | Estado::Checksum)
+        self.cursor < SEQUENCIA.len()
     }
 
     /// Roda um quadro com os fatos gravados dele.
@@ -124,16 +146,10 @@ impl Abertura {
     }
 
     fn marca(&mut self, m: Marca) -> Result<(), ErroAbertura> {
-        match (self.estado, m) {
-            (Estado::Inicio, Marca::GameProgram) => {
-                boot::entry_point(&mut self.mem)?;
-                boot::game_program(&mut self.mem)?;
-                self.estado = Estado::Checksum;
-            }
-            (Estado::Checksum, Marca::ChecksumOk) => {
-                boot::check_sum_ok(&mut self.mem)?;
-                boot::game_init(&mut self.mem)?;
-                self.estado = Estado::Sega;
+        match SEQUENCIA.get(self.cursor) {
+            Some((esperada, passo)) if *esperada == m => {
+                passo(&mut self.mem)?;
+                self.cursor = self.cursor.saturating_add(1);
             }
             _ => self.marcas_ignoradas = self.marcas_ignoradas.saturating_add(1),
         }

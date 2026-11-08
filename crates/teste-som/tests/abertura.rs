@@ -153,8 +153,17 @@ fn quadros_com_marcas_levam_ao_modo_sega() {
     a.executar_quadro(&[EventoQuadro::Marca(Marca::GameProgram)]);
     assert!(a.em_trecho_atomico());
     assert_eq!(a.erro, None);
-    a.executar_quadro(&[EventoQuadro::Marca(Marca::ChecksumOk)]);
-    assert_eq!(a.erro, None);
+    for m in [
+        Marca::ChecksumOk,
+        Marca::VdpSetupGame,
+        Marca::DacDriverLoad,
+        Marca::JoypadInit,
+        Marca::MainGameLoop,
+    ] {
+        assert!(a.em_trecho_atomico());
+        a.executar_quadro(&[EventoQuadro::Marca(m)]);
+        assert_eq!(a.erro, None, "{m:?}");
+    }
     assert!(!a.em_trecho_atomico());
     let ram = a.mem.ram();
     assert_eq!(&ram[0xFFFC..], &[0x69, 0x6E, 0x69, 0x74]);
@@ -171,7 +180,15 @@ fn execucao_e_deterministica_e_nunca_entra_em_panico_com_rom_pequena() {
     let rodar = |rom: Vec<u8>| {
         let mut a = Abertura::nova(rom);
         a.executar_quadro(&[EventoQuadro::Marca(Marca::GameProgram)]);
-        a.executar_quadro(&[EventoQuadro::Marca(Marca::ChecksumOk)]);
+        for m in [
+            Marca::ChecksumOk,
+            Marca::VdpSetupGame,
+            Marca::DacDriverLoad,
+            Marca::JoypadInit,
+            Marca::MainGameLoop,
+        ] {
+            a.executar_quadro(&[EventoQuadro::Marca(m)]);
+        }
         (a.mem.ram().to_vec(), a.mem.saidas().len(), a.erro)
     };
     assert_eq!(rodar(rom_sintetica(9)), rodar(rom_sintetica(9)));
