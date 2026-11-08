@@ -50,3 +50,9 @@ Marcas (a parada devolve o quadro fechado e o `mclk` do **fim desse quadro**, n�
 
 - Diagnóstico (comparador com `z80_divergencia`): 1691 acessos `AcessoDiferente` (o oráculo gravou `LeituraJanela`, o núcleo fez `EscritaJanela`) e 4415 `Posicao` em `EscritaJanela`. Causa: a rotina `KosDec` lê do destino cada byte que copia da própria saída. Com o destino na RAM do Z80, cada leitura é um acesso do 68000 à janela do Z80 e vira um ponto do Z80 gravado. O núcleo só escrevia.
 - Correção no jogo (não no teste): `descompressao::kosinski::descomprimir_com_origens` diz a origem de cada byte; `boot::dac_driver_load` lê o destino antes de escrever nas cópias. Testes do núcleo e da descompressão seguem passando. Prova com a ROM: bloco 2 de novo (`posicao_z80_divergencias` deve cair para 0).
+
+## Posição do Z80 zerada e tela da Sega no núcleo (08/11/2026)
+
+- Rodada 3 do bloco 2 (Marcelo): `posicao_z80_divergencias=0`. RAM do 68000 e do Z80 sem divergência fora de trecho atômico, vídeo e PSG iguais até a entrada de `GM_Sega`. Boot (7.1 e 7.2) fechado.
+- 7.3 escrita (sem prova com a ROM ainda): `abertura/vblank.rs` (tratador de VBlank com as rotinas `Sega`, `SegaPCM` e `PaletteFade`, `ReadJoypads`, DMA de paleta, sprites e rolagem), `abertura/sega.rs` (`PaletteFadeOut`, `ClearScreen`, `PalLoad`, `TilemapToVRAM`, `PalCycle_Sega`) e `rotinas::nem_dec` (Nemesis pela porta de dados da VDP). O laço principal da Sega é uma máquina de estados: o VBlank gravado roda o tratador e depois o passo seguinte do laço. O tratador da voz SEGA fica adiado até a marca `Sega_WaitEnd`, porque o driver só volta ao fim da voz (cerca de 134 quadros).
+- Provas sintéticas (`crates/teste-som/tests/sega.rs`): o desvanecimento zera uma cor em tantos passos quanto a soma dos canais (modelo direto), o ciclo de paleta termina e é determinístico, o VBlank da Sega faz os três DMAs e decrementa o temporizador, rotina de VBlank desconhecida dá erro e não pânico.

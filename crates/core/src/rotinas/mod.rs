@@ -83,6 +83,38 @@ pub fn nem_dec_to_ram(mem: &mut Memoria, origem: u32, destino: u32) -> Result<u3
     Ok(gravar(mem, destino, &saida))
 }
 
+/// `NemDec`: como [`nem_dec_to_ram`], mas a saída vai pela porta de dados da VDP, uma longa
+/// (8 pontos) por vez, para o destino que o chamador já pôs na porta de controle. A tabela de
+/// códigos também é montada em `v_ngfx_buffer`, como no original.
+pub fn nem_dec(mem: &mut Memoria, origem: u32) -> Result<(), ErroRotina> {
+    let fluxo = fluxo_da_rom(mem, origem)?;
+    let mut n = nemesis::Nemesis::novo(fluxo, LIMITE_SAIDA).map_err(ErroRotina::Descompressao)?;
+    n.executar_ate(n.tiles_total())
+        .map_err(ErroRotina::Descompressao)?;
+    let tabela = n.palavras_da_tabela();
+    let saida = n.saida().to_vec();
+    for (desloc, palavra) in tabela {
+        let _ = mem.escrever(
+            V_NGFX_BUFFER.wrapping_add(desloc),
+            Tamanho::Byte,
+            u32::from(palavra >> 8),
+        );
+        let _ = mem.escrever(
+            V_NGFX_BUFFER.wrapping_add(desloc).wrapping_add(1),
+            Tamanho::Byte,
+            u32::from(palavra & 0xFF),
+        );
+    }
+    for c in saida.chunks(4) {
+        let mut b = [0u8; 4];
+        for (d, o) in b.iter_mut().zip(c) {
+            *d = *o;
+        }
+        let _ = mem.escrever(0xC0_0000, Tamanho::Long, u32::from_be_bytes(b));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;

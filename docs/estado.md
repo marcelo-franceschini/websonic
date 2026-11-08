@@ -4,7 +4,7 @@ Documento de acompanhamento do progresso das etapas.
 
 ## Etapa 7 (Telas de abertura): em andamento (08/11/2026)
 
-Plano aprovado em 08/11/2026 (`docs/plano-etapa-7.md`, com D7.3, D7.4 e a exclusão da pilha). Bloco 1 feito (`docs/conhecimento/abertura.md`): `N_fim` = quadro 1166 (`Level_StartGame`). Feitas com dados sintéticos: 7.0 (comparador `diferencial-abertura/` sem patch no oráculo, D7.9), 7.1 e 7.2 (boot e soma de verificação no núcleo). Prova real do boot: bloco 2 rodado (RAM, RAM do Z80, vídeo e PSG iguais até a entrada de `GM_Sega`); falta zerar a posição do Z80 (correção do `KosDec` feita, a confirmar). Próxima: 7.3. Próximas: 7.3 (Sega), 7.4 a 7.6, 7.7 (navegador), 7.8 (experimento do nível 2).
+Plano aprovado em 08/11/2026 (`docs/plano-etapa-7.md`, com D7.3, D7.4 e a exclusão da pilha). Bloco 1 feito (`docs/conhecimento/abertura.md`): `N_fim` = quadro 1166 (`Level_StartGame`). Feitas com dados sintéticos: 7.0 (comparador `diferencial-abertura/` sem patch no oráculo, D7.9), 7.1 e 7.2 (boot e soma de verificação no núcleo). Prova real do boot: bloco 2 rodado (RAM, RAM do Z80, vídeo e PSG iguais até a entrada de `GM_Sega`); posição do Z80 zerada (rodada 3). 7.3 (Sega) escrita, falta a prova com a ROM (bloco 3). Próximas: 7.3 (Sega), 7.4 a 7.6, 7.7 (navegador), 7.8 (experimento do nível 2).
 
 ## Etapa 6 (Driver de som): concluída, falta a sessão de revisão (08/11/2026)
 

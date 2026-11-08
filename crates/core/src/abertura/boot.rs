@@ -13,7 +13,7 @@ use crate::rotinas::ErroRotina;
 /// Voltas máximas de um laço que espera um valor gravado, antes de desistir.
 const LIMITE_ESPERA: u32 = 1_000_000;
 
-fn rom_w(m: &Memoria, a: u32) -> u16 {
+pub(crate) fn rom_w(m: &Memoria, a: u32) -> u16 {
     let i = usize::try_from(a).unwrap_or(usize::MAX);
     match m.rom().get(i..i.saturating_add(2)) {
         Some([a, b]) => u16::from_be_bytes([*a, *b]),
@@ -21,17 +21,17 @@ fn rom_w(m: &Memoria, a: u32) -> u16 {
     }
 }
 
-fn rom_l(m: &Memoria, a: u32) -> u32 {
+pub(crate) fn rom_l(m: &Memoria, a: u32) -> u32 {
     (u32::from(rom_w(m, a)) << 16) | u32::from(rom_w(m, a.wrapping_add(2)))
 }
 
-fn rom_b(m: &Memoria, a: u32) -> u8 {
+pub(crate) fn rom_b(m: &Memoria, a: u32) -> u8 {
     let i = usize::try_from(a).unwrap_or(usize::MAX);
     m.rom().get(i).copied().unwrap_or(0)
 }
 
 /// `waitZ80`: repete a leitura do BUSACK até o Z80 ceder o barramento.
-fn esperar_z80(m: &mut Memoria) -> Result<(), ErroAbertura> {
+pub(crate) fn esperar_z80(m: &mut Memoria) -> Result<(), ErroAbertura> {
     for _ in 0..LIMITE_ESPERA {
         if rb(m, Z80_BUSREQ) & 1 == 0 {
             return Ok(());

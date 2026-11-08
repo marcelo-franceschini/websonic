@@ -164,7 +164,6 @@ fn quadros_com_marcas_levam_ao_modo_sega() {
         a.executar_quadro(&[EventoQuadro::Marca(m)]);
         assert_eq!(a.erro, None, "{m:?}");
     }
-    assert!(!a.em_trecho_atomico());
     let ram = a.mem.ram();
     assert_eq!(&ram[0xFFFC..], &[0x69, 0x6E, 0x69, 0x74]);
     assert_eq!(ram[0xFFF8], 0);

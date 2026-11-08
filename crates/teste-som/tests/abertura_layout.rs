@@ -31,6 +31,29 @@ fn constantes_da_abertura_batem_com_o_mapa() {
         ("v_init", V_INIT),
         ("v_systemstack_end", PILHA_INICIO),
         ("v_systemstack", PILHA_FIM),
+        ("v_vblank_routine", V_VBLANK_ROUTINE),
+        ("v_vblank_count", V_VBLANK_COUNT),
+        ("v_vdp_buffer2", V_VDP_BUFFER2),
+        ("f_hblank_pal", F_HBLANK_PAL),
+        ("f_wtr_state", F_WTR_STATE),
+        ("v_generictimer", V_GENERICTIMER),
+        ("v_pcyc_num", V_PCYC_NUM),
+        ("v_pcyc_time", V_PCYC_TIME),
+        ("v_pfade_start", V_PFADE_START),
+        ("v_jpadhold1", V_JPADHOLD1),
+        ("v_plc_buffer", V_PLC_BUFFER),
+        ("v_plc_buffer_end", V_PLC_BUFFER_END),
+        ("v_palette", V_PALETTE),
+        ("v_palette_line_2", V_PALETTE_LINE_2),
+        ("v_palette_water", V_PALETTE_WATER),
+        ("v_palette_fading", V_PALETTE_FADING),
+        ("v_spritetablebuffer", V_SPRITETABLEBUFFER),
+        ("v_spritetablebuffer_end", V_SPRITETABLEBUFFER_END),
+        ("v_hscrolltablebuffer", V_HSCROLLTABLEBUFFER),
+        (
+            "v_hscrolltablebuffer_end_padded",
+            V_HSCROLLTABLEBUFFER_END_PADDED,
+        ),
     ];
     for (nome, valor) in ram {
         let esperado = m[nome] & 0xFF_FFFF;
@@ -50,6 +73,14 @@ fn constantes_da_abertura_batem_com_o_mapa() {
         ("Checksum", CHECKSUM),
         ("RomEndLoc", ROM_END_LOC),
         ("EndOfHeader", END_OF_HEADER),
+        ("Nem_SegaLogo", NEM_SEGA_LOGO),
+        ("Eni_SegaLogo", ENI_SEGA_LOGO),
+        ("Pal_Index", PAL_INDEX),
+        ("Pal_Sega1", PAL_SEGA1),
+        ("Pal_Sega1_end", PAL_SEGA1_END),
+        ("Pal_Sega2", PAL_SEGA2),
+        ("bgm_Stop", u32::from(BGM_STOP)),
+        ("sfx_Sega", u32::from(SFX_SEGA)),
     ];
     for (nome, valor) in rom {
         assert_eq!(u64::from(valor), m[nome], "{nome}");
