@@ -335,13 +335,13 @@ fn extensao_troca_e_multiplicacao_iguais_ao_oraculo() {
             nome: "MULU".into(),
             trecho: vec![0xC0C1],
             t: Tamanho::Long,
-            nucleo: com_r(|s, d, c| ops68k::mulu(s, d, c)),
+            nucleo: com_r(ops68k::mulu),
         },
         Caso {
             nome: "MULS".into(),
             trecho: vec![0xC1C1],
             t: Tamanho::Long,
-            nucleo: com_r(|s, d, c| ops68k::muls(s, d, c)),
+            nucleo: com_r(ops68k::muls),
         },
     ];
     let itens: Vec<(usize, Caso)> = casos.into_iter().enumerate().collect();

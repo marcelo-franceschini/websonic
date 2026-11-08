@@ -9,8 +9,9 @@ license = "GPL-3.0-only"
 [dependencies]
 websonic-oracle = { path = "../oracle/runner" }
 genesis-core = { path = "../target/oracle-fonte/backend/genesis-core" }
-sonic1-core = { path = "../crates/core" }
+sonic1-core = { path = "../crates/core", features = ["cobertura", "mutacao"] }
 sonic1-fidelidade = { path = "../crates/fidelidade" }
+sonic1-teste-nucleo = { path = "../crates/teste-nucleo" }
 
 [lints.clippy]
 all = { level = "warn", priority = -1 }

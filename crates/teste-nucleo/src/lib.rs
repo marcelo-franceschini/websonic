@@ -4,4 +4,5 @@
 //!
 //! Nada aqui tem dado da ROM.
 
+pub mod harness;
 pub mod ops;

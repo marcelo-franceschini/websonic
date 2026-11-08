@@ -1,0 +1,6 @@
+# Metadado da rotina KosDec. So nomes de registrador. Ver crates/teste-nucleo/src/harness.rs.
+rotulo: KosDec
+entrada: a0 = origem
+entrada: a1 = destino
+usados_depois:
+ignorados: d0 d1 d2 d3 d4 d5 d6 d7 a0 a1 a2 a3 a4 a5 a6 ccr

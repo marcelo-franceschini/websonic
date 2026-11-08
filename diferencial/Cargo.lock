@@ -834,6 +834,7 @@ dependencies = [
  "genesis-core",
  "sonic1-core",
  "sonic1-fidelidade",
+ "sonic1-teste-nucleo",
  "websonic-oracle",
 ]
 
@@ -851,6 +852,13 @@ version = "0.0.0"
 [[package]]
 name = "sonic1-rom"
 version = "0.0.0"
+
+[[package]]
+name = "sonic1-teste-nucleo"
+version = "0.0.0"
+dependencies = [
+ "sonic1-core",
+]
 
 [[package]]
 name = "syn"

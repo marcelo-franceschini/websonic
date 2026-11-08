@@ -6,6 +6,8 @@
 //! trecho de código do 68000, e o roda no oráculo a partir de registradores definidos. Quem usa
 //! compara o resultado com a função equivalente do núcleo.
 
+pub mod rotina;
+
 use genesis_core::api::oracle::Regs68;
 use sonic1_fidelidade::{Evento, Tipo};
 use websonic_oracle::oraculo::ChamadaRotina;
