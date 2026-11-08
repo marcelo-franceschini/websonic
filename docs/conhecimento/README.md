@@ -13,3 +13,4 @@
 - [video.md](video.md): o que o Sonic 1 usa da VDP, regra de renderizacao e de tempo do oraculo, provas e desempenho do renderizador.
 - [oraculos.md](oraculos.md): segundo oraculo (Genesis Plus GX) e as diferencas D1a, D1b e D1c, com a decisao.
 - [oraculo.md](oraculo.md): oráculo (jgenesis modificado), formato do trace e dos eventos, mapa de rótulos, com evidência.
+- [nucleo.md](nucleo.md): memoria espelhada, operacoes do 68000, tempo gravado, pontos de checagem, teste por rotina, cobertura, bugs injetados e bugs conhecidos (Etapa 5), com evidencia.
