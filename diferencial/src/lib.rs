@@ -55,7 +55,13 @@ impl Bancada {
     }
 
     /// Roda o trecho. A pilha é a do supervisor. As interrupções ficam mascaradas.
+    /// Falha se o trecho não retornar (por exemplo, exceção de divisão por zero).
     pub fn rodar(&mut self, entrada: &Regs, pokes: &[(u32, u8)]) -> Resultado {
+        self.tentar(entrada, pokes).expect("rotina")
+    }
+
+    /// Como [`Bancada::rodar`], mas devolve o erro se o trecho não retornar.
+    pub fn tentar(&mut self, entrada: &Regs, pokes: &[(u32, u8)]) -> Result<Resultado, String> {
         let mut regs = self.base;
         regs.d = entrada.d;
         regs.a = entrada.a;
@@ -69,8 +75,8 @@ impl Bancada {
             mascarar_interrupcoes: true,
             max_passos: 10_000,
         };
-        let r = self.oraculo.chamar_rotina(&chamada).expect("rotina");
-        Resultado {
+        let r = self.oraculo.chamar_rotina(&chamada)?;
+        Ok(Resultado {
             regs: Regs {
                 d: r.regs.d,
                 a: r.regs.a,
@@ -78,7 +84,7 @@ impl Bancada {
             },
             eventos: r.eventos,
             mudancas_ram: r.mudancas_ram68,
-        }
+        })
     }
 
     pub fn oraculo(&mut self) -> &mut Oraculo {

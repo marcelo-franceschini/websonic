@@ -78,6 +78,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "sonic1-teste-nucleo"
+version = "0.0.0"
+dependencies = [
+ "sonic1-core",
+]
+
+[[package]]
 name = "sonic1-video"
 version = "0.0.0"
 

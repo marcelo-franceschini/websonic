@@ -9,3 +9,5 @@
 pub mod aritmetica;
 pub mod descompressao;
 pub mod memoria;
+pub mod ops68k;
+pub mod quadro;
