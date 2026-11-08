@@ -1,3 +1,4 @@
 # Exclusoes PROPOSTAS pela IA. Valem so depois da aprovacao do Marcelo (requisitos, criterio 2).
 # grupo<TAB>o que exclui<TAB>motivo
 pilha-da-chamada	512 bytes da RAM abaixo do SP de entrada, na comparacao do teste por rotina	a chamada isolada empilha o retorno e as rotinas empilham registradores; o nucleo nao tem pilha de 68000. Recomendacao da IA: aprovar.
+despacho-por-tabela	decisoes EniDec:incremental e EniDec:modo_lista, sem desvio do original para mapear	no original o tipo de cada entrada do Enigma vai por JMP com tabela de saltos (EniDec_Index), sem desvio condicional; o 68000 nao tem outro desvio para casar. Os dois caminhos de cada decisao sao exercitados pelos testes do nucleo (cobertura 9 de 9) e o resultado byte a byte e conferido pelo teste por rotina (34 casos). Recomendacao da IA: aprovar.

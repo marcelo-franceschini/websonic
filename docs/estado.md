@@ -8,7 +8,7 @@ Plano aprovado em 08/11/2026 (`docs/plano-etapa-5.md`). Implementado e provado c
 
 **Falta (Marcelo, host):**
 1. Bloco A: FEITO (inventários commitados, evidência em nucleo.md).
-2. Bloco B: `sh scripts/etapa5-bloco-b.sh 2>&1 | tee /tmp/etapa5-bloco-b.txt` (aplica `etapa5-relatorio.patch`, roda testes, diferencial completo, teste por rotina com a ROM, cobertura, mutantes e bugs conhecidos).
+2. Bloco B e B2: FEITOS (mapa de decisões commitado; EniDec:incremental e modo_lista em exclusoes-propostas).
 3. Assinatura: `sh scripts/etapa5-assinar.sh` (pede senhas; refaz os traces, o manifesto, assina e roda `cargo fidelidade fidelidade`).
 4. Congelamento e CI: `git apply docs/pedidos/etapa5-congelar.patch` e reconstruir a imagem do contêiner (corrige também o `esperado-cargo-config.txt` defasado desde a Etapa 2).
 5. Decisão do Marcelo: aprovar ou não a exclusão da pilha na comparação (`cobertura/exclusoes-propostas.txt`; recomendação: aprovar).

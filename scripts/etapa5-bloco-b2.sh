@@ -54,14 +54,6 @@ for r in KosDec EniDec NemDecToRAM; do
         --metadados crates/teste-nucleo/rotinas --mapa cobertura/mapa-decisoes.txt | grep -E "^$r: |fora do mapa"
 done
 
-echo "##### 5. COBERTURA #####"
-WEBSONIC_COBERTURA_ARQ="$acc/nucleo-testes.txt" cargo test -q -p sonic1-teste-descompressao --test cobertura 2>&1 | grep -E "test result|FAILED"
-cargo fidelidade cobertura extrair --traces "$traces" --saida cobertura/executados-68k.txt
-cat "$acc/nucleo-testes.txt" "$acc/nucleo-rotinas.txt" > "$acc/nucleo-todos.txt"
-cargo fidelidade cobertura relatorio --nucleo "$acc/nucleo-todos.txt" --executados cobertura/executados-68k.txt \
-    --executados "$acc/executados-rotinas.txt" --mapa cobertura/mapa-decisoes.txt --saida "$acc/cobertura.tsv" \
-    | grep -v '^id	' | cut -c1-160
-
 echo "##### 3. COBERTURA #####"
 WEBSONIC_COBERTURA_ARQ="$acc/nucleo-testes.txt" cargo test -q -p sonic1-teste-descompressao --test cobertura 2>&1 | grep -E "test result|FAILED"
 cargo fidelidade cobertura extrair --traces "$traces" --saida cobertura/executados-68k.txt

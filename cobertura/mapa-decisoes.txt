@@ -1,2 +1,9 @@
 # Decisao do nucleo para desvio do original. id<TAB>endereco_hex<TAB>direto|inverso
-# Vazio ate a primeira rodada do `diferencial rotina` com a ROM real (bloco B da Etapa 5).
+# Gerado pelo diferencial rotina (--proposta-de-mapa) e conferido de novo com --mapa.
+EniDec:copia_em_linha	174A	direto
+EniDec:fim	179E	direto
+KosDec:contagem_no_alto	190E	inverso
+KosDec:copia_separada	18D0	direto
+KosDec:fim	1922	direto
+KosDec:literal	18B4	inverso
+KosDec:pulo	1928	direto
