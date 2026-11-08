@@ -5,7 +5,7 @@
 //! diferencial rotina KosDec|EniDec|NemDecToRAM --rom ROM --rotulos refs/rotulos.txt
 //!     --manifesto descompressao/manifesto.txt --metadados crates/teste-nucleo/rotinas
 //!     [--estado ARQ.s1e] [--mapa cobertura/mapa-decisoes.txt] [--proposta-de-mapa ARQ]
-//!     [--cobertura-nucleo ARQ]
+//!     [--cobertura-nucleo ARQ] [--executados-saida ARQ]
 //! ```
 
 use genesis_core::api::oracle::Regs68;
@@ -267,6 +267,25 @@ fn rotina(args: &[String]) -> Result<ExitCode, String> {
         let linhas: String = cobertura::contagens()
             .iter()
             .map(|(k, (v, f))| format!("{k}\t{v}\t{f}\n"))
+            .collect();
+        std::fs::write(a, linhas).map_err(|e| e.to_string())?;
+    }
+    if let Some(a) = opcao(args, "--executados-saida") {
+        // Desvios condicionais do original executados nos casos: endereco, tomado, nao tomado.
+        let mut m: BTreeMap<u32, (u64, u64)> = BTreeMap::new();
+        for c in &casos {
+            for (end, tomado) in &c.desvios_oraculo {
+                let x = m.entry(*end).or_insert((0, 0));
+                if *tomado {
+                    x.0 += 1;
+                } else {
+                    x.1 += 1;
+                }
+            }
+        }
+        let linhas: String = m
+            .iter()
+            .map(|(a, (t, n))| format!("{a:X}\t{t}\t{n}\n"))
             .collect();
         std::fs::write(a, linhas).map_err(|e| e.to_string())?;
     }

@@ -1,0 +1,892 @@
+diff --color -ruN base_rel/crates/fidelidade/relatorio/src/bugs.rs rel2/crates/fidelidade/relatorio/src/bugs.rs
+--- a/crates/fidelidade/relatorio/src/bugs.rs	1969-12-31 21:00:00.000000000 -0300
++++ b/crates/fidelidade/relatorio/src/bugs.rs	2026-11-08 03:21:11.078449751 -0300
+@@ -0,0 +1,133 @@
++//! `cargo fidelidade bugs-conhecidos`: relatório da lista de verificação dos trechos `FixBugs`
++//! (sub-etapa 5.8).
++//!
++//! A lista mora em `docs/bugs-conhecidos.md` (gerada por `cargo xtask bugs-conhecidos`, só com
++//! arquivo, linha e rótulo). Cada linha da tabela é um item `BK-nnnn` com etapa-alvo. Um item
++//! está coberto quando algum teste da execução tem `BK_nnnn` no nome. Este relatório lê os nomes
++//! dos testes (`cargo test --workspace -- --list`), não decide nada pelo jogo.
++//!
++//! Etapa 5: o relatório existe e roda; a cobertura é de 0 de N porque os trechos moram em rotinas
++//! das Etapas 6 a 12. A Etapa 14 usa `--exigir-todos`.
++//!
++//! Uso: `cargo fidelidade bugs-conhecidos [--exigir-todos] [--saida ARQ]`
++use crate::manifesto::ler_testes;
++use crate::{opcao, raiz};
++use std::collections::{BTreeMap, BTreeSet};
++use std::fs;
++use std::process::Command;
++
++/// Um item da lista.
++#[derive(Clone, Debug, PartialEq, Eq)]
++pub struct Item {
++    pub id: String,
++    pub etapa: String,
++    pub estado: String,
++}
++
++/// Lê as linhas `| BK-0001 | arquivo | linha | rotulo | etapa | estado |` do documento.
++pub fn ler_lista(md: &str) -> Vec<Item> {
++    md.lines()
++        .filter(|l| l.starts_with("| BK-"))
++        .filter_map(|l| {
++            let c: Vec<&str> = l.trim_matches('|').split('|').map(str::trim).collect();
++            let [id, _arq, _linha, _rotulo, etapa, estado] = c[..] else {
++                return None;
++            };
++            Some(Item {
++                id: id.to_string(),
++                etapa: etapa.to_string(),
++                estado: estado.to_string(),
++            })
++        })
++        .collect()
++}
++
++/// Ids cobertos: itens cujo `BK_nnnn` aparece no nome de algum teste.
++pub fn cobertos(itens: &[Item], testes: &[String]) -> BTreeSet<String> {
++    itens
++        .iter()
++        .filter(|i| {
++            let chave = i.id.replace('-', "_");
++            testes.iter().any(|t| t.contains(&chave))
++        })
++        .map(|i| i.id.clone())
++        .collect()
++}
++
++pub fn texto(itens: &[Item], cob: &BTreeSet<String>) -> String {
++    let mut por_etapa: BTreeMap<&str, (usize, usize)> = BTreeMap::new();
++    for i in itens {
++        let e = por_etapa.entry(i.etapa.as_str()).or_insert((0, 0));
++        e.0 += 1;
++        if cob.contains(&i.id) {
++            e.1 += 1;
++        }
++    }
++    let mut t = format!(
++        "bugs conhecidos: {} cobertos de {}\n",
++        cob.len(),
++        itens.len()
++    );
++    for (etapa, (n, c)) in por_etapa {
++        t.push_str(&format!("etapa {etapa}: {c} de {n}\n"));
++    }
++    t
++}
++
++pub fn executar(args: &[String]) -> Result<(), String> {
++    let md =
++        fs::read_to_string(raiz().join("docs/bugs-conhecidos.md")).map_err(|e| e.to_string())?;
++    let itens = ler_lista(&md);
++    if itens.is_empty() {
++        return Err("docs/bugs-conhecidos.md sem itens (rode cargo xtask bugs-conhecidos)".into());
++    }
++    let saida = Command::new("sh")
++        .args(["-c", "cargo test --workspace -- --list 2>&1"])
++        .current_dir(raiz())
++        .output()
++        .map_err(|e| e.to_string())?;
++    let nomes: Vec<String> = ler_testes(&String::from_utf8_lossy(&saida.stdout))
++        .into_iter()
++        .map(|t| t.nome)
++        .collect();
++    let cob = cobertos(&itens, &nomes);
++    let t = texto(&itens, &cob);
++    print!("{t}");
++    if let Some(s) = opcao(args, "--saida") {
++        fs::write(s, &t).map_err(|e| e.to_string())?;
++    }
++    if args.iter().any(|a| a == "--exigir-todos") && cob.len() != itens.len() {
++        return Err(format!(
++            "faltam casos de teste: {} de {} cobertos",
++            cob.len(),
++            itens.len()
++        ));
++    }
++    Ok(())
++}
++
++#[cfg(test)]
++mod testes {
++    use super::*;
++
++    const MD: &str = "| id | arquivo | linha | rotulo | etapa | estado |\n| --- | --- | --- | --- | --- | --- |\n| BK-0001 | a.asm | 10 | Rot1 | 9 | pendente |\n| BK-0002 | b.asm | 20 | Rot2 | 9 | pendente |\n| BK-0003 | c.asm | 30 | Rot3 | 11 | pendente |\n";
++
++    #[test]
++    fn le_a_lista_e_conta_os_cobertos() {
++        let itens = ler_lista(MD);
++        assert_eq!(itens.len(), 3);
++        let testes = vec![
++            "sonic1_core::fisica::bk_0002_reproduz_o_bug".to_string(),
++            "x::outro".to_string(),
++        ];
++        // O nome do teste usa BK_0002 (maiusculo ou minusculo conta? so a forma exata).
++        assert!(cobertos(&itens, &testes).is_empty());
++        let testes = vec!["sonic1_core::fisica::teste_BK_0002_reproduz".to_string()];
++        let c = cobertos(&itens, &testes);
++        assert_eq!(c, ["BK-0002".to_string()].into());
++        let t = texto(&itens, &c);
++        assert!(t.contains("1 cobertos de 3"));
++        assert!(t.contains("etapa 9: 1 de 2"));
++        assert!(t.contains("etapa 11: 0 de 1"));
++    }
++}
+diff --color -ruN base_rel/crates/fidelidade/relatorio/src/cobertura.rs rel2/crates/fidelidade/relatorio/src/cobertura.rs
+--- a/crates/fidelidade/relatorio/src/cobertura.rs	1969-12-31 21:00:00.000000000 -0300
++++ b/crates/fidelidade/relatorio/src/cobertura.rs	2026-11-08 03:23:23.551857986 -0300
+@@ -0,0 +1,413 @@
++//! `cargo fidelidade cobertura`: cobertura das decisões do núcleo contra os desvios do original
++//! (sub-etapa 5.6). Mede se o jogo está certo, por isso mora neste pacote congelado.
++//!
++//! Entradas (todas só com nomes, endereços e contagens):
++//! - decisões do núcleo: lidas do código-fonte (`decisao!("Rotina:nome", ...)` em `crates/core`);
++//! - `--nucleo ARQ`: `id<TAB>verdadeiras<TAB>falsas`, gravado pelos testes de cobertura
++//!   (`WEBSONIC_COBERTURA_ARQ`) ou pelo `diferencial rotina --cobertura-nucleo`;
++//! - `--executados ARQ` (pode repetir): `endereco_hex<TAB>tomado<TAB>nao_tomado`, dos desvios condicionais do
++//!   original executados nos traces e nos testes por rotina (`cobertura extrair`);
++//! - `--mapa ARQ`: `id<TAB>endereco_hex<TAB>direto|inverso`, decisão do núcleo para desvio do
++//!   original (`cobertura/mapa-decisoes.txt`).
++//!
++//! Universo: o requisito mede os desvios EXECUTADOS pelo oráculo. Um desvio que nenhum caso
++//! executou não aparece aqui; achá-lo exige decodificar o código sem executar (limite registrado
++//! em `docs/conhecimento/nucleo.md` e no backlog).
++//!
++//! Uso:
++//! `cargo fidelidade cobertura extrair --traces DIR --saida ARQ`
++//! `cargo fidelidade cobertura relatorio --nucleo ARQ --executados ARQ --mapa ARQ [--saida ARQ]`
++use crate::{opcao, raiz};
++use sonic1_fidelidade::{Leitor, Tipo};
++use std::collections::BTreeMap;
++use std::fs;
++use std::path::Path;
++
++/// Contagens por decisão do núcleo: (verdadeiras, falsas).
++pub type ContagensNucleo = BTreeMap<String, (u64, u64)>;
++/// Desvios do original: endereço para (tomado, não tomado).
++pub type Executados = BTreeMap<u32, (u64, u64)>;
++/// Mapa: decisão para (endereço, inverso).
++pub type Mapa = BTreeMap<String, (u32, bool)>;
++
++/// Ids de `decisao!("...")` num texto de código-fonte.
++pub fn ids_do_fonte(fonte: &str) -> Vec<String> {
++    fonte
++        .split("decisao!(\"")
++        .skip(1)
++        .filter_map(|p| p.find('"').map(|f| p[..f].to_string()))
++        .collect()
++}
++
++fn arquivos_rs(dir: &Path, saida: &mut Vec<std::path::PathBuf>) {
++    let Ok(rd) = fs::read_dir(dir) else { return };
++    let mut entradas: Vec<_> = rd.filter_map(Result::ok).map(|e| e.path()).collect();
++    entradas.sort();
++    for p in entradas {
++        if p.is_dir() {
++            if p.file_name().is_some_and(|n| n != "target") {
++                arquivos_rs(&p, saida);
++            }
++        } else if p.extension().is_some_and(|e| e == "rs") {
++            saida.push(p);
++        }
++    }
++}
++
++/// Decisões declaradas no núcleo, ordenadas e sem repetição. O módulo `cobertura` define a macro
++/// e não conta.
++pub fn ids_do_nucleo(raiz: &Path) -> Vec<String> {
++    let mut arqs = Vec::new();
++    arquivos_rs(&raiz.join("crates/core/src"), &mut arqs);
++    let mut ids = Vec::new();
++    for a in arqs {
++        if a.components().any(|c| c.as_os_str() == "cobertura") {
++            continue;
++        }
++        if let Ok(t) = fs::read_to_string(&a) {
++            ids.extend(ids_do_fonte(&t));
++        }
++    }
++    ids.sort();
++    ids.dedup();
++    ids
++}
++
++pub fn ler_contagens(texto: &str) -> Result<ContagensNucleo, String> {
++    let mut m = ContagensNucleo::new();
++    for (i, l) in texto.lines().enumerate() {
++        if l.is_empty() {
++            continue;
++        }
++        let c: Vec<&str> = l.split('\t').collect();
++        let [id, v, f] = c[..] else {
++            return Err(format!("nucleo, linha {}: 3 campos", i + 1));
++        };
++        let e = m.entry(id.to_string()).or_insert((0, 0));
++        e.0 += v
++            .parse::<u64>()
++            .map_err(|_| format!("nucleo, linha {}: contagem", i + 1))?;
++        e.1 += f
++            .parse::<u64>()
++            .map_err(|_| format!("nucleo, linha {}: contagem", i + 1))?;
++    }
++    Ok(m)
++}
++
++pub fn ler_executados(texto: &str) -> Result<Executados, String> {
++    let mut m = Executados::new();
++    for (i, l) in texto.lines().enumerate() {
++        if l.is_empty() {
++            continue;
++        }
++        let c: Vec<&str> = l.split('\t').collect();
++        let [end, t, n] = c[..] else {
++            return Err(format!("executados, linha {}: 3 campos", i + 1));
++        };
++        let end = u32::from_str_radix(end, 16)
++            .map_err(|_| format!("executados, linha {}: endereco", i + 1))?;
++        let e = m.entry(end).or_insert((0, 0));
++        e.0 += t
++            .parse::<u64>()
++            .map_err(|_| format!("executados, linha {}: contagem", i + 1))?;
++        e.1 += n
++            .parse::<u64>()
++            .map_err(|_| format!("executados, linha {}: contagem", i + 1))?;
++    }
++    Ok(m)
++}
++
++pub fn ler_mapa(texto: &str) -> Result<Mapa, String> {
++    let mut m = Mapa::new();
++    for (i, l) in texto.lines().enumerate() {
++        if l.is_empty() || l.starts_with('#') {
++            continue;
++        }
++        let c: Vec<&str> = l.split('\t').collect();
++        let [id, end, pol] = c[..] else {
++            return Err(format!("mapa, linha {}: 3 campos", i + 1));
++        };
++        let end =
++            u32::from_str_radix(end, 16).map_err(|_| format!("mapa, linha {}: endereco", i + 1))?;
++        let inverso = match pol {
++            "direto" => false,
++            "inverso" => true,
++            _ => return Err(format!("mapa, linha {}: polaridade", i + 1)),
++        };
++        if m.insert(id.to_string(), (end, inverso)).is_some() {
++            return Err(format!("mapa, linha {}: decisao repetida", i + 1));
++        }
++    }
++    Ok(m)
++}
++
++/// Resultado do relatório: texto e a lista de problemas que reprovam.
++pub struct Relatorio {
++    pub texto: String,
++    pub problemas: Vec<String>,
++}
++
++/// Cruza decisões do núcleo, contagens, mapa e desvios executados no original.
++pub fn relatorio(
++    ids: &[String],
++    nucleo: &ContagensNucleo,
++    mapa: &Mapa,
++    exec: &Executados,
++) -> Relatorio {
++    let mut texto = String::from(
++        "id\tnucleo_verdadeira\tnucleo_falsa\tendereco\tpolaridade\toriginal_tomado\toriginal_nao_tomado\tstatus\n",
++    );
++    let mut problemas = Vec::new();
++    let (mut nos_dois, mut sem_mapa) = (0usize, 0usize);
++    for id in ids {
++        let (v, f) = nucleo.get(id).copied().unwrap_or((0, 0));
++        let mut status = Vec::new();
++        if v == 0 && f == 0 {
++            status.push("nunca-executada-no-nucleo");
++            problemas.push(format!("{id}: nenhum teste executou esta decisao"));
++        } else if v == 0 || f == 0 {
++            status.push("so-um-caminho-no-nucleo");
++            problemas.push(format!(
++                "{id}: so um caminho no nucleo ({v} verdadeiras, {f} falsas)"
++            ));
++        } else {
++            nos_dois += 1;
++        }
++        let (end, pol, ot, on) = match mapa.get(id) {
++            Some((end, inv)) => {
++                let (t, n) = exec.get(end).copied().unwrap_or((0, 0));
++                if t == 0 && n == 0 {
++                    status.push("desvio-nao-executado-no-original");
++                    problemas.push(format!(
++                        "{id}: o desvio {end:X} do mapa nao foi executado no oraculo"
++                    ));
++                } else if t == 0 || n == 0 {
++                    status.push("so-um-caminho-no-original");
++                }
++                (
++                    format!("{end:X}"),
++                    if *inv { "inverso" } else { "direto" },
++                    t,
++                    n,
++                )
++            }
++            None => {
++                sem_mapa += 1;
++                status.push("sem-mapa");
++                ("-".to_string(), "-", 0, 0)
++            }
++        };
++        if status.is_empty() {
++            status.push("ok");
++        }
++        texto.push_str(&format!(
++            "{id}\t{v}\t{f}\t{end}\t{pol}\t{ot}\t{on}\t{}\n",
++            status.join(",")
++        ));
++    }
++    for id in mapa.keys() {
++        if !ids.contains(id) {
++            problemas.push(format!(
++                "{id}: o mapa cita uma decisao que nao existe no nucleo"
++            ));
++        }
++    }
++    let so_um_original = exec
++        .values()
++        .filter(|(t, n)| (*t == 0) != (*n == 0))
++        .count();
++    texto.push_str(&format!(
++        "\n# decisoes do nucleo: {}; nos dois caminhos nos testes: {nos_dois}; sem mapa para o original: {sem_mapa}\n# desvios do original executados: {}; executados em um caminho so: {so_um_original}\n# problemas: {}\n",
++        ids.len(),
++        exec.len(),
++        problemas.len()
++    ));
++    Relatorio { texto, problemas }
++}
++
++/// Soma os desvios condicionais (Bcc, DBcc) do 68000 de todos os traces `*.s1t` da pasta.
++pub fn extrair_executados(dir: &Path) -> Result<Executados, String> {
++    let mut m = Executados::new();
++    let mut arqs: Vec<_> = fs::read_dir(dir)
++        .map_err(|e| e.to_string())?
++        .filter_map(Result::ok)
++        .map(|e| e.path())
++        .filter(|p| {
++            p.file_name()
++                .and_then(|n| n.to_str())
++                .is_some_and(|n| n.ends_with(".a.s1t"))
++        })
++        .collect();
++    arqs.sort();
++    for a in arqs {
++        let f = fs::File::open(&a).map_err(|e| e.to_string())?;
++        let mut l = Leitor::abrir(std::io::BufReader::new(f)).map_err(|e| e.to_string())?;
++        while let Some(q) = l.proximo().map_err(|e| e.to_string())? {
++            for e in &q.eventos {
++                if e.tipo == Tipo::Desvio68 && matches!(e.c, 2 | 4) {
++                    let x = m.entry(e.a).or_insert((0, 0));
++                    if e.d != 0 {
++                        x.0 += 1;
++                    } else {
++                        x.1 += 1;
++                    }
++                }
++            }
++        }
++    }
++    Ok(m)
++}
++
++fn escrever_executados(m: &Executados) -> String {
++    m.iter()
++        .map(|(a, (t, n))| format!("{a:X}\t{t}\t{n}\n"))
++        .collect()
++}
++
++pub fn executar(args: &[String]) -> Result<(), String> {
++    match args.first().map(String::as_str) {
++        Some("extrair") => {
++            let m =
++                extrair_executados(Path::new(opcao(args, "--traces").ok_or("falta --traces")?))?;
++            fs::write(
++                opcao(args, "--saida").ok_or("falta --saida")?,
++                escrever_executados(&m),
++            )
++            .map_err(|e| e.to_string())?;
++            println!("desvios condicionais executados: {}", m.len());
++            Ok(())
++        }
++        Some("relatorio") => {
++            let ler = |n: &str| {
++                fs::read_to_string(opcao(args, n).ok_or(format!("falta {n}"))?)
++                    .map_err(|e| e.to_string())
++            };
++            let nucleo = ler_contagens(&ler("--nucleo")?)?;
++            // --executados pode repetir: traces do corpus e testes por rotina somam.
++            let mut exec = Executados::new();
++            let arquivos: Vec<&str> = args
++                .windows(2)
++                .filter(|w| w[0] == "--executados")
++                .map(|w| w[1].as_str())
++                .collect();
++            if arquivos.is_empty() {
++                return Err("falta --executados".into());
++            }
++            for a in arquivos {
++                for (end, (t, n)) in
++                    ler_executados(&fs::read_to_string(a).map_err(|e| format!("{a}: {e}"))?)?
++                {
++                    let x = exec.entry(end).or_insert((0, 0));
++                    x.0 += t;
++                    x.1 += n;
++                }
++            }
++            let mapa = ler_mapa(&ler("--mapa")?)?;
++            let r = relatorio(&ids_do_nucleo(&raiz()), &nucleo, &mapa, &exec);
++            print!("{}", r.texto);
++            if let Some(s) = opcao(args, "--saida") {
++                fs::write(s, &r.texto).map_err(|e| e.to_string())?;
++            }
++            for p in &r.problemas {
++                println!("problema: {p}");
++            }
++            if r.problemas.is_empty() {
++                Ok(())
++            } else {
++                Err("cobertura reprovada".into())
++            }
++        }
++        _ => Err("uso: cargo fidelidade cobertura <extrair|relatorio>".into()),
++    }
++}
++
++#[cfg(test)]
++mod testes {
++    use super::*;
++
++    fn ids() -> Vec<String> {
++        vec!["A:x".into(), "A:y".into(), "B:z".into()]
++    }
++
++    #[test]
++    fn le_os_ids_do_fonte() {
++        assert_eq!(
++            ids_do_fonte("if decisao!(\"A:x\", c) {} decisao!(\"B:z\", d)"),
++            vec!["A:x", "B:z"]
++        );
++        assert!(ids_do_fonte("sem decisoes").is_empty());
++    }
++
++    #[test]
++    fn cobertura_completa_passa() {
++        let n = ler_contagens("A:x\t3\t2\nA:y\t1\t1\nB:z\t5\t5\n").unwrap();
++        let m = ler_mapa("A:x\t406\tinverso\nA:y\t410\tdireto\nB:z\t500\tdireto\n").unwrap();
++        let e = ler_executados("406\t2\t3\n410\t1\t1\n500\t4\t4\n").unwrap();
++        let r = relatorio(&ids(), &n, &m, &e);
++        assert!(r.problemas.is_empty(), "{:?}", r.problemas);
++        assert!(r.texto.contains("A:x\t3\t2\t406\tinverso\t2\t3\tok"));
++    }
++
++    #[test]
++    fn acusa_decisao_nunca_executada_e_de_um_caminho_so() {
++        let n = ler_contagens("A:x\t3\t0\n").unwrap();
++        let r = relatorio(&ids(), &n, &Mapa::new(), &Executados::new());
++        assert!(
++            r.problemas
++                .iter()
++                .any(|p| p.starts_with("A:x: so um caminho"))
++        );
++        assert!(
++            r.problemas
++                .iter()
++                .any(|p| p.starts_with("A:y: nenhum teste"))
++        );
++        assert!(
++            r.problemas
++                .iter()
++                .any(|p| p.starts_with("B:z: nenhum teste"))
++        );
++        // Sem mapa nao reprova por si so; aparece como sem-mapa.
++        assert!(r.texto.contains("sem-mapa"));
++    }
++
++    #[test]
++    fn acusa_mapa_para_desvio_que_o_oraculo_nao_executou_e_decisao_inexistente() {
++        let n = ler_contagens("A:x\t1\t1\nA:y\t1\t1\nB:z\t1\t1\n").unwrap();
++        let m = ler_mapa("A:x\t999\tdireto\nFantasma:q\t10\tdireto\n").unwrap();
++        let r = relatorio(&ids(), &n, &m, &Executados::new());
++        assert!(
++            r.problemas
++                .iter()
++                .any(|p| p.contains("999") && p.contains("nao foi executado"))
++        );
++        assert!(r.problemas.iter().any(|p| p.starts_with("Fantasma:q")));
++    }
++
++    #[test]
++    fn formatos_ruins_sao_recusados() {
++        assert!(ler_mapa("A:x\t406\ttorto").is_err());
++        assert!(ler_mapa("A:x\t406\tdireto\nA:x\t407\tdireto").is_err());
++        assert!(ler_executados("zz\t1\t1").is_err());
++        assert!(ler_contagens("A:x\t1").is_err());
++    }
++
++    #[test]
++    fn ids_do_nucleo_ignoram_o_modulo_da_macro() {
++        let d = std::env::temp_dir().join(format!("websonic-cob-{}", std::process::id()));
++        fs::create_dir_all(d.join("crates/core/src/cobertura")).unwrap();
++        fs::create_dir_all(d.join("crates/core/src/rotinas")).unwrap();
++        fs::write(
++            d.join("crates/core/src/cobertura/mod.rs"),
++            "// exemplo: decisao!(\"Doc:x\", c)",
++        )
++        .unwrap();
++        fs::write(
++            d.join("crates/core/src/rotinas/a.rs"),
++            "decisao!(\"Rot:um\", a); decisao!(\"Rot:um\", b);",
++        )
++        .unwrap();
++        assert_eq!(ids_do_nucleo(&d), vec!["Rot:um"]);
++        let _ = fs::remove_dir_all(&d);
++    }
++}
+diff --color -ruN base_rel/crates/fidelidade/relatorio/src/main.rs rel2/crates/fidelidade/relatorio/src/main.rs
+--- a/crates/fidelidade/relatorio/src/main.rs	2026-11-08 03:20:55.000000000 -0300
++++ b/crates/fidelidade/relatorio/src/main.rs	2026-11-08 03:21:11.078460861 -0300
+@@ -7,12 +7,17 @@
+ //! - `manifesto`: gera e verifica o manifesto assinado.
+ //! - `ocultos`: cifra, protege a chave e audita os testes ocultos.
+ //! - `corpus-trace`: traces do corpus e prova de determinismo.
++//! - `cobertura`, `mutantes`, `bugs-conhecidos`: Etapa 5 (decisões do núcleo contra o original,
++//!   bugs injetados e lista de verificação dos trechos FixBugs).
+ use std::path::PathBuf;
+ use std::process::ExitCode;
+ 
++mod bugs;
++mod cobertura;
+ mod corpus;
+ mod fidelidade;
+ mod manifesto;
++mod mutantes;
+ mod ocultos;
+ mod sha256;
+ 
+@@ -41,8 +46,13 @@
+         Some("manifesto") => manifesto::executar(resto),
+         Some("ocultos") => ocultos::executar(resto),
+         Some("corpus-trace") => corpus::executar(resto),
++        Some("cobertura") => cobertura::executar(resto),
++        Some("mutantes") => mutantes::executar(resto),
++        Some("bugs-conhecidos") => bugs::executar(resto),
+         _ => {
+-            eprintln!("uso: cargo fidelidade <fidelidade|manifesto|ocultos|corpus-trace>");
++            eprintln!(
++                "uso: cargo fidelidade <fidelidade|manifesto|ocultos|corpus-trace|cobertura|mutantes|bugs-conhecidos>"
++            );
+             return ExitCode::from(2);
+         }
+     };
+diff --color -ruN base_rel/crates/fidelidade/relatorio/src/manifesto.rs rel2/crates/fidelidade/relatorio/src/manifesto.rs
+--- a/crates/fidelidade/relatorio/src/manifesto.rs	2026-11-08 03:20:55.000000000 -0300
++++ b/crates/fidelidade/relatorio/src/manifesto.rs	2026-11-08 03:21:11.078468337 -0300
+@@ -35,6 +35,9 @@
+     "crates/corpus",
+     "corpus",
+     "descompressao",
++    "cobertura",
++    "diferencial",
++    "crates/teste-nucleo",
+ ];
+ /// Pasta de artefatos de compilação, nunca entra no manifesto.
+ const PASTA_ALVO: &str = "target";
+diff --color -ruN base_rel/crates/fidelidade/relatorio/src/mutantes.rs rel2/crates/fidelidade/relatorio/src/mutantes.rs
+--- a/crates/fidelidade/relatorio/src/mutantes.rs	1969-12-31 21:00:00.000000000 -0300
++++ b/crates/fidelidade/relatorio/src/mutantes.rs	2026-11-08 03:21:11.078442057 -0300
+@@ -0,0 +1,285 @@
++//! `cargo fidelidade mutantes`: bugs injetados (sub-etapa 5.7).
++//!
++//! Cada decisão do núcleo que espelha o original (`decisao!("Rotina:nome", ...)`) vira um
++//! mutante: com a feature `mutacao`, `WEBSONIC_MUTANTE=Rotina:nome` faz essa decisão devolver o
++//! contrário. A suíte roda uma vez por mutante.
++//!
++//! - `detectado`: algum teste falhou;
++//! - `tempo`: a suíte passou do limite por mutante (conta como detectado, mas fica listado à
++//!   parte, porque pode ser laço infinito);
++//! - `sobrevivente`: nada falhou. Reprova o comando;
++//! - `equivalente`: sobrevivente com justificativa em `cobertura/equivalentes.txt`, que só o
++//!   Marcelo edita (a IA não aprova equivalência);
++//! - `nao_rodado`: acabou o orçamento de tempo da etapa. A rodada completa, sem orçamento, é da
++//!   auditoria (Marcelo): `--orcamento 0`.
++//!
++//! Uso: `cargo fidelidade mutantes [--orcamento SEGUNDOS] [--limite SEGUNDOS]
++//!       [--pacotes a,b,c] [--saida ARQ]` (padrão: 600 s no total e 60 s por mutante).
++use crate::{opcao, raiz};
++use std::collections::{BTreeMap, BTreeSet};
++use std::fs;
++use std::process::{Command, Stdio};
++use std::time::{Duration, Instant};
++
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub enum Classe {
++    Detectado,
++    Tempo,
++    Sobrevivente,
++    Equivalente,
++    NaoRodado,
++}
++
++impl Classe {
++    pub fn nome(self) -> &'static str {
++        match self {
++            Self::Detectado => "detectado",
++            Self::Tempo => "tempo",
++            Self::Sobrevivente => "sobrevivente",
++            Self::Equivalente => "equivalente",
++            Self::NaoRodado => "nao_rodado",
++        }
++    }
++}
++
++/// O que aconteceu numa execução da suíte.
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub enum Execucao {
++    Passou,
++    Falhou,
++    Estourou,
++}
++
++pub fn classificar(e: Execucao, id: &str, equivalentes: &BTreeSet<String>) -> Classe {
++    match e {
++        Execucao::Falhou => Classe::Detectado,
++        Execucao::Estourou => Classe::Tempo,
++        Execucao::Passou if equivalentes.contains(id) => Classe::Equivalente,
++        Execucao::Passou => Classe::Sobrevivente,
++    }
++}
++
++/// Lê `id<TAB>justificativa`. Justificativa vazia não vale.
++pub fn ler_equivalentes(texto: &str) -> Result<BTreeSet<String>, String> {
++    let mut s = BTreeSet::new();
++    for (i, l) in texto.lines().enumerate() {
++        if l.is_empty() || l.starts_with('#') {
++            continue;
++        }
++        let (id, just) = l
++            .split_once('\t')
++            .ok_or(format!("equivalentes, linha {}: falta TAB", i + 1))?;
++        if just.trim().is_empty() {
++            return Err(format!(
++                "equivalentes, linha {}: justificativa vazia",
++                i + 1
++            ));
++        }
++        s.insert(id.to_string());
++    }
++    Ok(s)
++}
++
++/// Roda a suíte com o mutante `id`. `limite` corta a execução.
++pub fn rodar_suite(id: &str, pacotes: &[String], limite: Duration) -> Result<Execucao, String> {
++    let mut cmd = if let Ok(c) = std::env::var("WEBSONIC_COMANDO_DE_TESTE") {
++        // Só para os testes deste pacote: um comando de shell no lugar do cargo.
++        let mut x = Command::new("sh");
++        x.args(["-c", &c]);
++        x
++    } else {
++        let mut x = Command::new("cargo");
++        x.args(["test", "--quiet"]);
++        for p in pacotes {
++            x.args(["-p", p]);
++        }
++        x
++    };
++    cmd.current_dir(raiz())
++        .env("WEBSONIC_MUTANTE", id)
++        .stdout(Stdio::null())
++        .stderr(Stdio::null());
++    let mut filho = cmd.spawn().map_err(|e| e.to_string())?;
++    let inicio = Instant::now();
++    loop {
++        if let Some(st) = filho.try_wait().map_err(|e| e.to_string())? {
++            return Ok(if st.success() {
++                Execucao::Passou
++            } else {
++                Execucao::Falhou
++            });
++        }
++        if limite > Duration::ZERO && inicio.elapsed() > limite {
++            let _ = filho.kill();
++            let _ = filho.wait();
++            return Ok(Execucao::Estourou);
++        }
++        std::thread::sleep(Duration::from_millis(50));
++    }
++}
++
++/// Função que roda a suíte com um mutante.
++pub type RodarSuite = dyn Fn(&str, &[String], Duration) -> Result<Execucao, String>;
++
++/// Resumo e problemas (sobreviventes reprovam).
++pub struct Resumo {
++    pub texto: String,
++    pub sobreviventes: Vec<String>,
++}
++
++pub fn executar_todos(
++    ids: &[String],
++    pacotes: &[String],
++    equivalentes: &BTreeSet<String>,
++    orcamento: Duration,
++    limite: Duration,
++    rodar: &RodarSuite,
++) -> Result<Resumo, String> {
++    let inicio = Instant::now();
++    let mut classes: BTreeMap<String, Classe> = BTreeMap::new();
++    for id in ids {
++        if orcamento > Duration::ZERO && inicio.elapsed() >= orcamento {
++            classes.insert(id.clone(), Classe::NaoRodado);
++            continue;
++        }
++        let e = rodar(id, pacotes, limite)?;
++        classes.insert(id.clone(), classificar(e, id, equivalentes));
++    }
++    let contar = |c: Classe| classes.values().filter(|x| **x == c).count();
++    let mut texto = String::from("id\tclasse\n");
++    for (id, c) in &classes {
++        texto.push_str(&format!("{id}\t{}\n", c.nome()));
++    }
++    texto.push_str(&format!(
++        "\n# mutantes: {}; detectados: {}; tempo: {}; sobreviventes: {}; equivalentes: {}; nao rodados: {}\n",
++        classes.len(),
++        contar(Classe::Detectado),
++        contar(Classe::Tempo),
++        contar(Classe::Sobrevivente),
++        contar(Classe::Equivalente),
++        contar(Classe::NaoRodado)
++    ));
++    let sobreviventes = classes
++        .iter()
++        .filter(|(_, c)| **c == Classe::Sobrevivente)
++        .map(|(i, _)| i.clone())
++        .collect();
++    Ok(Resumo {
++        texto,
++        sobreviventes,
++    })
++}
++
++pub fn executar(args: &[String]) -> Result<(), String> {
++    let segundos = |n: &str, padrao: u64| -> Result<Duration, String> {
++        Ok(Duration::from_secs(match opcao(args, n) {
++            Some(v) => v.parse().map_err(|_| format!("{n} invalido"))?,
++            None => padrao,
++        }))
++    };
++    let orcamento = segundos("--orcamento", 600)?;
++    let limite = segundos("--limite", 60)?;
++    let pacotes: Vec<String> = opcao(args, "--pacotes")
++        .unwrap_or("sonic1-core,sonic1-teste-nucleo,sonic1-teste-descompressao")
++        .split(',')
++        .map(str::to_string)
++        .collect();
++    let equivalentes = match fs::read_to_string(raiz().join("cobertura/equivalentes.txt")) {
++        Ok(t) => ler_equivalentes(&t)?,
++        Err(_) => BTreeSet::new(),
++    };
++    let ids = crate::cobertura::ids_do_nucleo(&raiz());
++    let r = executar_todos(
++        &ids,
++        &pacotes,
++        &equivalentes,
++        orcamento,
++        limite,
++        &rodar_suite,
++    )?;
++    print!("{}", r.texto);
++    if let Some(s) = opcao(args, "--saida") {
++        fs::write(s, &r.texto).map_err(|e| e.to_string())?;
++    }
++    if r.sobreviventes.is_empty() {
++        Ok(())
++    } else {
++        Err(format!(
++            "mutantes sobreviventes: {}",
++            r.sobreviventes.join(" ")
++        ))
++    }
++}
++
++#[cfg(test)]
++mod testes {
++    use super::*;
++
++    #[test]
++    fn classificacao() {
++        let eq: BTreeSet<String> = ["B".to_string()].into();
++        assert_eq!(classificar(Execucao::Falhou, "A", &eq), Classe::Detectado);
++        assert_eq!(
++            classificar(Execucao::Passou, "A", &eq),
++            Classe::Sobrevivente
++        );
++        assert_eq!(classificar(Execucao::Passou, "B", &eq), Classe::Equivalente);
++        assert_eq!(classificar(Execucao::Estourou, "A", &eq), Classe::Tempo);
++    }
++
++    #[test]
++    fn equivalente_sem_justificativa_e_recusado() {
++        assert!(ler_equivalentes("A:x\tnunca muda o resultado, por que...\n").is_ok());
++        assert!(ler_equivalentes("A:x\t \n").is_err());
++        assert!(ler_equivalentes("A:x").is_err());
++    }
++
++    #[test]
++    fn orcamento_deixa_o_resto_como_nao_rodado() {
++        let ids: Vec<String> = ["A".into(), "B".into(), "C".into()].into();
++        let rodar = |_: &str, _: &[String], _: Duration| -> Result<Execucao, String> {
++            std::thread::sleep(Duration::from_millis(30));
++            Ok(Execucao::Falhou)
++        };
++        let r = executar_todos(
++            &ids,
++            &[],
++            &BTreeSet::new(),
++            Duration::from_millis(20),
++            Duration::from_secs(1),
++            &rodar,
++        )
++        .unwrap();
++        assert!(r.texto.contains("A\tdetectado"));
++        assert!(r.texto.contains("B\tnao_rodado"));
++        assert!(r.texto.contains("nao rodados: 2"));
++        // Orcamento zero: sem limite, roda todos.
++        let r = executar_todos(
++            &ids,
++            &[],
++            &BTreeSet::new(),
++            Duration::ZERO,
++            Duration::from_secs(1),
++            &rodar,
++        )
++        .unwrap();
++        assert!(r.texto.contains("nao rodados: 0"));
++    }
++
++    #[test]
++    fn suite_de_teste_distingue_passou_falhou_e_estourou() {
++        // Um comando de shell no lugar do cargo: falha so para o mutante "ruim", dorme para "lento".
++        // SAFETY: este e o unico teste do pacote que mexe nesta variavel, e os outros nao a leem.
++        unsafe {
++            std::env::set_var(
++                "WEBSONIC_COMANDO_DE_TESTE",
++                "if [ \"$WEBSONIC_MUTANTE\" = ruim ]; then exit 1; elif [ \"$WEBSONIC_MUTANTE\" = lento ]; then sleep 5; fi",
++            );
++        }
++        let l = Duration::from_millis(500);
++        assert_eq!(rodar_suite("bom", &[], l).unwrap(), Execucao::Passou);
++        assert_eq!(rodar_suite("ruim", &[], l).unwrap(), Execucao::Falhou);
++        assert_eq!(rodar_suite("lento", &[], l).unwrap(), Execucao::Estourou);
++        unsafe { std::env::remove_var("WEBSONIC_COMANDO_DE_TESTE") };
++    }
++}

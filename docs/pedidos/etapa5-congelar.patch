@@ -1,0 +1,68 @@
+diff --color -ruN base_rel/.github/esperado-cargo-config.txt rel2/.github/esperado-cargo-config.txt
+--- a/.github/esperado-cargo-config.txt	2026-11-08 03:20:55.000000000 -0300
++++ b/.github/esperado-cargo-config.txt	2026-11-08 03:21:11.141116117 -0300
+@@ -5,3 +5,8 @@
+ # Atalho: cargo xtask <site|anti-rom>
+ [alias]
+ xtask = "run --quiet --package xtask --"
++
++# Atalho: cargo fidelidade <fidelidade|manifesto|ocultos|corpus-trace>
++# O pacote fica numa pasta congelada (crates/fidelidade/relatorio), que nao aceita escrita do
++# compilador, por isso o alvo e target/relatorio. --locked: o Cargo.lock do pacote e referencia.
++fidelidade = "run --quiet --locked --manifest-path crates/fidelidade/relatorio/Cargo.toml --target-dir target/relatorio --"
+diff --color -ruN base_rel/.github/workflows/ci.yml rel2/.github/workflows/ci.yml
+--- a/.github/workflows/ci.yml	2026-11-08 03:20:55.000000000 -0300
++++ b/.github/workflows/ci.yml	2026-11-08 03:21:11.123781891 -0300
+@@ -63,7 +63,13 @@
+         run: sh .github/rodar-na-imagem.sh cargo test --workspace
+ 
+       - name: Testes em WebAssembly (wasm32-wasip1)
+-        run: sh .github/rodar-na-imagem.sh cargo test --target wasm32-wasip1 -p sonic1-core -p sonic1-rom
++        run: sh .github/rodar-na-imagem.sh cargo test --target wasm32-wasip1 -p sonic1-core -p sonic1-rom -p sonic1-teste-nucleo -p sonic1-teste-descompressao
++
++      - name: Relatorio de fidelidade (formatacao, clippy e testes do pacote)
++        run: |
++          sh .github/rodar-na-imagem.sh cargo fmt --check --manifest-path crates/fidelidade/relatorio/Cargo.toml
++          sh .github/rodar-na-imagem.sh cargo clippy --locked --manifest-path crates/fidelidade/relatorio/Cargo.toml --target-dir target/relatorio --all-targets -- -D warnings
++          sh .github/rodar-na-imagem.sh cargo test --locked --manifest-path crates/fidelidade/relatorio/Cargo.toml --target-dir target/relatorio
+ 
+       - name: Montar o site
+         run: sh .github/rodar-na-imagem.sh cargo xtask site
+diff --color -ruN base_rel/.devcontainer/managed-settings.json rel2/.devcontainer/managed-settings.json
+--- a/.devcontainer/managed-settings.json	2026-11-08 03:20:55.000000000 -0300
++++ b/.devcontainer/managed-settings.json	2026-11-08 03:21:11.141170547 -0300
+@@ -24,6 +24,8 @@
+       "Edit(//workspaces/websonic/**/.cargo/**)",
+       "Edit(//workspaces/websonic/oracle/**)",
+       "Edit(//workspaces/websonic/oracle2/**)",
++      "Edit(//workspaces/websonic/diferencial/**)",
++      "Edit(//workspaces/websonic/cobertura/**)",
+       "Edit(//workspaces/websonic/crates/corpus/**)",
+       "Edit(//workspaces/websonic/crates/fidelidade/**)",
+       "Edit(//workspaces/websonic/rust-toolchain.toml)",
+@@ -95,6 +97,8 @@
+         "/workspaces/websonic/.cargo",
+         "/workspaces/websonic/oracle",
+         "/workspaces/websonic/oracle2",
++        "/workspaces/websonic/diferencial",
++        "/workspaces/websonic/cobertura",
+         "/workspaces/websonic/crates/corpus",
+         "/workspaces/websonic/crates/fidelidade",
+         "/workspaces/websonic/rust-toolchain.toml",
+diff --color -ruN base_rel/.devcontainer/verifica-config.sh rel2/.devcontainer/verifica-config.sh
+--- a/.devcontainer/verifica-config.sh	2026-11-08 03:20:55.000000000 -0300
++++ b/.devcontainer/verifica-config.sh	2026-11-08 03:21:11.141198050 -0300
+@@ -45,10 +45,12 @@
+ #      e a configuracao do cargo (.cargo, rust-toolchain.toml).
+ # Etapa 1: entram o oraculo (oracle) e o formato do trace e comparador (crates/fidelidade).
+ # 2.10: entram o segundo oraculo (oracle2) e o conversor do corpus (crates/corpus).
++# Etapa 5: entram o diferencial (compara o nucleo com o oraculo) e a pasta cobertura (mapa de
++# decisoes e equivalencias aprovadas).
+ # O relatorio (crates/fidelidade/relatorio) ja fica coberto por crates/fidelidade.
+ for item in CLAUDE.md .gitignore docs/requisitos.md hooks refs .github .devcontainer \
+     .claude .mcp.json .vscode .cargo rust-toolchain.toml oracle crates/fidelidade \
+-    oracle2 crates/corpus; do
++    oracle2 crates/corpus diferencial cobertura; do
+     base="//workspaces/websonic/$item"
+     grep -q "\"Edit($base)\"\|\"Edit($base/\*\*)\"" "$ms" || falha "falta a regra Edit de $item."
+     grep -q "\"/workspaces/websonic/$item\"" "$ms" || falha "falta o denyWrite de $item."
