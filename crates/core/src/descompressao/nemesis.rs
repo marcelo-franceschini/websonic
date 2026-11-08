@@ -100,6 +100,26 @@ impl<'a> Nemesis<'a> {
         })
     }
 
+    /// Palavras que a rotina `NemDec_BuildCodeTable` grava no buffer de códigos da RAM
+    /// (`v_ngfx_buffer`): par (deslocamento em bytes, palavra). Cada palavra junta o tamanho do
+    /// código (byte alto), a contagem menos um (bits 4 a 6) e o nibble (bits 0 a 3). Um código
+    /// curto ocupa todas as posições que começam com ele. Posições não citadas ficam como estavam.
+    pub fn palavras_da_tabela(&self) -> Vec<(u32, u16)> {
+        let mut saida = Vec::new();
+        for e in &self.tabela {
+            let palavra = u16::from(e.tamanho).wrapping_shl(8)
+                | (u16::from(e.contagem.saturating_sub(1)) & 7).wrapping_shl(4)
+                | u16::from(e.nibble & 0x0F);
+            let extra = 8u32.saturating_sub(u32::from(e.tamanho));
+            let base = u32::from(e.codigo).wrapping_shl(extra);
+            let quantas = 1u32.wrapping_shl(extra);
+            for k in 0..quantas {
+                saida.push((base.wrapping_add(k).wrapping_mul(2), palavra));
+            }
+        }
+        saida
+    }
+
     /// Número de tiles que o cabeçalho promete.
     pub fn tiles_total(&self) -> usize {
         self.tiles_total

@@ -113,3 +113,11 @@ Plano: `docs/plano-etapa-5.md`. Cada afirmação cita o teste ou o comando. Nada
 - `docs/inventario-barramento.md`: 17 linhas. Acessos fora da RAM: E/S, VDP, janela do Z80, barramento do Z80 e reset do Z80. Sem acesso a SRAM ou a registradores de Sega CD.
 - `docs/inventario-interrupcoes.md`: 82 rotinas e níveis, 337 quadros de lag em 29209. A maioria das interrupções cai em `WaitForVBlank`. Rotinas de descompressão (`Kos_*`, `NemDec_*`, `EniDec_*`) e de desenho de sprites são as outras interrompidas. Candidatas a ponto de checagem nas Etapas 6 a 12.
 - Diferencial de operações: as duas falhas vistas numa execução antiga em depuração não se repetem em release (1500 casos, 10 s).
+
+## Bloco B, primeira rodada
+
+- Passaram: testes nativos, relatório (45), diferencial de memória (6), operações com 6000 casos (6), harness (5), cobertura (9 de 9 decisões nos dois caminhos), mutantes (9 de 9 detectados). `KosDec` 6 casos e `EniDec` 34 casos sem falha.
+- Falha 1 (`NemDecToRAM`, 145 de 145): o original monta a tabela de códigos em `v_ngfx_buffer` (`FFFFAA00`, 512 bytes) e essa RAM é comparada. O núcleo não a escrevia. Corrigido no jogo: `Nemesis::palavras_da_tabela` e `nem_dec_to_ram` gravam as palavras (tamanho, contagem menos um, nibble). Teste `nemesis_grava_a_tabela_de_codigos_na_ram`.
+- Falha 2 (mapa de decisões vazio): `chamar_rotina` do oráculo perdia os eventos dos quadros já fechados quando a rotina atravessava o fim de um quadro (descompressão longa). As sequências de desvio ficavam truncadas e nenhuma batia. Patch `docs/pedidos/etapa5-oraculo-2.patch` (arquivo congelado do runner) e teste `diferencial/tests/quadros.rs` (3641 eventos sem o patch, 40000 com ele).
+- Falha 3 (WebAssembly): o teste de metadados lia arquivo em tempo de execução. Agora usa `include_str!`.
+- Cobertura do original "executados: 0": os traces do corpus só são regenerados no passo de assinatura. A extração roda de novo depois dele.

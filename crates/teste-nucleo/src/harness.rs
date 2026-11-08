@@ -224,13 +224,14 @@ mod testes {
 
     #[test]
     fn os_metadados_do_piloto_sao_validos() {
-        for nome in ["KosDec", "EniDec", "NemDecToRAM"] {
-            let t = std::fs::read_to_string(format!(
-                "{}/rotinas/{nome}.txt",
-                env!("CARGO_MANIFEST_DIR")
-            ))
-            .unwrap();
-            assert_eq!(Metadado::analisar(&t).unwrap().rotulo, nome);
+        // include_str!, pois o teste também roda em WebAssembly, sem acesso ao disco.
+        let metadados = [
+            ("KosDec", include_str!("../rotinas/KosDec.txt")),
+            ("EniDec", include_str!("../rotinas/EniDec.txt")),
+            ("NemDecToRAM", include_str!("../rotinas/NemDecToRAM.txt")),
+        ];
+        for (nome, t) in metadados {
+            assert_eq!(Metadado::analisar(t).unwrap().rotulo, nome);
         }
     }
 
