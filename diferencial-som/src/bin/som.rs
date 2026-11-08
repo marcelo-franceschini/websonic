@@ -66,10 +66,10 @@ fn principal() -> Result<bool, String> {
     ];
     for l in ids.lines().filter(|l| !l.starts_with('#')) {
         let mut c = l.split('\t');
-        if let (Some(id), Some(_tipo), Some(nome)) = (c.next(), c.next(), c.next()) {
-            if let Ok(id) = u8::from_str_radix(id, 16) {
-                lista.push((id, nome.to_string()));
-            }
+        if let (Some(id), Some(_tipo), Some(nome)) = (c.next(), c.next(), c.next())
+            && let Ok(id) = u8::from_str_radix(id, 16)
+        {
+            lista.push((id, nome.to_string()));
         }
     }
     for (id, nome) in lista {
