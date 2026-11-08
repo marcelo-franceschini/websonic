@@ -1,0 +1,22 @@
+# Bugs conhecidos do som (BK-0276 a BK-0295): como cada um e provado. Metadado, sem dados da ROM.
+# id<TAB>rotulo<TAB>prova
+BK-0276	UpdateMusic	teste BK_0276 (crates/teste-som/tests/driver.rs)
+BK-0277	PlaySoundID	teste BK_0277
+BK-0278	PlaySoundID	teste BK_0278
+BK-0279	Sound_PlayBGM	inalcancavel: as 19 musicas tem trilhas de FM; sem teste
+BK-0280	Sound_PlaySFX	inalcancavel: IDs de efeito vao ate $CF; sem teste
+BK-0281	Sound_PlaySpecial	inalcancavel: so existe o especial $D0; sem teste
+BK-0282	StopSFX	pendente: precisa de roteiro (efeito no FM4 com o especial tocando e fade)
+BK-0283	StopSFX	pendente: roteiro de fade com efeito de FM ativo
+BK-0284	StopSFX	pendente: roteiro de fade com efeito de PSG ativo
+BK-0285	StopSpecialSFX	pendente: roteiro de fade com o especial D0 ativo
+BK-0286	StopAllSound	teste BK_0286; tambem os comandos E4 e o fim de fade no relatorio do som
+BK-0287	InitMusicPlayback	teste BK_0287
+BK-0288	InitMusicPlayback	coberto pelo relatorio do som (IDs 81 a 93: a inicializacao silencia todos os canais)
+BK-0289	InitMusicPlayback	coberto pelo relatorio do som (IDs 81 a 93)
+BK-0290	DoFadeIn	teste BK_0290
+BK-0291	PSGDoVolFX	teste BK_0291
+BK-0292	SendPSGNoteOff	teste BK_0292
+BK-0293	cfFadeInToPrevious	coberto pelo relatorio do som (ID 88, vida extra)
+BK-0294	cfStopSpecialFM4	pendente: roteiro com o especial D0 em FM4
+BK-0295	SendVoiceTL	pendente: roteiro de fade ou volume com efeito de FM ativo

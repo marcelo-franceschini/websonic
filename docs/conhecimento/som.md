@@ -61,3 +61,9 @@ Plano: `docs/plano-etapa-6.md`. Cada afirmação cita o teste ou o comando. Nada
 | 6.3 | testes sintéticos do núcleo; comparação com o oráculo pendente (bloco 2) |
 | 6.4 | integração do DAC e da voz SEGA: pela máquina do Z80 (provada) e pelo driver; comparação real pendente (bloco 2) |
 | 6.5 | harness roda numa ROM sintética (negativo); relatório com a ROM pendente (bloco 2) |
+
+## Resultado do bloco 2 e bugs conhecidos do som (6.5 e 6.6)
+
+- **Relatório do som com a ROM real: 78 IGUAL, 0 DIVERGE** (bloco 2, terceira rodada; hash do relatório `ff49435d25246d1734cc344369bfe58f0c104735`). Cobre as 19 músicas (2400 quadros cada, com as escritas do DAC), os 48 efeitos, o especial `D0`, os comandos `E0` a `E4` e os IDs `80`, `00`, `7F`, `E5` e `FF`. Em cada um: sequência de escritas no YM2612 e no PSG igual em conteúdo e ordem (hash igual), região do driver na RAM igual, RAM do Z80 igual (menos as posições `1FFD` e `1FFF`, que o Z80 muda sozinho) e posição do Z80 igual em todo acesso do 68000 (PC, ciclos que faltam, banco). Entradas externas: 0, exceto 2 nos IDs `89` e `93` (escritas de outro código do jogo na região do driver durante a música).
+- Falhas do relatório achadas e corrigidas no caminho (não do driver): o fim do trecho confundia o BUSREQ liberado do retry do DAC com o fim; a RAM do Z80 na saída de um trecho longo (voz SEGA) e as posições `1FFD` e `1FFF` não são comparáveis no instante da saída (o Z80 do oráculo anda sozinho depois do último acesso do 68000).
+- Bugs conhecidos: 8 dos 20 itens (`BK_0276`, `0277`, `0278`, `0286`, `0287`, `0290`, `0291`, `0292`) têm teste com o nome certo; `cobertura/bugs-som.txt` diz como cada um dos 20 é provado (teste, relatório do som, inalcançável ou pendente). Seis itens dependem de roteiros de fade com efeito ativo, que o harness ainda não tem (backlog).

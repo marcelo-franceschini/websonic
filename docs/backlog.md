@@ -56,3 +56,7 @@ Uma linha por item: o que é, dono, etapa-alvo. Só entra aqui o que não bloque
 - Etapa 6: IDs `94` a `9F` e `D1` a `DF` não têm comportamento definido no original (travam ou executam lixo) e ficam fora do relatório do som. Dono: IA. Etapa-alvo: 14 (decidir se viram exclusão aprovada).
 - Etapa 6: os registradores com lixo na parte alta (`d0` de `SetVoice` em `StopSFX`) são tratados como limpos. Dono: IA. Etapa-alvo: 6, só se o relatório acusar.
 - Etapa 6: o alvo `wasm32-wasip1` não está instalado no host; os testes wasm de `sonic1-core` e `sonic1-teste-som` rodam na imagem. Dono: Marcelo. Etapa-alvo: 6.
+- Etapa 6: roteiros do harness para os bugs conhecidos pendentes (`BK-0282` a `0285`, `0294`, `0295`): fade com efeito de FM e de PSG ativo, especial `D0` em FM4. Ver `cobertura/bugs-som.txt`. Dono: IA. Etapa-alvo: 7 a 14.
+- Etapa 6: patch do `relatorio` (congelado) para o manifesto incluir `diferencial-som/` e o relatório do som, e para o comando `som` do `cargo fidelidade`. Dono: IA (patch) e Marcelo. Etapa-alvo: 7.
+- Etapa 6: cobertura de desvios do driver do 68000 e do Z80 e bugs injetados do som (`decisao!` do driver) pedem rodar o harness por mutante, com a ROM. Dono: IA e Marcelo. Etapa-alvo: 14.
+- Etapa 6: o manifesto assinado da Etapa 5 não vale mais (o patch 0005 mudou arquivos de `oracle/`): refazer com `sh scripts/etapa5-assinar.sh`. Dono: Marcelo. Etapa-alvo: já.

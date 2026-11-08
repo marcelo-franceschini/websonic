@@ -145,7 +145,7 @@ pub enum Fluxo {
 
 /// O que uma flag de coordenação faz com o retorno.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Cf {
+pub enum Cf {
     Normal,
     /// `addq.w #8,sp`: sai da rotina que chamou a flag e da que a chamou.
     Sair8,
@@ -175,15 +175,15 @@ impl<'a> Driver<'a> {
 
     // --- Acesso à memória ---
 
-    fn rb(&mut self, a: u32) -> u8 {
+    pub fn rb(&mut self, a: u32) -> u8 {
         self.m.ler(a, Tamanho::Byte).map_or(0, lo)
     }
 
-    fn rw(&mut self, a: u32) -> u16 {
+    pub fn rw(&mut self, a: u32) -> u16 {
         u16::from_be_bytes([self.rb(a), self.rb(a.wrapping_add(1))])
     }
 
-    fn rl(&mut self, a: u32) -> u32 {
+    pub fn rl(&mut self, a: u32) -> u32 {
         u32::from_be_bytes([
             self.rb(a),
             self.rb(a.wrapping_add(1)),
@@ -192,67 +192,67 @@ impl<'a> Driver<'a> {
         ])
     }
 
-    fn wb(&mut self, a: u32, v: u8) {
+    pub fn wb(&mut self, a: u32, v: u8) {
         let _ = self.m.escrever(a, Tamanho::Byte, u32::from(v));
     }
 
-    fn ww(&mut self, a: u32, v: u16) {
+    pub fn ww(&mut self, a: u32, v: u16) {
         let [h, l] = v.to_be_bytes();
         self.wb(a, h);
         self.wb(a.wrapping_add(1), l);
     }
 
-    fn wl(&mut self, a: u32, v: u32) {
+    pub fn wl(&mut self, a: u32, v: u32) {
         let b = v.to_be_bytes();
         for (i, x) in b.iter().enumerate() {
             self.wb(a.wrapping_add(u32::try_from(i).unwrap_or(0)), *x);
         }
     }
 
-    fn ram(off: u32) -> u32 {
+    pub fn ram(off: u32) -> u32 {
         BASE.wrapping_add(off)
     }
 
-    fn bset(&mut self, a: u32, bit: u8) {
+    pub fn bset(&mut self, a: u32, bit: u8) {
         let v = self.rb(a);
         self.wb(a, v | (1 << bit));
     }
 
-    fn bclr(&mut self, a: u32, bit: u8) {
+    pub fn bclr(&mut self, a: u32, bit: u8) {
         let v = self.rb(a);
         self.wb(a, v & !(1 << bit));
     }
 
-    fn btst(&mut self, a: u32, bit: u8) -> bool {
+    pub fn btst(&mut self, a: u32, bit: u8) -> bool {
         self.rb(a) & (1 << bit) != 0
     }
 
     // --- Z80 ---
 
     /// `stopZ80`.
-    fn stop_z80(&mut self) {
+    pub fn stop_z80(&mut self) {
         let _ = self.m.escrever(Z80_BUS_REQUEST, Tamanho::Word, 0x100);
     }
 
     /// `startZ80`.
-    fn start_z80(&mut self) {
+    pub fn start_z80(&mut self) {
         let _ = self.m.escrever(Z80_BUS_REQUEST, Tamanho::Word, 0);
     }
 
     // --- Escritas nos chips ---
 
     /// `WriteFMI`.
-    fn write_fm_i(&mut self, d0: u8, d1: u8) {
+    pub fn write_fm_i(&mut self, d0: u8, d1: u8) {
         self.write_fm(YM_A0, YM_D0, d0, d1);
     }
 
     /// `WriteFMII`.
-    fn write_fm_ii(&mut self, d0: u8, d1: u8) {
+    pub fn write_fm_ii(&mut self, d0: u8, d1: u8) {
         self.write_fm(YM_A1, YM_D1, d0, d1);
     }
 
     /// Espera o chip ficar livre, escreve o registrador, espera de novo e escreve o dado.
-    fn write_fm(&mut self, endereco: u32, dado: u32, d0: u8, d1: u8) {
+    pub fn write_fm(&mut self, endereco: u32, dado: u32, d0: u8, d1: u8) {
         // Os laços leem o bit de ocupado, que vem do tempo gravado.
         self.esperar_ym_livre();
         self.wb(endereco, d0);
@@ -262,7 +262,7 @@ impl<'a> Driver<'a> {
 
     /// Laço de espera do bit de ocupado do YM2612. Com o tempo gravado esgotado o último valor se
     /// repete; o limite evita travar o teste e é contado em `esperas_estouradas`.
-    fn esperar_ym_livre(&mut self) {
+    pub fn esperar_ym_livre(&mut self) {
         for _ in 0..LIMITE_ESPERA {
             if self.rb(YM_A0) & 0x80 == 0 {
                 return;
@@ -272,7 +272,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `WriteFMIorII`.
-    fn write_fm_i_or_ii(&mut self, a5: u32, d0: u8, d1: u8) {
+    pub fn write_fm_i_or_ii(&mut self, a5: u32, d0: u8, d1: u8) {
         let vc = self.rb(a5.wrapping_add(T_VOICE_CONTROL));
         if decisao!("WriteFMIorII:parte_ii", vc & 4 != 0) {
             // WriteFMIIPart
@@ -284,7 +284,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `WriteFMIorIIMain`.
-    fn write_fm_i_or_ii_main(&mut self, a5: u32, d0: u8, d1: u8) {
+    pub fn write_fm_i_or_ii_main(&mut self, a5: u32, d0: u8, d1: u8) {
         if decisao!(
             "WriteFMIorIIMain:sfx_sobrepoe",
             self.btst(a5.wrapping_add(T_PLAYBACK_CONTROL), 2)
@@ -294,21 +294,21 @@ impl<'a> Driver<'a> {
         self.write_fm_i_or_ii(a5, d0, d1);
     }
 
-    fn psg(&mut self, v: u8) {
+    pub fn psg(&mut self, v: u8) {
         self.wb(PSG_INPUT, v);
     }
 
     // --- Tabelas na ROM ---
 
-    fn rom_ptr(&mut self, go: u32) -> u32 {
+    pub fn rom_ptr(&mut self, go: u32) -> u32 {
         self.rl(go) & 0xFF_FFFF
     }
 
-    fn canal_bgm(&mut self, indice_x4: u32) -> u32 {
+    pub fn canal_bgm(&mut self, indice_x4: u32) -> u32 {
         self.rl(SFX_BGM_CHANNEL_RAM.wrapping_add(indice_x4)) & 0xFF_FFFF
     }
 
-    fn canal_sfx(&mut self, indice_x4: u32) -> u32 {
+    pub fn canal_sfx(&mut self, indice_x4: u32) -> u32 {
         self.rl(SFX_SFX_CHANNEL_RAM.wrapping_add(indice_x4)) & 0xFF_FFFF
     }
 
@@ -424,7 +424,7 @@ impl<'a> Driver<'a> {
     // =========================================================================================
 
     /// `DACUpdateTrack`.
-    fn dac_update_track(&mut self, a5: u32) -> Fluxo {
+    pub fn dac_update_track(&mut self, a5: u32) -> Fluxo {
         let t = self.rb(a5.wrapping_add(T_DURATION_TIMEOUT)).wrapping_sub(1);
         self.wb(a5.wrapping_add(T_DURATION_TIMEOUT), t);
         if decisao!("DACUpdateTrack:ainda_toca", t != 0) {
@@ -494,7 +494,7 @@ impl<'a> Driver<'a> {
     // =========================================================================================
 
     /// `FMUpdateTrack`.
-    fn fm_update_track(&mut self, a5: u32) {
+    pub fn fm_update_track(&mut self, a5: u32) {
         let t = self.rb(a5.wrapping_add(T_DURATION_TIMEOUT)).wrapping_sub(1);
         self.wb(a5.wrapping_add(T_DURATION_TIMEOUT), t);
         if decisao!("FMUpdateTrack:nota_acabou", t == 0) {
@@ -516,7 +516,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `FMDoNext`. Devolve `Sair8` se uma flag de coordenação encerrou a atualização da trilha.
-    fn fm_do_next(&mut self, a5: u32) -> Cf {
+    pub fn fm_do_next(&mut self, a5: u32) -> Cf {
         let mut a4 = self.rl(a5.wrapping_add(T_DATA_POINTER));
         self.bclr(a5.wrapping_add(T_PLAYBACK_CONTROL), 1);
         let mut d5;
@@ -553,7 +553,7 @@ impl<'a> Driver<'a> {
 
     /// `FMSetFreq`. Para a pausa, o original cai em `FinishTrackUpdate` (com o ponteiro atual) e
     /// volta a quem chamou.
-    fn fm_set_freq(&mut self, a5: u32, a4: u32, d5: u8) {
+    pub fn fm_set_freq(&mut self, a5: u32, a4: u32, d5: u8) {
         let d5 = d5.wrapping_sub(0x80);
         if decisao!("FMSetFreq:pausa", d5 == 0) {
             // TrackSetRest
@@ -569,7 +569,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `SetDuration`.
-    fn set_duration(&mut self, a5: u32, d5: u8) {
+    pub fn set_duration(&mut self, a5: u32, d5: u8) {
         let mut d0 = d5;
         let mut d1 = self.rb(a5.wrapping_add(T_TEMPO_DIVIDER));
         loop {
@@ -584,7 +584,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `FinishTrackUpdate`.
-    fn finish_track_update(&mut self, a5: u32, a4: u32) {
+    pub fn finish_track_update(&mut self, a5: u32, a4: u32) {
         self.wl(a5.wrapping_add(T_DATA_POINTER), a4);
         let sd = self.rb(a5.wrapping_add(T_SAVED_DURATION));
         self.wb(a5.wrapping_add(T_DURATION_TIMEOUT), sd);
@@ -615,7 +615,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `NoteTimeoutUpdate`. Devolve `true` se o original adultera o retorno (a trilha termina aqui).
-    fn note_timeout_update(&mut self, a5: u32) -> bool {
+    pub fn note_timeout_update(&mut self, a5: u32) -> bool {
         if decisao!(
             "NoteTimeoutUpdate:sem_preenchimento",
             self.rb(a5.wrapping_add(T_NOTE_TIMEOUT)) == 0
@@ -641,7 +641,7 @@ impl<'a> Driver<'a> {
 
     /// `DoModulation`. Devolve `Some(frequência)` quando o original volta ao chamador com D6
     /// preenchido, e `None` quando o retorno é adulterado.
-    fn do_modulation(&mut self, a5: u32) -> Option<u16> {
+    pub fn do_modulation(&mut self, a5: u32) -> Option<u16> {
         if decisao!(
             "DoModulation:desligada",
             !self.btst(a5.wrapping_add(T_PLAYBACK_CONTROL), 3)
@@ -687,7 +687,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `FMPrepareNote` (e, por queda, `FMUpdateFreq`).
-    fn fm_prepare_note(&mut self, a5: u32) {
+    pub fn fm_prepare_note(&mut self, a5: u32) {
         if decisao!(
             "FMPrepareNote:em_pausa",
             self.btst(a5.wrapping_add(T_PLAYBACK_CONTROL), 1)
@@ -704,7 +704,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `FMUpdateFreq`.
-    fn fm_update_freq(&mut self, a5: u32, d6: u16) {
+    pub fn fm_update_freq(&mut self, a5: u32, d6: u16) {
         let detune = i16::from(i8::from_ne_bytes([self.rb(a5.wrapping_add(T_DETUNE))]));
         let d6 = d6.wrapping_add(u16::from_ne_bytes(detune.to_ne_bytes()));
         if decisao!(
@@ -719,7 +719,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `FMNoteOn`.
-    fn fm_note_on(&mut self, a5: u32) {
+    pub fn fm_note_on(&mut self, a5: u32) {
         if decisao!(
             "FMNoteOn:em_pausa",
             self.btst(a5.wrapping_add(T_PLAYBACK_CONTROL), 1)
@@ -737,7 +737,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `FMNoteOff`.
-    fn fm_note_off(&mut self, a5: u32) {
+    pub fn fm_note_off(&mut self, a5: u32) {
         if decisao!(
             "FMNoteOff:nao_ataca",
             self.btst(a5.wrapping_add(T_PLAYBACK_CONTROL), 4)
@@ -754,7 +754,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `SendFMNoteOff`.
-    fn send_fm_note_off(&mut self, a5: u32) {
+    pub fn send_fm_note_off(&mut self, a5: u32) {
         let d1 = self.rb(a5.wrapping_add(T_VOICE_CONTROL));
         self.write_fm_i(0x28, d1);
     }
@@ -764,7 +764,7 @@ impl<'a> Driver<'a> {
     // =========================================================================================
 
     /// `PSGUpdateTrack`.
-    fn psg_update_track(&mut self, a5: u32) {
+    pub fn psg_update_track(&mut self, a5: u32) {
         let t = self.rb(a5.wrapping_add(T_DURATION_TIMEOUT)).wrapping_sub(1);
         self.wb(a5.wrapping_add(T_DURATION_TIMEOUT), t);
         if decisao!("PSGUpdateTrack:nota_acabou", t == 0) {
@@ -786,7 +786,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `PSGDoNext`.
-    fn psg_do_next(&mut self, a5: u32) -> Cf {
+    pub fn psg_do_next(&mut self, a5: u32) -> Cf {
         self.bclr(a5.wrapping_add(T_PLAYBACK_CONTROL), 1);
         let mut a4 = self.rl(a5.wrapping_add(T_DATA_POINTER));
         let mut d5;
@@ -821,7 +821,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `PSGSetFreq`: termina em `FinishTrackUpdate` com o ponteiro atual.
-    fn psg_set_freq(&mut self, a5: u32, a4: u32, d5: u8) {
+    pub fn psg_set_freq(&mut self, a5: u32, a4: u32, d5: u8) {
         if decisao!("PSGSetFreq:pausa", d5 < 0x81) {
             self.bset(a5.wrapping_add(T_PLAYBACK_CONTROL), 1);
             self.ww(a5.wrapping_add(T_FREQ), 0xFFFF);
@@ -838,7 +838,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `PSGDoNoteOn`.
-    fn psg_do_note_on(&mut self, a5: u32) {
+    pub fn psg_do_note_on(&mut self, a5: u32) {
         let d6 = self.rw(a5.wrapping_add(T_FREQ));
         if decisao!("PSGDoNoteOn:frequencia_invalida", d6 & 0x8000 != 0) {
             // PSGSetRest
@@ -849,7 +849,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `PSGUpdateFreq`.
-    fn psg_update_freq(&mut self, a5: u32, d6: u16) {
+    pub fn psg_update_freq(&mut self, a5: u32, d6: u16) {
         let detune = i16::from(i8::from_ne_bytes([self.rb(a5.wrapping_add(T_DETUNE))]));
         let d6 = d6.wrapping_add(u16::from_ne_bytes(detune.to_ne_bytes()));
         if decisao!(
@@ -876,7 +876,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `PSGUpdateVolFX`.
-    fn psg_update_vol_fx(&mut self, a5: u32) {
+    pub fn psg_update_vol_fx(&mut self, a5: u32) {
         if decisao!(
             "PSGUpdateVolFX:sem_tom",
             self.rb(a5.wrapping_add(T_VOICE_INDEX)) == 0
@@ -887,7 +887,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `PSGDoVolFX`.
-    fn psg_do_vol_fx(&mut self, a5: u32) {
+    pub fn psg_do_vol_fx(&mut self, a5: u32) {
         let mut d6 = self.rb(a5.wrapping_add(T_VOLUME));
         let d0 = self.rb(a5.wrapping_add(T_VOICE_INDEX));
         if decisao!("PSGDoVolFX:sem_envelope", d0 == 0) {
@@ -917,7 +917,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `SetPSGVolume`.
-    fn set_psg_volume(&mut self, a5: u32, d6: u8) {
+    pub fn set_psg_volume(&mut self, a5: u32, d6: u8) {
         if decisao!(
             "SetPSGVolume:em_pausa",
             self.btst(a5.wrapping_add(T_PLAYBACK_CONTROL), 1)
@@ -947,7 +947,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `PSGNoteOff`.
-    fn psg_note_off(&mut self, a5: u32) {
+    pub fn psg_note_off(&mut self, a5: u32) {
         if decisao!(
             "PSGNoteOff:sobreposta",
             self.btst(a5.wrapping_add(T_PLAYBACK_CONTROL), 2)
@@ -958,13 +958,13 @@ impl<'a> Driver<'a> {
     }
 
     /// `SendPSGNoteOff`.
-    fn send_psg_note_off(&mut self, a5: u32) {
+    pub fn send_psg_note_off(&mut self, a5: u32) {
         let d0 = self.rb(a5.wrapping_add(T_VOICE_CONTROL)) | 0x1F;
         self.psg(d0);
     }
 
     /// `PSGSilenceAll`.
-    fn psg_silence_all(&mut self) {
+    pub fn psg_silence_all(&mut self) {
         for v in [0x9F, 0xBF, 0xDF, 0xFF] {
             self.psg(v);
         }
@@ -975,12 +975,12 @@ impl<'a> Driver<'a> {
     // =========================================================================================
 
     /// Soma `indice * 25` ao ponteiro (o tamanho de uma voz).
-    fn avancar_voz(a1: u32, indice: u16) -> u32 {
+    pub fn avancar_voz(a1: u32, indice: u16) -> u32 {
         a1.wrapping_add(u32::from(indice).wrapping_mul(25))
     }
 
     /// `SetVoice`: envia a voz `d0` apontada por `a1` à trilha `a5`.
-    fn set_voice(&mut self, a5: u32, a1: u32, d0: u8) {
+    pub fn set_voice(&mut self, a5: u32, a1: u32, d0: u8) {
         let mut a1 = Self::avancar_voz(a1, u16::from(d0));
         let d1 = self.rb(a1);
         a1 = a1.wrapping_add(1);
@@ -1013,7 +1013,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `SendVoiceTL`.
-    fn send_voice_tl(&mut self, a5: u32) {
+    pub fn send_voice_tl(&mut self, a5: u32) {
         if decisao!(
             "SendVoiceTL:sobreposta",
             self.btst(a5.wrapping_add(T_PLAYBACK_CONTROL), 2)
@@ -1063,7 +1063,7 @@ impl<'a> Driver<'a> {
 
     /// `CoordFlag`: `d5` é o byte lido (`E0` a `FF`), `a4` o ponteiro depois dele. Devolve o que
     /// fazer com o retorno e o novo `a4`.
-    fn coord_flag(&mut self, a5: u32, mut a4: u32, d5: u8) -> (Cf, u32) {
+    pub fn coord_flag(&mut self, a5: u32, mut a4: u32, d5: u8) -> (Cf, u32) {
         match d5 {
             0xE0 => {
                 // cfPanningAMSFMS
@@ -1251,7 +1251,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `cfJumpTo`: lê o deslocamento de 16 bits e salta.
-    fn cf_jump_to(&mut self, a4: u32) -> u32 {
+    pub fn cf_jump_to(&mut self, a4: u32) -> u32 {
         let alto = self.rb(a4);
         let baixo = self.rb(a4.wrapping_add(1));
         let a4 = a4.wrapping_add(2);
@@ -1261,7 +1261,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `cfStopTrack`.
-    fn cf_stop_track(&mut self, a5: u32) {
+    pub fn cf_stop_track(&mut self, a5: u32) {
         self.bclr(a5.wrapping_add(T_PLAYBACK_CONTROL), 7);
         self.bclr(a5.wrapping_add(T_PLAYBACK_CONTROL), 4);
         let vc = self.rb(a5.wrapping_add(T_VOICE_CONTROL));
@@ -1325,7 +1325,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `cfStopSpecialFM4`.
-    fn cf_stop_special_fm4(&mut self, a5: u32) {
+    pub fn cf_stop_special_fm4(&mut self, a5: u32) {
         self.bclr(a5.wrapping_add(T_PLAYBACK_CONTROL), 7);
         self.bclr(a5.wrapping_add(T_PLAYBACK_CONTROL), 4);
         self.fm_note_off(a5);
@@ -1344,7 +1344,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `cfFadeInToPrevious`.
-    fn cf_fade_in_to_previous(&mut self) {
+    pub fn cf_fade_in_to_previous(&mut self) {
         // Restaura as variáveis e as trilhas de música da cópia.
         for i in 0..(V_1UP_RAM_END / 4) {
             let v = self.rl(Self::ram(V_1UP_RAM_COPY).wrapping_add(i.wrapping_mul(4)));
@@ -1404,7 +1404,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `CycleSoundQueue`.
-    fn cycle_sound_queue(&mut self) {
+    pub fn cycle_sound_queue(&mut self) {
         let a0 = self.rom_ptr(GO_SOUND_PRIORITIES);
         let mut d3 = self.rb(Self::ram(V_SNDPRIO));
         for i in 0..3u32 {
@@ -1436,7 +1436,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `PlaySoundID`.
-    fn play_sound_id(&mut self) -> Fluxo {
+    pub fn play_sound_id(&mut self) -> Fluxo {
         let d7 = self.rb(Self::ram(V_SOUND_ID));
         if decisao!("PlaySoundID:zero", d7 == 0) {
             self.stop_all_sound();
@@ -1491,14 +1491,14 @@ impl<'a> Driver<'a> {
 
     /// `PlaySegaSound`. O laço de espera de cerca de 2 segundos é tempo gravado: sem efeito
     /// observável aqui.
-    fn play_sega_sound(&mut self) -> Fluxo {
+    pub fn play_sega_sound(&mut self) -> Fluxo {
         self.wb(Z80_RAM + Z_DAC_SAMPLE, 0x88);
         self.start_z80();
         Fluxo::SairDoUpdate
     }
 
     /// `Sound_PlayBGM`.
-    fn sound_play_bgm(&mut self, d7: u8) -> Fluxo {
+    pub fn sound_play_bgm(&mut self, d7: u8) -> Fluxo {
         if decisao!("Sound_PlayBGM:vida_extra", d7 == BGM_EXTRA_LIFE) {
             if decisao!(
                 "Sound_PlayBGM:vida_extra_ja_toca",
@@ -1656,7 +1656,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `Sound_PlaySFX`.
-    fn sound_play_sfx(&mut self, d7: u8) {
+    pub fn sound_play_sfx(&mut self, d7: u8) {
         let limpa = |s: &mut Self| s.wb(Self::ram(V_SNDPRIO), 0);
         if decisao!(
             "Sound_PlaySFX:vida_extra_toca",
@@ -1761,7 +1761,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `Sound_PlaySpecial`.
-    fn sound_play_special(&mut self, d7: u8) {
+    pub fn sound_play_special(&mut self, d7: u8) {
         if decisao!(
             "Sound_PlaySpecial:vida_extra_toca",
             self.rb(Self::ram(F_1UP_PLAYING)) != 0
@@ -1837,7 +1837,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `StopSFX`.
-    fn stop_sfx(&mut self) {
+    pub fn stop_sfx(&mut self) {
         self.wb(Self::ram(V_SNDPRIO), 0);
         for i in 0..6u32 {
             let mut a5 = Self::ram(V_SFX_TRACK_RAM).wrapping_add(i.wrapping_mul(T_LEN));
@@ -1886,7 +1886,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `StopSpecialSFX`.
-    fn stop_special_sfx(&mut self) {
+    pub fn stop_special_sfx(&mut self) {
         let a5 = Self::ram(V_SPCSFX_FM4_TRACK);
         if decisao!("StopSpecialSFX:fm_tocando", self.btst(a5, 7)) {
             self.bclr(a5.wrapping_add(T_PLAYBACK_CONTROL), 7);
@@ -1927,7 +1927,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `FadeOutMusic`.
-    fn fade_out_music(&mut self) {
+    pub fn fade_out_music(&mut self) {
         self.stop_sfx();
         self.stop_special_sfx();
         self.wb(Self::ram(V_FADEOUT_DELAY), 3);
@@ -1937,7 +1937,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `DoFadeOut`.
-    fn do_fade_out(&mut self) {
+    pub fn do_fade_out(&mut self) {
         let d0 = self.rb(Self::ram(V_FADEOUT_DELAY));
         if decisao!("DoFadeOut:atraso", d0 != 0) {
             self.wb(Self::ram(V_FADEOUT_DELAY), d0.wrapping_sub(1));
@@ -1978,7 +1978,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `FMSilenceAll`.
-    fn fm_silence_all(&mut self) {
+    pub fn fm_silence_all(&mut self) {
         for d3 in [2u8, 1, 0] {
             self.write_fm_i(0x28, d3);
             self.write_fm_i(0x28, d3.wrapping_add(4));
@@ -1995,7 +1995,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `StopAllSound`.
-    fn stop_all_sound(&mut self) {
+    pub fn stop_all_sound(&mut self) {
         self.write_fm_i(0x2B, 0x80);
         self.write_fm_i(0x27, 0);
         // O original apaga 0x390 bytes e deixa de apagar os últimos 0x10.
@@ -2008,7 +2008,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `InitMusicPlayback`.
-    fn init_music_playback(&mut self) {
+    pub fn init_music_playback(&mut self) {
         let d1 = self.rb(Self::ram(V_SNDPRIO));
         let d2 = self.rb(Self::ram(F_1UP_PLAYING));
         let d3 = self.rb(Self::ram(F_SPEEDUP));
@@ -2028,7 +2028,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `TempoWait`.
-    fn tempo_wait(&mut self) {
+    pub fn tempo_wait(&mut self) {
         let t = self.rb(Self::ram(V_MAIN_TEMPO));
         self.wb(Self::ram(V_MAIN_TEMPO_TIMEOUT), t);
         for i in 0..10u32 {
@@ -2041,7 +2041,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `SpeedUpMusic`.
-    fn speed_up_music(&mut self) {
+    pub fn speed_up_music(&mut self) {
         let deslocamento = if decisao!(
             "SpeedUpMusic:vida_extra",
             self.rb(Self::ram(F_1UP_PLAYING)) != 0
@@ -2060,7 +2060,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `SlowDownMusic`.
-    fn slow_down_music(&mut self) {
+    pub fn slow_down_music(&mut self) {
         let deslocamento = if decisao!(
             "SlowDownMusic:vida_extra",
             self.rb(Self::ram(F_1UP_PLAYING)) != 0
@@ -2079,7 +2079,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `DoFadeIn`.
-    fn do_fade_in(&mut self) {
+    pub fn do_fade_in(&mut self) {
         let atraso = self.rb(Self::ram(V_FADEIN_DELAY));
         if decisao!("DoFadeIn:atraso", atraso != 0) {
             self.wb(Self::ram(V_FADEIN_DELAY), atraso.wrapping_sub(1));
@@ -2118,7 +2118,7 @@ impl<'a> Driver<'a> {
     }
 
     /// `PauseMusic`: `d0` é o byte de `f_pausemusic` (o original usa a flag N dele).
-    fn pause_music(&mut self, d0: u8) {
+    pub fn pause_music(&mut self, d0: u8) {
         if decisao!("PauseMusic:retomar", d0 & 0x80 != 0) {
             self.wb(Self::ram(F_PAUSEMUSIC), 0);
             let mut trilhas = vec![];

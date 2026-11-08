@@ -2,9 +2,9 @@
 
 Documento de acompanhamento do progresso das etapas.
 
-## Etapa 6 (Driver de som): 6.0 a 6.5 feitas, falta o bloco 2 do Marcelo (08/11/2026)
+## Etapa 6 (Driver de som): o critério "Pronto quando" está provado; falta o fechamento do manifesto (08/11/2026)
 
-Plano aprovado em 08/11/2026 (`docs/plano-etapa-6.md`). Bloco 1 feito (patch 0005 aplicado, inventário do som commitado). Feito pela IA: máquina do Z80 com os dois programas e o barramento (6.1 e 6.2, provados contra o oráculo em ROM sintética), driver do 68000 inteiro (6.3), integração do DAC e da voz SEGA (6.4) e harness `som` em `diferencial-som/` (6.5). Detalhes, desvios do plano e evidência em `docs/conhecimento/som.md`. **Falta (Marcelo, host):** `sh scripts/etapa6-bloco2.sh 2>&1 | tee /tmp/etapa6-bloco2.txt | tail -120`. Depois: correções do que o relatório acusar, cobertura e bugs conhecidos (6.6), fechamento (6.7).
+Plano aprovado em 08/11/2026 (`docs/plano-etapa-6.md`). Relatório do som com a ROM real: **78 IGUAL, 0 DIVERGE** (hash `ff49435d25246d1734cc344369bfe58f0c104735`), cobrindo todas as músicas, todos os efeitos e os comandos: escritas nos chips (incluindo o DAC) idênticas em conteúdo e ordem, estado do driver na RAM, RAM do Z80 e posição do Z80 idênticos. Máquina do Z80 (programas de partida e do DAC, bateria e voz SEGA) provada também contra o oráculo em ROM sintética. Detalhes, desvios do plano e evidência em `docs/conhecimento/som.md`. **Pendente:** (Marcelo) refazer o manifesto assinado com `sh scripts/etapa5-assinar.sh`, porque o patch 0005 mudou `oracle/`, e rodar os testes wasm na imagem (`cargo test --target wasm32-wasip1 -p sonic1-core -p sonic1-teste-som`). (BACKLOG) cobertura e mutantes do som, roteiros para seis bugs conhecidos, patch do relatório e do manifesto para o som. Bugs conhecidos do som: 8 de 20 com teste nomeado, os outros mapeados em `cobertura/bugs-som.txt`.
 
 ## Etapa 5 (Núcleo base): concluída, falta a sessão de revisão (texto do cabeçalho corrigido em 08/11/2026)
 

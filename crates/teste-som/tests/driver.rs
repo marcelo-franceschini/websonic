@@ -1,3 +1,4 @@
+#![allow(non_snake_case)] // nomes BK_nnnn da lista de bugs conhecidos
 //! Driver do 68000 com uma ROM sintética escrita por nós: tabelas, uma música mínima e
 //! efeitos de brinquedo. O formato de música e de voz segue a documentação pública do SMPS
 //! (Sonic Retro, "SMPS" e "SMPS Music Format"). Nada vem da ROM do jogo.
@@ -114,7 +115,7 @@ fn fila_escreve_no_byte_certo() {
 }
 
 #[test]
-fn a_terceira_fila_e_ignorada_pelo_update() {
+fn BK_0276_a_terceira_fila_e_ignorada_pelo_update() {
     // Bug conhecido do original: `UpdateMusic` só testa as duas primeiras filas.
     let mut m = memoria();
     m.ram_mut()[0xF000 + usize::try_from(V_SOUND_ID).unwrap()] = 0x80;
@@ -207,7 +208,7 @@ fn execucoes_iguais_dao_saidas_iguais() {
 }
 
 #[test]
-fn comando_de_parar_tudo_limpa_a_ram_do_driver_menos_os_ultimos_16_bytes() {
+fn BK_0286_parar_tudo_limpa_a_ram_do_driver_menos_os_ultimos_16_bytes() {
     // Bug conhecido: `StopAllSound` deixa de apagar os últimos $10 bytes antes da cópia do 1UP.
     let mut m = memoria();
     for i in 0..usize::try_from(V_1UP_RAM_COPY).unwrap() {
@@ -228,5 +229,107 @@ fn comando_de_parar_tudo_limpa_a_ram_do_driver_menos_os_ultimos_16_bytes() {
         m.ram()[0xF000 + fim_limpo + 4..0xF000 + fim_limpo + 0x10]
             .iter()
             .all(|b| *b == 0xAA)
+    );
+}
+
+fn poke(m: &mut Memoria, off: u32, v: u8) {
+    m.ram_mut()[0xF000 + usize::try_from(off).unwrap()] = v;
+}
+
+#[test]
+fn BK_0277_musica_aceita_ids_ate_9f_e_trata_94_como_musica() {
+    // O original testa `<= $9F` e não `<= $93`: o ID $94 entra em `Sound_PlayBGM`.
+    let mut m = memoria();
+    poke(&mut m, F_1UP_PLAYING, 0x55);
+    poke(&mut m, V_SOUND_ID, 0x94);
+    Driver::novo(&mut m).update_music();
+    assert_eq!(ram(&m, F_1UP_PLAYING), 0, "o caminho de música rodou");
+}
+
+#[test]
+fn BK_0278_especial_aceita_ids_ate_df_e_trata_d5_como_especial() {
+    let mut m = memoria();
+    for i in 0..4 {
+        poke(&mut m, V_SPECIAL_VOICE_PTR + i, 0xEE);
+    }
+    poke(&mut m, V_SOUND_ID, 0xD5);
+    Driver::novo(&mut m).update_music();
+    assert_ne!(
+        ram(&m, V_SPECIAL_VOICE_PTR),
+        0xEE,
+        "o caminho do especial rodou"
+    );
+}
+
+#[test]
+fn BK_0287_inicio_de_musica_perde_a_terceira_fila() {
+    // `InitMusicPlayback` salva e restaura só as filas 0 e 1: a fila 3 é apagada.
+    let mut m = memoria();
+    poke(&mut m, V_SOUND_ID, 0x81);
+    poke(&mut m, V_SOUNDQUEUE2, 0x77);
+    Driver::novo(&mut m).update_music();
+    assert_eq!(ram(&m, V_SOUNDQUEUE2), 0);
+}
+
+#[test]
+fn BK_0290_fim_do_fade_in_nao_reescreve_o_registrador_2b() {
+    let mut m = memoria();
+    poke(&mut m, F_FADEIN_FLAG, 0x80);
+    poke(&mut m, V_FADEIN_COUNTER, 0);
+    poke(&mut m, V_SOUND_ID, 0x80);
+    Driver::novo(&mut m).update_music();
+    let ym: Vec<Saida> = m
+        .tirar_saidas()
+        .into_iter()
+        .filter(|s| matches!(s, Saida::Ym { .. }))
+        .collect();
+    assert!(
+        ym.is_empty(),
+        "sem o conserto, o fim do fade não escreve no YM: {ym:?}"
+    );
+    assert_eq!(ram(&m, F_FADEIN_FLAG), 0);
+}
+
+#[test]
+fn BK_0292_parar_psg3_nao_silencia_o_ruido() {
+    let mut m = memoria();
+    let a5 = 0xFF_F000 + V_MUSIC_PSG3_TRACK;
+    m.escrever(a5 + T_VOICE_CONTROL, Tamanho::Byte, 0xC0)
+        .unwrap();
+    Driver::novo(&mut m).psg_note_off(a5);
+    let psg: Vec<u8> = m
+        .tirar_saidas()
+        .into_iter()
+        .filter_map(|s| if let Saida::Psg(v) = s { Some(v) } else { None })
+        .collect();
+    assert_eq!(psg, vec![0xDF], "só o canal 3, sem o byte $FF do ruído");
+}
+
+#[test]
+fn BK_0291_envelope_de_psg_so_trata_o_terminador_80() {
+    // Envelope com o valor $E0 (negativo, mas não o terminador).
+    let env = 0x7_1A00usize;
+    // O teste monta a ROM base e troca o primeiro byte do envelope 1.
+    let mut rom = rom_base();
+    rom[env] = 0xE0;
+    let mut m = Memoria::nova(rom);
+    m.escrever(0xA1_1200, Tamanho::Word, 0x100).unwrap();
+    let a5 = 0xFF_F000 + V_MUSIC_PSG_TRACKS;
+    m.escrever(a5 + T_VOICE_CONTROL, Tamanho::Byte, 0x80)
+        .unwrap();
+    m.escrever(a5 + T_VOICE_INDEX, Tamanho::Byte, 1).unwrap();
+    m.escrever(a5 + T_VOLUME, Tamanho::Byte, 2).unwrap();
+    Driver::novo(&mut m).psg_do_vol_fx(a5);
+    let psg: Vec<u8> = m
+        .tirar_saidas()
+        .into_iter()
+        .filter_map(|s| if let Saida::Psg(v) = s { Some(v) } else { None })
+        .collect();
+    // Volume 2 + $E0 passa de $0F: o original limita a $0F e envia (canal $80 | $0F) + $10.
+    assert_eq!(psg, vec![0x9F]);
+    assert_eq!(
+        ram(&m, V_MUSIC_PSG_TRACKS + T_VOL_ENV_INDEX),
+        1,
+        "o índice andou"
     );
 }
