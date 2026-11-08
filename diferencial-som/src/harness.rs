@@ -325,6 +325,9 @@ fn comparar(
     let (mut ip, mut il, mut ie) = (0usize, 0usize, 0usize);
     let calibrado = calibrar_espera(&mut mem, pontos.first());
     let _ = calibrado;
+    // Depois de um trecho longo (voz SEGA) o Z80 do oráculo anda sozinho; o do núcleo só alcança
+    // no primeiro ponto do trecho seguinte. Enquanto isso a RAM do Z80 não é comparável.
+    let mut z80_defasado = false;
     for (k, t) in trechos.iter().enumerate() {
         let k32 = u32::try_from(k).unwrap_or(u32::MAX);
         // Acessos ao Z80 feitos por código que o núcleo não roda.
@@ -341,7 +344,10 @@ fn comparar(
                 rel.externas = rel.externas.saturating_add(1);
             }
         }
-        if let Some(d) = (0..t.z80_entrada.len()).find(|&d| mem.ram_z80()[d] != t.z80_entrada[d]) {
+        if !z80_defasado
+            && let Some(d) =
+                (0..t.z80_entrada.len()).find(|&d| mem.ram_z80()[d] != t.z80_entrada[d])
+        {
             rel.falha = Some((k32, Falha::RamDoZ80 { deslocamento: d }));
             break;
         }
@@ -356,20 +362,39 @@ fn comparar(
             }
             il += 1;
         }
+        let ultimo_ponto_mclk = pontos[..ip]
+            .iter()
+            .rev()
+            .map(|p| p.mclk)
+            .find(|m| *m >= t.entrada_mclk);
+        let trecho_longo = ultimo_ponto_mclk.is_some_and(|m| t.saida_mclk.saturating_sub(m) > 3000);
         let esperas = {
             let mut d = Driver::novo(&mut mem);
             d.update_music();
             d.esperas_estouradas
         };
-        // Escritas esperadas: do ponto onde parou até o último BUSREQ liberado do trecho.
-        let fim = (ie..itens.len())
+        // Escritas esperadas: do ponto onde parou até o fim do trecho. O fim é o último BUSREQ
+        // liberado (depois dele o Z80 anda sozinho e esses eventos entram no trecho seguinte),
+        // a menos que haja escrita do 68000 depois dele (um trecho que tomou o barramento de
+        // novo e não o devolveu).
+        let ultimo_libera = (ie..itens.len())
             .rfind(|&i| matches!(itens[i].1, ItemOraculo::Libera) && itens[i].0 <= t.saida_mclk);
-        let fim = fim.unwrap_or_else(|| {
-            (ie..itens.len())
-                .take_while(|&i| itens[i].0 <= t.saida_mclk)
-                .last()
-                .map_or(ie, |x| x + 1)
+        let ultimo_68000 = (ie..itens.len()).rfind(|&i| {
+            matches!(itens[i].1, ItemOraculo::Som((tipo, _, _)) if tipo != 1)
+                && itens[i].0 <= t.saida_mclk
         });
+        let fim = match (ultimo_libera, ultimo_68000) {
+            (Some(l), Some(s)) => {
+                if l > s {
+                    l
+                } else {
+                    s.saturating_add(1)
+                }
+            }
+            (Some(l), None) => l,
+            (None, Some(s)) => s.saturating_add(1),
+            (None, None) => ie,
+        };
         let esperadas: Vec<EventoSom> = itens[ie..fim.min(itens.len())]
             .iter()
             .filter_map(|(_, i)| match i {
@@ -377,6 +402,24 @@ fn comparar(
                 ItemOraculo::Libera => None,
             })
             .collect();
+        if std::env::var("WEBSONIC_DEBUG").is_ok() && k < 3 {
+            let dentro = itens
+                .iter()
+                .filter(|(m, _)| *m >= t.entrada_mclk && *m <= t.saida_mclk)
+                .count();
+            let libera = itens
+                .iter()
+                .filter(|(m, i)| {
+                    *m >= t.entrada_mclk && *m <= t.saida_mclk && matches!(i, ItemOraculo::Libera)
+                })
+                .count();
+            eprintln!(
+                "trecho {k}: entrada={} saida={} ie={ie} fim={fim} itens={} dentro={dentro} libera_dentro={libera}",
+                t.entrada_mclk,
+                t.saida_mclk,
+                itens.len()
+            );
+        }
         ie = (fim + 1).min(itens.len());
         let obtidas: Vec<EventoSom> = mem
             .tirar_saidas()
@@ -437,6 +480,7 @@ fn comparar(
                 ));
             }
         }
+        z80_defasado = trecho_longo;
         if rel.falha.is_some() {
             break;
         }
