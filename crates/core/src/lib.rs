@@ -6,6 +6,7 @@
 //! implícito de inteiros, sem casts que truncam e sem coleções não determinísticas.
 #![forbid(unsafe_code)]
 
+pub mod abertura;
 pub mod aritmetica;
 pub mod cobertura;
 pub mod descompressao;
