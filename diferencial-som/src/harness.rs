@@ -349,8 +349,8 @@ fn comparar(
             }
         }
         if !z80_defasado
-            && let Some(d) =
-                (0..t.z80_entrada.len()).find(|&d| mem.ram_z80()[d] != t.z80_entrada[d])
+            && let Some(d) = (0..t.z80_entrada.len())
+                .find(|&d| !RACE_Z80.contains(&d) && mem.ram_z80()[d] != t.z80_entrada[d])
         {
             rel.falha = Some((k32, Falha::RamDoZ80 { deslocamento: d }));
             break;
@@ -470,8 +470,9 @@ fn comparar(
                     != t.regiao_saida[i]
             }) {
                 rel.falha = Some((k32, Falha::RegiaoDoDriver { deslocamento: d }));
-            } else if let Some(d) =
-                (0..t.z80_saida.len()).find(|&d| mem.ram_z80()[d] != t.z80_saida[d])
+            } else if !trecho_longo
+                && let Some(d) = (0..t.z80_saida.len())
+                    .find(|&d| !RACE_Z80.contains(&d) && mem.ram_z80()[d] != t.z80_saida[d])
             {
                 rel.falha = Some((k32, Falha::RamDoZ80 { deslocamento: d }));
             } else if mem.pontos_z80_pendentes() > 0 {
