@@ -10,7 +10,8 @@ ext=${SONIC1_EXT_DIR:-$HOME/sonic1-ext}
 traces=$ext/privado/traces
 rom="$HOME/sonic1-ext/rom/Sonic The Hedgehog (W) (REV01) [!].gen"
 bin=$ext/trabalho/oracle/alvo/release/oraculo
-chave_assina=$HOME/.ssh/websonic_assinatura
+# Chave nova (a senha da anterior foi perdida). Troca refs/assinante.pub antes do manifesto.
+chave_assina=$HOME/.ssh/websonic_assinatura_nova
 chave_ocultos_cifrada=$HOME/.config/websonic/ocultos.key.age
 resumo=/tmp/etapa5-assinar.txt
 cd "$repo"
@@ -36,6 +37,11 @@ IFS= read -r SENHA
 stty echo
 printf '\n' >&2
 [ -n "$SENHA" ] || { echo "Erro: senha vazia." >&2; exit 1; }
+
+if ! cmp -s "$chave_assina.pub" refs/assinante.pub; then
+    cp "$chave_assina.pub" refs/assinante.pub
+    dizer "refs/assinante.pub: trocado pela chave nova"
+fi
 
 dizer "=== 1. TRACES DO CORPUS (oraculo novo) ==="
 registrar cargo fidelidade corpus-trace --rom "$rom" --oraculo "$bin" --rotulos refs/rotulos.txt --saida "$traces"
