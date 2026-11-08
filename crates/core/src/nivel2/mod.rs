@@ -15,6 +15,13 @@ pub struct Previsao {
     pub fim: u32,
 }
 
+/// Ajuste da atualização da memória (refresh): a medida do oráculo na 7.8 deu o mesmo desvio
+/// de 1,5877% para a soma da ROM e para a limpeza da RAM, igual a 128/126, isto é, 2 ciclos
+/// perdidos a cada 128. É um ajuste tirado da medida, ainda sem fonte de hardware conferida.
+pub fn com_refresh(ciclos: u64) -> u64 {
+    ciclos.saturating_mul(128) / 126
+}
+
 fn palavra(rom: &[u8], a: u32) -> Option<u16> {
     let i = usize::try_from(a).ok()?;
     let b = rom.get(i..i.checked_add(2)?)?;

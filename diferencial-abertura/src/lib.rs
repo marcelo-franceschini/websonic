@@ -10,7 +10,7 @@ use oracle_trace::TempoRaw;
 use sonic1_core::abertura::ram::{PILHA_FIM, PILHA_INICIO};
 use sonic1_core::abertura::{Abertura, EventoQuadro, MARCAS};
 use sonic1_core::memoria::{ClasseLeitura, PortaVdp, Saida, Tamanho};
-use sonic1_core::nivel2::{laco_da_limpeza, laco_da_soma, laco_da_voz};
+use sonic1_core::nivel2::{com_refresh, laco_da_limpeza, laco_da_soma, laco_da_voz};
 use sonic1_core::quadro::tempo::AcessoZ80;
 use sonic1_core::som::z80::PontoZ80;
 use sonic1_fidelidade::hash::{em_hex, sha1_de_partes};
@@ -59,6 +59,8 @@ pub struct Relatorio {
     pub int6_oraculo: u32,
     /// Experimento do nível 2: (nome, medido em ciclos do 68000, previsto).
     pub nivel2: Vec<(String, u64, u64)>,
+    /// Diagnóstico do modelo: nome, reconhecido, início visto, fim visto.
+    pub nivel2_estado: Vec<String>,
     /// Comparação nas esperas de VBlank (D7.4): o laço principal chegou a `WaitForVBlank`.
     pub esperas_iguais: u32,
     pub esperas_diverge: u32,
@@ -533,6 +535,12 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
         ("limpeza_da_ram", limpeza, 0x364),
         ("espera_da_voz", voz, 0x7_1FAC),
     ] {
+        rel.nivel2_estado.push(format!(
+            "{nome} reconhecido={} inicio_visto={} fim_visto={}",
+            p.is_some(),
+            extras_mclk.contains_key(&(nome, ini)),
+            p.is_some_and(|p| extras_mclk.contains_key(&(nome, p.fim)))
+        ));
         if let Some(p) = p
             && let (Some(a), Some(b)) = (
                 extras_mclk.get(&(nome, ini)),
@@ -646,6 +654,9 @@ pub fn imprimir(rel: &Relatorio) {
     for (nome, n) in &rel.esperas_variaveis {
         println!("espera_variavel_divergente {nome} esperas={n}");
     }
+    for e in &rel.nivel2_estado {
+        println!("nivel2_modelo {e}");
+    }
     for (nome, medido, previsto) in &rel.nivel2 {
         let erro = i128::from(*previsto) - i128::from(*medido);
         let ppm = if *medido == 0 {
@@ -653,8 +664,15 @@ pub fn imprimir(rel: &Relatorio) {
         } else {
             erro * 1_000_000 / i128::from(*medido)
         };
+        let com = i128::from(com_refresh(*previsto));
+        let erro2 = com - i128::from(*medido);
+        let ppm2 = if *medido == 0 {
+            0
+        } else {
+            erro2 * 1_000_000 / i128::from(*medido)
+        };
         println!(
-            "nivel2 {nome} medido_ciclos={medido} previsto_ciclos={previsto} erro_ciclos={erro} erro_ppm={ppm}"
+            "nivel2 {nome} medido_ciclos={medido} previsto_ciclos={previsto} erro_ciclos={erro} erro_ppm={ppm} previsto_com_refresh={com} erro_com_refresh_ciclos={erro2} erro_com_refresh_ppm={ppm2}"
         );
     }
     for (q, m) in &rel.ignoradas_em {

@@ -70,3 +70,15 @@ Marcas (a parada devolve o quadro fechado e o `mclk` do **fim desse quadro**, n�
 - Escritas do Z80 no YM2612 (a voz SEGA pelo DAC): 54000 contra 54000, iguais em conteúdo e ordem. Escritas de vídeo, PSG, YM do 68000 e mudanças do BUSREQ e do RESET: iguais até onde o núcleo vai (as 6875 de vídeo, 8 do PSG, 64 do YM do 68000, 529 mudanças do Z80). As que faltam (51 de vídeo, 4 do PSG, 64 do YM, 5 do Z80) são do começo do título, quadros 328 e 329, que é a sub-etapa 7.5.
 - O VBlank que fica pendente depois da voz roda como quadro de lag, só com o driver de som (`v_vblank_routine` já é zero). O núcleo roda os eventos um quadro depois dos pontos do Z80 (D7.12).
 - Veredito do relatório continua `DIVERGE` só porque as contagens finais incluem o título.
+
+## Experimento do nível 2 (7.8): primeira medida (Marcelo, 08/11/2026, `scripts/etapa7-bloco2.sh`, 330 quadros)
+
+Modelo: `crates/core/src/nivel2/`, lê as constantes dos laços nos bytes da ROM e soma os ciclos da tabela do manual do 68000. Medida: ciclos do 68000 entre a primeira chegada do PC ao início e ao fim do laço no oráculo (mclk dividido por 7).
+
+| Laço | Medido (ciclos) | Previsto | Erro |
+| --- | --- | --- | --- |
+| Soma de verificação da ROM | 6385118 | 6285326 | -99792 (-15628 ppm, -1,56%) |
+| Limpeza da RAM de `GameInit` | 363338 | 357660 | -5678 (-15627 ppm, -1,56%) |
+| Espera da voz SEGA | não saiu na tabela (o modelo não reconheceu o trecho, ou o oráculo não chegou ao fim; diagnóstico adicionado) | | |
+
+Leitura: os dois erros têm o mesmo valor relativo (15628 ppm), o que aponta para um fator de hardware constante e não para erro na contagem de instruções. A razão medido por previsto é 1,01588, igual a 128/126: perda de 2 ciclos a cada 128, a atualização (refresh) da memória. Hipótese, sem fonte de hardware conferida: com esse fator o erro previsto cai para -25 ciclos na soma e +1 ciclo na limpeza (conta feita à mão, a conferir na próxima rodada). O fator foi ajustado nesses dois pontos e não prova nada fora deles.
