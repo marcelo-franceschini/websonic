@@ -51,9 +51,9 @@ grep -q '^determinismo: PASSOU$' "$traces/resumo-etapa5.tsv" \
 grep -v '^determinismo' "$traces/resumo-etapa5.tsv" > "$traces/hashes-etapa5.tsv"
 
 dizer "=== 1b. COBERTURA COM OS TRACES NOVOS ==="
-# Extrai os desvios executados no corpus. Tem de rodar antes do manifesto: o arquivo entra nele.
+# O arquivo executados-68k.txt vem de scripts/etapa5-cobertura.sh e entra no manifesto.
 acc=$ext/privado/etapa5
-cargo fidelidade cobertura extrair --traces "$traces" --saida cobertura/executados-68k.txt | tee -a "$resumo"
+[ -s cobertura/executados-68k.txt ] || echo "Aviso: cobertura/executados-68k.txt vazio. Rode antes scripts/etapa5-cobertura.sh." >&2
 cat "$acc/nucleo-testes.txt" "$acc/nucleo-rotinas.txt" > "$acc/nucleo-todos.txt"
 cargo fidelidade cobertura relatorio --nucleo "$acc/nucleo-todos.txt" --executados cobertura/executados-68k.txt \
     --executados "$acc/executados-rotinas.txt" --mapa cobertura/mapa-decisoes.txt --saida "$acc/cobertura.tsv" \
