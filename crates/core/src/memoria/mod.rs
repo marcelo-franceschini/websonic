@@ -217,6 +217,45 @@ impl Memoria {
         self.z80.avancar(&mut amb, ciclos);
     }
 
+    /// Estado dos sinais do Z80 (para começar de um estado salvo do oráculo).
+    pub fn definir_estado_z80(&mut self, busreq: bool, reset: bool) {
+        self.busreq = busreq;
+        self.reset_z80 = reset;
+    }
+
+    pub fn ram_z80_mut(&mut self) -> &mut [u8; TAMANHO_RAM_Z80] {
+        &mut self.ram_z80
+    }
+
+    /// Aplica um ponto do Z80 que veio de um acesso feito por código que o núcleo não roda (por
+    /// exemplo, o resto da rotina de VBlank): avança a máquina, confere a posição e aplica o
+    /// efeito do acesso nos sinais e na RAM do Z80.
+    pub fn aplicar_ponto_externo(&mut self, p: &PontoZ80) {
+        self.avancar_z80(u64::from(p.ativos));
+        let obtido = (
+            self.z80.pc(),
+            u16::try_from(self.z80.espera()).unwrap_or(u16::MAX),
+            self.z80.banco().valor(),
+        );
+        if obtido != (p.pc, p.espera, p.banco) {
+            self.divergencias_z80.push(DivergenciaZ80::Posicao {
+                acesso: p.acesso,
+                esperado: (p.pc, p.espera, p.banco),
+                obtido,
+            });
+        }
+        match p.acesso {
+            AcessoZ80::BusReqPedido => self.busreq = true,
+            AcessoZ80::BusReqLiberado => self.busreq = false,
+            AcessoZ80::ResetLigado => self.reset_z80 = true,
+            AcessoZ80::ResetSolto => self.reset_z80 = false,
+            AcessoZ80::EscritaJanela if p.endereco < 0x4000 => {
+                self.ram_z80[indice(u32::from(p.endereco), 0x1FFF)] = p.byte;
+            }
+            AcessoZ80::EscritaJanela | AcessoZ80::LeituraJanela => {}
+        }
+    }
+
     fn sincronizar_z80(&mut self, acesso: AcessoZ80) {
         let Some(p) = self.pontos_z80.pop_front() else {
             return;

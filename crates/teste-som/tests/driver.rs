@@ -46,12 +46,16 @@ fn rom_base() -> Vec<u8> {
     }
     // FMFrequencies: uma frequência distinta por nota.
     for i in 0..96usize {
-        p16(&mut rom, 0x7_2790 + i * 2, u16::try_from(0x200 + i * 7).unwrap());
+        p16(
+            &mut rom,
+            0x7_2790 + i * 2,
+            u16::try_from(0x200 + i * 7).unwrap(),
+        );
     }
     rom[0x7_2CAC..0x7_2CB4].copy_from_slice(&[8, 8, 8, 8, 0xA, 0xE, 0xE, 0xF]);
     let ops = [
-        0x30u8, 0x38, 0x34, 0x3C, 0x50, 0x58, 0x54, 0x5C, 0x60, 0x68, 0x64, 0x6C, 0x70, 0x78,
-        0x74, 0x7C, 0x80, 0x88, 0x84, 0x8C,
+        0x30u8, 0x38, 0x34, 0x3C, 0x50, 0x58, 0x54, 0x5C, 0x60, 0x68, 0x64, 0x6C, 0x70, 0x78, 0x74,
+        0x7C, 0x80, 0x88, 0x84, 0x8C,
     ];
     rom[0x7_2D18..0x7_2D2C].copy_from_slice(&ops);
     rom[0x7_2D2C..0x7_2D30].copy_from_slice(&[0x40, 0x48, 0x44, 0x4C]);
@@ -215,6 +219,14 @@ fn comando_de_parar_tudo_limpa_a_ram_do_driver_menos_os_ultimos_16_bytes() {
     // O tempo principal tem de expirar ou o update segue para o som novo do mesmo jeito.
     Driver::novo(&mut m).update_music();
     let fim_limpo = usize::try_from(V_1UP_RAM_COPY).unwrap() - 0x10;
-    assert!(m.ram()[0xF000 + 0x10..0xF000 + fim_limpo].iter().all(|b| *b == 0 || *b == 0x80));
-    assert!(m.ram()[0xF000 + fim_limpo + 4..0xF000 + fim_limpo + 0x10].iter().all(|b| *b == 0xAA));
+    assert!(
+        m.ram()[0xF000 + 0x10..0xF000 + fim_limpo]
+            .iter()
+            .all(|b| *b == 0 || *b == 0x80)
+    );
+    assert!(
+        m.ram()[0xF000 + fim_limpo + 4..0xF000 + fim_limpo + 0x10]
+            .iter()
+            .all(|b| *b == 0xAA)
+    );
 }

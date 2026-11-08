@@ -158,11 +158,19 @@ fn lo(v: u32) -> u8 {
 /// O driver sobre uma `Memoria`.
 pub struct Driver<'a> {
     pub m: &'a mut Memoria,
+    /// Quantas vezes um laço de espera chegou ao limite por falta de tempo gravado.
+    pub esperas_estouradas: u64,
 }
+
+/// Voltas máximas de um laço de espera antes de desistir (só vale sem tempo gravado).
+const LIMITE_ESPERA: u32 = 100_000;
 
 impl<'a> Driver<'a> {
     pub fn novo(m: &'a mut Memoria) -> Self {
-        Self { m }
+        Self {
+            m,
+            esperas_estouradas: 0,
+        }
     }
 
     // --- Acesso à memória ---
@@ -246,10 +254,21 @@ impl<'a> Driver<'a> {
     /// Espera o chip ficar livre, escreve o registrador, espera de novo e escreve o dado.
     fn write_fm(&mut self, endereco: u32, dado: u32, d0: u8, d1: u8) {
         // Os laços leem o bit de ocupado, que vem do tempo gravado.
-        while self.rb(YM_A0) & 0x80 != 0 {}
+        self.esperar_ym_livre();
         self.wb(endereco, d0);
-        while self.rb(YM_A0) & 0x80 != 0 {}
+        self.esperar_ym_livre();
         self.wb(dado, d1);
+    }
+
+    /// Laço de espera do bit de ocupado do YM2612. Com o tempo gravado esgotado o último valor se
+    /// repete; o limite evita travar o teste e é contado em `esperas_estouradas`.
+    fn esperar_ym_livre(&mut self) {
+        for _ in 0..LIMITE_ESPERA {
+            if self.rb(YM_A0) & 0x80 == 0 {
+                return;
+            }
+        }
+        self.esperas_estouradas = self.esperas_estouradas.saturating_add(1);
     }
 
     /// `WriteFMIorII`.
@@ -302,7 +321,14 @@ impl<'a> Driver<'a> {
         loop {
             self.stop_z80();
             // .updateloop: espera o BUSACK (bit 0 do byte lido em A11100 vira zero).
-            while self.rb(Z80_BUS_REQUEST) & 1 != 0 {}
+            let mut esperou = 0u32;
+            while self.rb(Z80_BUS_REQUEST) & 1 != 0 {
+                esperou = esperou.saturating_add(1);
+                if esperou >= LIMITE_ESPERA {
+                    self.esperas_estouradas = self.esperas_estouradas.saturating_add(1);
+                    break;
+                }
+            }
             if decisao!(
                 "UpdateMusic:dac_ocupado",
                 self.rb(Z80_RAM + Z_DAC_STATUS) & 0x80 != 0

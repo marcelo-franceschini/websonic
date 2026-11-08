@@ -121,10 +121,19 @@ fn enderecos_das_tabelas_da_rom_batem_com_o_mapa() {
         ("FMFrequencies", driver::FM_FREQUENCIES),
         ("PSGFrequencies", driver::PSG_FREQUENCIES),
         ("FMSlotMask", driver::FM_SLOT_MASK),
-        ("FMInstrumentOperatorTable", driver::FM_INSTRUMENT_OPERATOR_TABLE),
-        ("FMInstrumentOperatorTable_End", driver::FM_INSTRUMENT_OPERATOR_TABLE_END),
+        (
+            "FMInstrumentOperatorTable",
+            driver::FM_INSTRUMENT_OPERATOR_TABLE,
+        ),
+        (
+            "FMInstrumentOperatorTable_End",
+            driver::FM_INSTRUMENT_OPERATOR_TABLE_END,
+        ),
         ("FMInstrumentTLTable", driver::FM_INSTRUMENT_TL_TABLE),
-        ("FMInstrumentTLTable_End", driver::FM_INSTRUMENT_TL_TABLE_END),
+        (
+            "FMInstrumentTLTable_End",
+            driver::FM_INSTRUMENT_TL_TABLE_END,
+        ),
         ("DAC_sample_rate", driver::DAC_SAMPLE_RATE),
     ];
     for (nome, valor) in tabelas {

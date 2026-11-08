@@ -54,6 +54,9 @@ pub struct PontoZ80 {
     pub banco: u16,
     pub endereco: u16,
     pub byte: u8,
+    /// Relógio mestre do oráculo no acesso (só para separar os acessos de dentro e de fora de
+    /// uma rotina; o núcleo não o usa).
+    pub mclk: u64,
 }
 
 impl PontoZ80 {
@@ -67,7 +70,7 @@ impl PontoZ80 {
                 banco,
                 endereco,
                 byte,
-                ..
+                mclk,
             } => Some(Self {
                 acesso,
                 pc,
@@ -76,6 +79,7 @@ impl PontoZ80 {
                 banco,
                 endereco,
                 byte,
+                mclk,
             }),
             _ => None,
         }
@@ -210,13 +214,21 @@ impl MaquinaZ80 {
 
     /// Ponto de partida para testes e para o harness: põe a máquina num trecho conhecido do
     /// driver de DAC, com as variáveis do laço de espera de amostra.
-    pub fn injetar_driver_dac_ocioso(&mut self, pc: u16, espera: u32, banco: u16) {
+    pub fn injetar_driver_dac_ocioso(&mut self, pc: u16, espera: u32, banco: u16, valor: u8) {
         self.programa = Programa::Dac;
         self.pc = pc;
         self.espera = espera;
         self.banco = Banco(banco & 0x1FF);
         self.base_ym = 0x4000;
         self.ponteiro = 0x1FFF;
+        self.valor = valor;
+        self.comando_dac = 0x2A;
+        self.ponteiro_status = 0x1FFD;
+    }
+
+    /// Muda só os ciclos que faltam (para calibrar um estado injetado).
+    pub fn definir_espera(&mut self, espera: u32) {
+        self.espera = espera;
     }
 
     // --- Leitura e escrita no espaço de endereços do Z80 ---

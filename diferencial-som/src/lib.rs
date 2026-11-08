@@ -5,6 +5,8 @@
 //! gravado ligado, e repetido no núcleo com os pontos do Z80 gravados. Quem usa compara as
 //! escritas no YM2612, a RAM do Z80 e as divergências de posição.
 
+pub mod harness;
+
 use oracle_trace::TempoRaw;
 use sonic1_core::memoria::{Memoria, Saida, Tamanho};
 use sonic1_core::quadro::tempo::AcessoZ80;
@@ -65,7 +67,7 @@ pub fn rom_do_roteiro(roteiro: &[Op]) -> Vec<u8> {
     rom.finalizar()
 }
 
-fn acesso_de(codigo: u8) -> Option<AcessoZ80> {
+pub fn acesso_de(codigo: u8) -> Option<AcessoZ80> {
     use oracle_trace::acesso_z80::*;
     Some(match codigo {
         BUSREQ_PEDIDO => AcessoZ80::BusReqPedido,
@@ -109,7 +111,7 @@ pub fn rodar_oraculo(rom: Vec<u8>, quadros: u32) -> SaidaOraculo {
                 banco,
                 endereco,
                 byte,
-                ..
+                mclk,
             } = r
             {
                 pontos.push(PontoZ80 {
@@ -120,6 +122,7 @@ pub fn rodar_oraculo(rom: Vec<u8>, quadros: u32) -> SaidaOraculo {
                     banco,
                     endereco,
                     byte,
+                    mclk,
                 });
             }
         }
