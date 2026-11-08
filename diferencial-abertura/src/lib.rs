@@ -52,6 +52,7 @@ pub struct Relatorio {
     pub int6_oraculo: u32,
     pub int6_nucleo_tratadas: u32,
     pub int6_nucleo_ignoradas: u32,
+    pub ignoradas_em: Vec<(u32, String)>,
     /// Quadros em que cada marca chegou.
     pub marcas_vistas: BTreeMap<String, Vec<u32>>,
     /// Sequências do Z80 (sinal e estado), só para diagnóstico: oráculo e núcleo.
@@ -239,6 +240,9 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
                     mclk,
                     ..
                 } => {
+                    if nivel == 6 {
+                        rel.int6_oraculo += 1;
+                    }
                     linha.push((
                         mclk,
                         EventoQuadro::Interrupcao {
@@ -397,6 +401,7 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
     }
     rel.int6_nucleo_tratadas = nucleo.vblanks_tratados;
     rel.int6_nucleo_ignoradas = nucleo.interrupcoes_ignoradas;
+    rel.ignoradas_em = nucleo.ignoradas_em.clone();
     let log = nucleo.mem.acessos_z80();
     if let Some(i) =
         (0..acessos_oraculo.len().min(log.len())).find(|&i| acessos_oraculo[i] != log[i])
@@ -468,6 +473,9 @@ pub fn imprimir(rel: &Relatorio) {
         "interrupcoes_nivel6: oraculo={} nucleo_tratadas={} nucleo_ignoradas={}",
         rel.int6_oraculo, rel.int6_nucleo_tratadas, rel.int6_nucleo_ignoradas
     );
+    for (q, m) in &rel.ignoradas_em {
+        println!("interrupcao_ignorada quadro={q} modo={m}");
+    }
     let mut v: Vec<_> = rel.ram_variaveis.iter().collect();
     v.sort_by_key(|(_, n)| std::cmp::Reverse(**n));
     for (nome, n) in v.iter().take(20) {

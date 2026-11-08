@@ -110,8 +110,11 @@ enum Sega {
     WaitPal,
     /// A voz foi pedida: o VBlank seguinte roda o driver, que só volta no fim da voz.
     Voz,
-    /// O tratador do VBlank da voz está em curso (termina em `Sega_WaitEnd`).
+    /// O tratador do VBlank da voz está em curso. Ele acaba na interrupção seguinte: o VBlank
+    /// que ficou pendente é atendido logo depois do `rte`, antes de o laço principal rodar.
     VozEmCurso,
+    /// A voz acabou; falta o laço principal chegar a `Sega_WaitEnd`.
+    VozFim,
     /// Espera depois da voz, até o temporizador zerar ou o Start.
     WaitEnd,
 }
@@ -137,6 +140,8 @@ pub struct Abertura {
     pub interrupcoes_ignoradas: u32,
     /// VBlanks que rodaram o tratador (diagnóstico do relatório).
     pub vblanks_tratados: u32,
+    /// Onde as interrupções ignoradas caíram: quadro e estado (diagnóstico).
+    pub ignoradas_em: Vec<(u32, String)>,
 }
 
 impl Abertura {
@@ -147,6 +152,7 @@ impl Abertura {
             modo: Modo::Boot,
             interrupcoes_ignoradas: 0,
             vblanks_tratados: 0,
+            ignoradas_em: Vec::new(),
             quadro: 0,
             erro: None,
             marcas_ignoradas: 0,
@@ -221,10 +227,8 @@ impl Abertura {
                 wb(&mut self.mem, ram::V_VBLANK_ROUTINE, vblank::ROTINA_SEGA);
                 self.modo = Modo::Sega(Sega::WaitPal);
             }
-            (Modo::Sega(Sega::VozEmCurso), Marca::SegaWaitEnd) => {
-                // O driver devolveu o controle: o tratador acaba e o laço principal segue.
-                self.vblanks_tratados = self.vblanks_tratados.saturating_add(1);
-                vblank::tratar(&mut self.mem)?;
+            (Modo::Sega(Sega::VozFim), Marca::SegaWaitEnd) => {
+                // O laço principal volta a rodar depois do VBlank atrasado.
                 ww(&mut self.mem, ram::V_GENERICTIMER, 30);
                 wb(&mut self.mem, ram::V_VBLANK_ROUTINE, vblank::ROTINA_SEGA);
                 self.modo = Modo::Sega(Sega::WaitEnd);
@@ -234,11 +238,17 @@ impl Abertura {
         Ok(())
     }
 
+    fn ignorar(&mut self) {
+        self.interrupcoes_ignoradas = self.interrupcoes_ignoradas.saturating_add(1);
+        self.ignoradas_em
+            .push((self.quadro, format!("{:?}", self.modo)));
+    }
+
     /// Interrupção de VBlank gravada: roda o tratador e, em seguida, o laço principal até a
     /// próxima espera.
     fn vblank(&mut self) -> Result<(), ErroAbertura> {
         let Modo::Sega(passo) = self.modo else {
-            self.interrupcoes_ignoradas = self.interrupcoes_ignoradas.saturating_add(1);
+            self.ignorar();
             return Ok(());
         };
         match passo {
@@ -274,6 +284,15 @@ impl Abertura {
                 }
             }
             Sega::Voz => self.modo = Modo::Sega(Sega::VozEmCurso),
+            Sega::VozEmCurso => {
+                // O tratador da voz acabou (o driver só volta no fim da voz). Em seguida o
+                // VBlank pendente roda como quadro de lag: `v_vblank_routine` é zero, então
+                // só o driver de som roda.
+                self.vblanks_tratados = self.vblanks_tratados.saturating_add(2);
+                vblank::tratar(&mut self.mem)?;
+                vblank::tratar(&mut self.mem)?;
+                self.modo = Modo::Sega(Sega::VozFim);
+            }
             Sega::WaitEnd => {
                 self.vblanks_tratados = self.vblanks_tratados.saturating_add(1);
                 vblank::tratar(&mut self.mem)?;
@@ -293,9 +312,7 @@ impl Abertura {
                     wb(&mut self.mem, ram::V_VBLANK_ROUTINE, vblank::ROTINA_SEGA);
                 }
             }
-            Sega::Entrada | Sega::Preparo | Sega::VozEmCurso => {
-                self.interrupcoes_ignoradas = self.interrupcoes_ignoradas.saturating_add(1);
-            }
+            Sega::Entrada | Sega::Preparo | Sega::VozFim => self.ignorar(),
         }
         Ok(())
     }
