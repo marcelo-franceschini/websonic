@@ -52,3 +52,7 @@ Uma linha por item: o que é, dono, etapa-alvo. Só entra aqui o que não bloque
 - Os testes do `diferencial/` (memoria, operacoes, rotina) nao entram na lista de testes do manifesto, porque precisam do oraculo construido. Os arquivos entram (hash). Dono: IA. Etapa-alvo: 14.
 - Rodada completa dos bugs injetados (`cargo fidelidade mutantes --orcamento 0`) e dos 65536 pares por operacao. Dono: Marcelo. Etapa-alvo: auditoria.
 - Etapa 5: decodificação estática do universo de desvios do original; anotar decisões do NemDec (Etapa 6); testes BK_nnnn por item (Etapas 6 a 12).
+- Etapa 6: testes `BK_0276` a `BK_0295` (um por bug conhecido do som) e roteiros extras do harness (prioridade, sobreposição de canais, fade e pausa) entram na 6.6. Dono: IA. Etapa-alvo: 6.
+- Etapa 6: IDs `94` a `9F` e `D1` a `DF` não têm comportamento definido no original (travam ou executam lixo) e ficam fora do relatório do som. Dono: IA. Etapa-alvo: 14 (decidir se viram exclusão aprovada).
+- Etapa 6: os registradores com lixo na parte alta (`d0` de `SetVoice` em `StopSFX`) são tratados como limpos. Dono: IA. Etapa-alvo: 6, só se o relatório acusar.
+- Etapa 6: o alvo `wasm32-wasip1` não está instalado no host; os testes wasm de `sonic1-core` e `sonic1-teste-som` rodam na imagem. Dono: Marcelo. Etapa-alvo: 6.

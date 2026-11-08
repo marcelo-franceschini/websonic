@@ -468,3 +468,105 @@ fn calibrar_espera(mem: &mut Memoria, primeiro: Option<&PontoZ80>) -> bool {
     }
     false
 }
+
+/// Nome do campo da RAM do driver que contém o deslocamento (só nomes do mapa de rótulos).
+pub fn nome_do_deslocamento(d: usize) -> String {
+    const CAMPOS_RAM: [(usize, &str); 24] = [
+        (0x00, "v_sndprio"),
+        (0x01, "v_main_tempo_timeout"),
+        (0x02, "v_main_tempo"),
+        (0x03, "f_pausemusic"),
+        (0x04, "v_fadeout_counter"),
+        (0x06, "v_fadeout_delay"),
+        (0x07, "v_communication_byte"),
+        (0x08, "f_updating_dac"),
+        (0x09, "v_sound_id"),
+        (0x0A, "v_soundqueue0"),
+        (0x0B, "v_soundqueue1"),
+        (0x0C, "v_soundqueue2"),
+        (0x0E, "f_voice_selector"),
+        (0x18, "v_voice_ptr"),
+        (0x20, "v_special_voice_ptr"),
+        (0x24, "f_fadein_flag"),
+        (0x25, "v_fadein_delay"),
+        (0x26, "v_fadein_counter"),
+        (0x27, "f_1up_playing"),
+        (0x28, "v_tempo_mod"),
+        (0x29, "v_speeduptempo"),
+        (0x2A, "f_speedup"),
+        (0x2B, "v_ring_speaker"),
+        (0x2C, "f_push_playing"),
+    ];
+    const CAMPOS_TRILHA: [(usize, &str); 27] = [
+        (0x00, "PlaybackControl"),
+        (0x01, "VoiceControl"),
+        (0x02, "TempoDivider"),
+        (0x04, "DataPointer"),
+        (0x08, "Transpose"),
+        (0x09, "Volume"),
+        (0x0A, "AMSFMSPan"),
+        (0x0B, "VoiceIndex"),
+        (0x0C, "VolEnvIndex"),
+        (0x0D, "StackPointer"),
+        (0x0E, "DurationTimeout"),
+        (0x0F, "SavedDuration"),
+        (0x10, "Freq"),
+        (0x12, "NoteTimeout"),
+        (0x13, "NoteTimeoutMaster"),
+        (0x14, "ModulationPtr"),
+        (0x18, "ModulationWait"),
+        (0x19, "ModulationSpeed"),
+        (0x1A, "ModulationDelta"),
+        (0x1B, "ModulationSteps"),
+        (0x1C, "ModulationVal"),
+        (0x1E, "Detune"),
+        (0x1F, "FeedbackAlgo"),
+        (0x20, "VoicePtr"),
+        (0x24, "LoopCounters"),
+        (0x28, "LoopCounters+4"),
+        (0x2C, "LoopCounters+8"),
+    ];
+    const TRILHAS: [&str; 18] = [
+        "dac",
+        "fm1",
+        "fm2",
+        "fm3",
+        "fm4",
+        "fm5",
+        "fm6",
+        "psg1",
+        "psg2",
+        "psg3",
+        "sfx_fm3",
+        "sfx_fm4",
+        "sfx_fm5",
+        "sfx_psg1",
+        "sfx_psg2",
+        "sfx_psg3",
+        "spcsfx_fm4",
+        "spcsfx_psg3",
+    ];
+    if d < 0x40 {
+        let campo = CAMPOS_RAM
+            .iter()
+            .rev()
+            .find(|(o, _)| *o <= d)
+            .map_or("?", |c| c.1);
+        return format!("SMPS_RAM.{campo}");
+    }
+    if d >= 0x3A0 {
+        return format!("v_1up_ram_copy+{:#x}", d - 0x3A0);
+    }
+    let i = (d - 0x40) / 0x30;
+    let o = (d - 0x40) % 0x30;
+    let campo = CAMPOS_TRILHA
+        .iter()
+        .rev()
+        .find(|(x, _)| *x <= o)
+        .map_or("?", |c| c.1);
+    format!(
+        "trilha {} {campo}+{}",
+        TRILHAS.get(i).copied().unwrap_or("?"),
+        o
+    )
+}

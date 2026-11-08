@@ -2,9 +2,9 @@
 
 Documento de acompanhamento do progresso das etapas.
 
-## Etapa 6 (Driver de som): plano escrito, sub-etapa 6.0 feita, aguarda o bloco 1 e a aprovação (08/11/2026)
+## Etapa 6 (Driver de som): 6.0 a 6.5 feitas, falta o bloco 2 do Marcelo (08/11/2026)
 
-Plano em `docs/plano-etapa-6.md` (a aprovação do Marcelo vem junto com os resultados do bloco 1). Feito pela IA com dados sintéticos: formato `.s1tempo` versão 2 com pontos do Z80 no núcleo, patch 0005 do oráculo (`docs/pedidos/etapa6-oraculo.patch`, 5 testes novos passam numa cópia limpa), `cargo xtask inventario-som` e `ids-som` (73 IDs), `scripts/etapa6-bloco1.sh`. **Falta (Marcelo, host):** `sh scripts/etapa6-bloco1.sh 2>&1 | tee /tmp/etapa6-bloco1.txt`, commit do patch aplicado e responder "aprovado". Depois seguem 6.1 a 6.5 (IA), o bloco 2 (relatório do som com a ROM) e o fecho. Etapas 3 e 5 conferidas como concluídas nesta sessão (ver abaixo).
+Plano aprovado em 08/11/2026 (`docs/plano-etapa-6.md`). Bloco 1 feito (patch 0005 aplicado, inventário do som commitado). Feito pela IA: máquina do Z80 com os dois programas e o barramento (6.1 e 6.2, provados contra o oráculo em ROM sintética), driver do 68000 inteiro (6.3), integração do DAC e da voz SEGA (6.4) e harness `som` em `diferencial-som/` (6.5). Detalhes, desvios do plano e evidência em `docs/conhecimento/som.md`. **Falta (Marcelo, host):** `sh scripts/etapa6-bloco2.sh 2>&1 | tee /tmp/etapa6-bloco2.txt | tail -120`. Depois: correções do que o relatório acusar, cobertura e bugs conhecidos (6.6), fechamento (6.7).
 
 ## Etapa 5 (Núcleo base): concluída, falta a sessão de revisão (texto do cabeçalho corrigido em 08/11/2026)
 

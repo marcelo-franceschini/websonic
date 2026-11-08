@@ -41,3 +41,23 @@ Plano: `docs/plano-etapa-6.md`. Cada afirmação cita o teste ou o comando. Nada
 - `diferencial-som/` é um workspace novo (GPLv3, como o oráculo) porque `diferencial/` foi congelado na Etapa 5.
 - Modelo independente do barramento: `crates/teste-som/src/modelo_barramento.rs`, cruzado com o núcleo em 200 sequências pseudoaleatórias (BUSACK e visibilidade da RAM do Z80) e 500 sequências do registrador de banco (`crates/teste-som/tests/barramento.rs`).
 - WebAssembly: o alvo `wasm32-wasip1` não está instalado no host; roda na imagem (bloco do Marcelo).
+
+## Driver do 68000 (6.3) e harness (6.5)
+
+- `crates/core/src/som/driver.rs`: `Driver` sobre a `Memoria`, uma função por rótulo (`UpdateMusic`, `DACUpdateTrack`, `FMUpdateTrack`, `PSGUpdateTrack`, `CoordFlag` e as 26 flags `cf*`, `SetVoice`, `SendVoiceTL`, `Sound_PlayBGM`, `Sound_PlaySFX`, `Sound_PlaySpecial`, `StopSFX`, `StopSpecialSFX`, `FadeOutMusic`, `DoFadeOut`, `DoFadeIn`, `PauseMusic`, `StopAllSound`, `InitMusicPlayback`, `CycleSoundQueue`, `PlaySoundID`, `PlaySegaSound` e as filas). Cada decisão passa por `decisao!`. Tabelas (frequências, vozes, prioridades, envelopes, endereços de trilhas) são lidas da ROM nos endereços dos rótulos.
+- **Retornos adulterados do original:** o original faz `addq.w #4,sp` e `addq.w #8,sp` para sair de mais de uma rotina. Viram `Fluxo::SairDoUpdate` (BGM carregada, voz SEGA, flag de coordenação na trilha de DAC: `UpdateMusic` acaba na hora, **sem o `startZ80` do fim**) e `Cf::Sair8` (flag de coordenação nas trilhas de FM e PSG: só a atualização da trilha acaba). A sutileza: a mesma flag que encerra só a trilha de FM encerra o `UpdateMusic` inteiro quando vem da trilha de DAC, porque a pilha tem um nível a menos. Isto é leitura do código, a prova é o relatório do bloco 2.
+- **Bugs conhecidos reproduzidos no código:** a fila 3 é ignorada por `UpdateMusic`; `PlaySoundID` aceita música até `$9F` e especial até `$DF`; `StopAllSound` não apaga os últimos `$10` bytes; `SendVoiceTL` lê o ponteiro de voz relativo a A6 (cai em `v_special_voice_ptr`); `StopSFX` perde o ponteiro da trilha de efeito no caso do FM4 com efeito especial; `InitMusicPlayback` silencia todos os canais; `PSGDoVolFX` só trata o terminador `$80`; `cfFadeInToPrevious` não reescreve o registrador `$2B`. Testes sintéticos: `a_terceira_fila_e_ignorada_pelo_update` e `comando_de_parar_tudo_limpa_a_ram_do_driver_menos_os_ultimos_16_bytes` (`crates/teste-som/tests/driver.rs`). Os testes `BK_nnnn` por item vêm na 6.6.
+- **Risco aceito:** os registradores de dados do original que guardam lixo na parte alta (por exemplo `d0` em `SetVoice` chamado por `StopSFX`) são tratados como limpos. Se o relatório mostrar divergência nesses caminhos, é onde olhar.
+- IDs `94` a `9F` e `D1` a `DF`: o original trata como música ou especial e trava ou executa lixo. Ficam **fora** do relatório (não há comportamento definido a comparar). Entram `80`, `00`, `7F`, `E5` e `FF`.
+- Layout: `crates/teste-som/tests/layout.rs` confere todas as constantes de RAM, de trilha e de endereço de tabela contra `refs/rotulos.txt` (2 testes passam).
+- Harness `diferencial-som` (binário `som`): o oráculo roda o jogo real a partir de um estado calmo (som parado), o ID entra pela fila, e cada chamada de `UpdateMusic` é medida por entrada e retorno (o endereço de retorno vem da pilha). O núcleo roda a mesma chamada, de forma contínua, com o tempo gravado do trecho (pontos do Z80, leituras do BUSACK e do YM). Acessos ao Z80 feitos fora do driver são aplicados à máquina do Z80 (`aplicar_ponto_externo`), o que confere a posição do Z80 também fora de `UpdateMusic`. Escritas na RAM do driver feitas por fora são contadas como entradas externas. Comparado por trecho: escritas no YM e no PSG (fonte, porta, valor, na ordem, até o último BUSREQ liberado do trecho), região do driver na RAM, RAM do Z80 e posição do Z80. Smoke sintético: `diferencial-som/tests/harness.rs`.
+- Estado inicial do Z80 do núcleo: a posição vem do oráculo (PC), os ciclos que faltam são calibrados para bater com o primeiro ponto, e o banco é `$00F` (valor visto em todos os pontos do corpus fora da carga).
+
+## Estado das provas (atualizado)
+
+| Item | Estado |
+| --- | --- |
+| 6.1, 6.2 | provado contra o oráculo (ROM sintética, programas A e B montados à mão) |
+| 6.3 | testes sintéticos do núcleo; comparação com o oráculo pendente (bloco 2) |
+| 6.4 | integração do DAC e da voz SEGA: pela máquina do Z80 (provada) e pelo driver; comparação real pendente (bloco 2) |
+| 6.5 | harness roda numa ROM sintética (negativo); relatório com a ROM pendente (bloco 2) |
