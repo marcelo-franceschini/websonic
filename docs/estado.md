@@ -2,6 +2,10 @@
 
 Documento de acompanhamento do progresso das etapas.
 
+## Etapa 5 (Núcleo base): plano apresentado, aguarda aprovação do Marcelo (08/11/2026)
+
+Plano em `docs/plano-etapa-5.md`. Nada implementado. **Etapa 2: declarada concluída pelo Marcelo em 08/11/2026** (ele reconstruiu a imagem do contêiner; a IA não verificou a reconstrução). Haverá dois blocos de comandos para o Marcelo (A, depois da 5.4; B, no fecho).
+
 ## Etapa 2 (Corpus e integridade): revisão do fechamento feita (08/11/2026); fecha quando o Marcelo reconstruir a imagem do contêiner
 
 Revisão feita por sessão nova em 07/11/2026 (só do que a Etapa 2 mudou). Ela achou três linhas do "Pronto quando" sem cumprimento literal (segundo oráculo, TAS, quatro demos) e mais cinco pontos do requisito sem cumprimento (partida gravada no corpus, congelamento do que mede, trace sem cópias, senha das chaves, IA no contêiner). O Marcelo pediu que a IA decidisse. O plano com as decisões está em `docs/plano-fechamento-etapa-2.md`: sub-etapa 2.10 (IA, no contêiner), um script único do host (Marcelo) e a 2.11 (registro). **Atualização de 08/11/2026:** 2.10, script do host e 2.11 feitos (ver `docs/conhecimento/corpus.md`). Veredito do relatório `PASSOU`, ocultos `passou` nas seis zonas, partida `REPRODUZ`. Os dois TAS foram descartados por perda de sincronia, então o corpus não tem TAS aceito (backlog). **Revisão do fechamento (sessão nova, 08/11/2026):** dois itens BLOQUEIA, B1 (chave de assinatura sem senha) e B2 (saída dos TAS). B2 corrigido (corpus.md). B1: o script agora aborta com senha vazia, mas **a senha ainda não foi definida** (conferido em 08/11/2026: a chave abre sem senha). **Decisão do Marcelo em 08/11/2026: aceita o corpus sem TAS aceito** (os dois foram descartados por perda de sincronia; investigação na Etapa 14). **B1 resolvido em 08/11/2026:** a chave de assinatura agora exige senha (conferido: `ssh-keygen -y -P ''` falha). **Para fechar a Etapa 2:** reconstruir a imagem do contêiner. Depois disso nenhum BLOQUEIA resta e a Etapa 5 pode começar.
