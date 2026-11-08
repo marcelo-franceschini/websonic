@@ -1,0 +1,20 @@
+[package]
+name = "sonic1-diferencial"
+description = "Testes diferenciais: o oraculo (jgenesis modificado) contra o nucleo (GPLv3, workspace proprio)"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "GPL-3.0-only"
+
+[dependencies]
+websonic-oracle = { path = "../oracle/runner" }
+genesis-core = { path = "../target/oracle-fonte/backend/genesis-core" }
+sonic1-core = { path = "../crates/core" }
+sonic1-fidelidade = { path = "../crates/fidelidade" }
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+
+# Workspace proprio, como o oracle/runner: este pacote liga o oraculo (GPLv3) ao nucleo (MIT)
+# e nunca entra no build do jogo nem do site.
+[workspace]

@@ -9,6 +9,11 @@ license.workspace = true
 
 # Lints do nucleo (CLAUDE.md). Nao da para herdar da workspace e acrescentar,
 # por isso a tabela e completa aqui.
+[features]
+# Registro de decisoes para o relatorio de cobertura e injecao de bugs (sub-etapas 5.6 e 5.7).
+cobertura = []
+mutacao = ["cobertura"]
+
 [lints.rust]
 unsafe_code = "forbid"
 

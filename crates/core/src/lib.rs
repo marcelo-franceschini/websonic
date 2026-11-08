@@ -8,3 +8,4 @@
 
 pub mod aritmetica;
 pub mod descompressao;
+pub mod memoria;
