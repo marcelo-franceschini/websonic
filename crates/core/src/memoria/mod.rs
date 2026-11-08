@@ -112,6 +112,8 @@ pub struct Memoria {
     divergencias_z80: Vec<DivergenciaZ80>,
     /// Diagnóstico (desligado por padrão): os acessos do 68000 ao Z80, na ordem.
     log_acessos_z80: Option<Vec<AcessoZ80>>,
+    /// Diagnóstico: o ponto gravado que cada acesso consumiu (`None`: a fila estava vazia).
+    log_pontos_z80: Vec<Option<AcessoZ80>>,
 }
 
 fn indice(endereco: u32, mascara: u32) -> usize {
@@ -142,6 +144,7 @@ impl Memoria {
             pontos_z80: VecDeque::new(),
             divergencias_z80: Vec::new(),
             log_acessos_z80: None,
+            log_pontos_z80: Vec::new(),
         }
     }
 
@@ -264,6 +267,11 @@ impl Memoria {
         self.log_acessos_z80.get_or_insert_with(Vec::new);
     }
 
+    /// O ponto que cada acesso consumiu, na ordem (só com o registro ligado).
+    pub fn pontos_consumidos_z80(&self) -> &[Option<AcessoZ80>] {
+        &self.log_pontos_z80
+    }
+
     pub fn acessos_z80(&self) -> &[AcessoZ80] {
         self.log_acessos_z80.as_deref().unwrap_or(&[])
     }
@@ -272,7 +280,11 @@ impl Memoria {
         if let Some(l) = &mut self.log_acessos_z80 {
             l.push(acesso);
         }
-        let Some(p) = self.pontos_z80.pop_front() else {
+        let ponto = self.pontos_z80.pop_front();
+        if self.log_acessos_z80.is_some() {
+            self.log_pontos_z80.push(ponto.as_ref().map(|p| p.acesso));
+        }
+        let Some(p) = ponto else {
             return;
         };
         if p.acesso != acesso {

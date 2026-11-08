@@ -51,6 +51,7 @@ pub struct Relatorio {
     pub ram_variaveis: BTreeMap<String, u32>,
     /// Contexto do primeiro acesso ao Z80 que difere: índice, oráculo e núcleo.
     pub z80_contexto: Option<String>,
+    pub z80_fila: Option<String>,
     pub int6_oraculo: u32,
     /// Comparação nas esperas de VBlank (D7.4): o laço principal chegou a `WaitForVBlank`.
     pub esperas_iguais: u32,
@@ -496,6 +497,17 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
             &log[de..(i + 8).min(log.len())]
         ));
     }
+    let consumidos = nucleo.mem.pontos_consumidos_z80();
+    if let Some(i) = (0..log.len().min(consumidos.len())).find(|&i| consumidos[i] != Some(log[i])) {
+        let de = i.saturating_sub(4);
+        let fim = (i + 8).min(log.len());
+        rel.z80_fila = Some(format!(
+            "indice {i} de {} acessos; acessos {:?}; pontos consumidos {:?}",
+            log.len(),
+            &log[de..fim],
+            &consumidos[de..fim]
+        ));
+    }
     rel.divergencias_posicao_z80 = nucleo.mem.divergencias_z80().len();
     for d in nucleo.mem.divergencias_z80() {
         let t = format!("{d:?}");
@@ -579,6 +591,9 @@ pub fn imprimir(rel: &Relatorio) {
     v.sort_by_key(|(_, n)| std::cmp::Reverse(**n));
     for (nome, n) in v.iter().take(20) {
         println!("ram68k_variavel_divergente {nome} quadros={n}");
+    }
+    if let Some(c) = &rel.z80_fila {
+        println!("z80_fila_desalinhada {c}");
     }
     if let Some(c) = &rel.z80_contexto {
         println!("z80_primeiro_acesso_diferente {c}");

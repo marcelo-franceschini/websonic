@@ -251,7 +251,10 @@ impl Abertura {
 
     /// Entrega e esvazia os estados registrados nas esperas.
     pub fn tirar_esperas(&mut self) -> Vec<(Vec<u8>, Vec<u8>)> {
-        self.esperas.as_mut().map(std::mem::take).unwrap_or_default()
+        self.esperas
+            .as_mut()
+            .map(std::mem::take)
+            .unwrap_or_default()
     }
 
     /// O laço principal chegou a `WaitForVBlank`: o estado de hoje é o de comparação.
