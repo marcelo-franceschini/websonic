@@ -556,7 +556,7 @@ impl Abertura {
         self.quadros_de_lag = self.quadros_de_lag.saturating_add(1);
         let pedido = rb(&mut self.mem, ram::V_VBLANK_ROUTINE);
         wb(&mut self.mem, ram::V_VBLANK_ROUTINE, 0);
-        vblank::tratar(&mut self.mem)?;
+        self.tratar_vblank()?;
         wb(&mut self.mem, ram::V_VBLANK_ROUTINE, pedido);
         Ok(())
     }
@@ -602,7 +602,7 @@ impl Abertura {
             }
             Titulo::Laco => {
                 self.vblanks_tratados = self.vblanks_tratados.saturating_add(1);
-                vblank::tratar(&mut self.mem)?;
+                self.tratar_vblank()?;
                 match titulo::laco_do_titulo(&mut self.mem)? {
                     titulo::DepoisDoTitulo::Continua => self.pedir_vblank_do_titulo(),
                     titulo::DepoisDoTitulo::GotoDemo => {
@@ -621,7 +621,7 @@ impl Abertura {
             }
             Titulo::PreDemo => {
                 self.vblanks_tratados = self.vblanks_tratados.saturating_add(1);
-                vblank::tratar(&mut self.mem)?;
+                self.tratar_vblank()?;
                 match titulo::goto_demo_passo(&mut self.mem)? {
                     titulo::DepoisDoGotoDemo::Continua => self.pedir_vblank_do_titulo(),
                     titulo::DepoisDoGotoDemo::Demo => {
@@ -667,7 +667,7 @@ impl Abertura {
             }
             Fase::Cartoes => {
                 self.vblanks_tratados = self.vblanks_tratados.saturating_add(1);
-                vblank::tratar(&mut self.mem)?;
+                self.tratar_vblank()?;
                 match fase::laco_dos_cartoes(&mut self.mem)? {
                     fase::DepoisDosCartoes::Continua => self.pedir_vblank(vblank::ROTINA_CARTOES),
                     fase::DepoisDosCartoes::Fim => self.modo = Modo::Fase(Fase::PreparoFinal),
@@ -675,7 +675,7 @@ impl Abertura {
             }
             Fase::Atraso(n) => {
                 self.vblanks_tratados = self.vblanks_tratados.saturating_add(1);
-                vblank::tratar(&mut self.mem)?;
+                self.tratar_vblank()?;
                 let restam = n.saturating_sub(1);
                 if restam > 0 {
                     self.pedir_vblank(vblank::ROTINA_NIVEL);
@@ -715,7 +715,7 @@ impl Abertura {
     /// `FadeOut_ToBlack`. Devolve os VBlanks que faltam, zero quando o desvanecimento acabou.
     fn vblank_fade_out(&mut self, n: u8) -> Result<u8, ErroAbertura> {
         self.vblanks_tratados = self.vblanks_tratados.saturating_add(1);
-        vblank::tratar(&mut self.mem)?;
+        self.tratar_vblank()?;
         sega::fade_out_to_black(&mut self.mem);
         // `RunPLC` roda depois de cada passo do desvanecimento (fila vazia não faz nada).
         plc::run_plc(&mut self.mem)?;
@@ -735,7 +735,7 @@ impl Abertura {
     /// e `RunPLC`. Devolve os VBlanks que faltam, zero quando o aparecimento acabou.
     fn vblank_fade_in(&mut self, n: u8) -> Result<u8, ErroAbertura> {
         self.vblanks_tratados = self.vblanks_tratados.saturating_add(1);
-        vblank::tratar(&mut self.mem)?;
+        self.tratar_vblank()?;
         titulo::fade_in_from_black(&mut self.mem);
         plc::run_plc(&mut self.mem)?;
         let restam = n.saturating_sub(1);
@@ -748,6 +748,16 @@ impl Abertura {
             self.pedir_espera();
         }
         Ok(restam)
+    }
+
+    /// O tratador de VBlank e, em seguida, o observador: as escritas do tratador (DMA) saem antes
+    /// do passo do laço principal, que muda a RAM de onde o DMA leu.
+    fn tratar_vblank(&mut self) -> Result<(), ErroAbertura> {
+        vblank::tratar(&mut self.mem)?;
+        if let Some(o) = self.observador.as_mut() {
+            o(&mut self.mem);
+        }
+        Ok(())
     }
 
     fn ignorar(&mut self) {
@@ -784,7 +794,7 @@ impl Abertura {
         match passo {
             Sega::FadeOut(n) => {
                 self.vblanks_tratados = self.vblanks_tratados.saturating_add(1);
-                vblank::tratar(&mut self.mem)?;
+                self.tratar_vblank()?;
                 sega::fade_out_to_black(&mut self.mem);
                 let n = n.saturating_sub(1);
                 if n > 0 {
@@ -801,7 +811,7 @@ impl Abertura {
             }
             Sega::WaitPal => {
                 self.vblanks_tratados = self.vblanks_tratados.saturating_add(1);
-                vblank::tratar(&mut self.mem)?;
+                self.tratar_vblank()?;
                 if sega::pal_cycle_sega(&mut self.mem) {
                     wb(&mut self.mem, ram::V_VBLANK_ROUTINE, vblank::ROTINA_SEGA);
                     self.pedir_espera();
@@ -822,13 +832,13 @@ impl Abertura {
                 // VBlank pendente roda como quadro de lag: `v_vblank_routine` é zero, então
                 // só o driver de som roda.
                 self.vblanks_tratados = self.vblanks_tratados.saturating_add(2);
-                vblank::tratar(&mut self.mem)?;
-                vblank::tratar(&mut self.mem)?;
+                self.tratar_vblank()?;
+                self.tratar_vblank()?;
                 self.modo = Modo::Sega(Sega::VozFim);
             }
             Sega::WaitEnd => {
                 self.vblanks_tratados = self.vblanks_tratados.saturating_add(1);
-                vblank::tratar(&mut self.mem)?;
+                self.tratar_vblank()?;
                 // `Sega_WaitEnd`: temporizador zerado ou Start apertado leva ao título.
                 let acabou = rw(&mut self.mem, ram::V_GENERICTIMER) == 0;
                 let start = if acabou {
