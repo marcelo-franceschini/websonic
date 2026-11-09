@@ -459,7 +459,7 @@ impl Abertura {
         vblank::tratar(&mut self.mem)?;
         sega::fade_out_to_black(&mut self.mem);
         // `RunPLC` roda depois de cada passo do desvanecimento (fila vazia não faz nada).
-        plc::run_plc(&mut self.mem);
+        plc::run_plc(&mut self.mem)?;
         let restam = n.saturating_sub(1);
         if restam > 0 {
             wb(
@@ -478,7 +478,7 @@ impl Abertura {
         self.vblanks_tratados = self.vblanks_tratados.saturating_add(1);
         vblank::tratar(&mut self.mem)?;
         titulo::fade_in_from_black(&mut self.mem);
-        plc::run_plc(&mut self.mem);
+        plc::run_plc(&mut self.mem)?;
         let restam = n.saturating_sub(1);
         if restam > 0 {
             wb(

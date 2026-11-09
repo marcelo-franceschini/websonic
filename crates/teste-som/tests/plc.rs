@@ -59,7 +59,7 @@ fn referencia(rom: Vec<u8>) -> (Vec<(u16, Tamanho)>, Vec<u8>) {
 fn por_quadros(rom: Vec<u8>) -> (Vec<(u16, Tamanho)>, Vec<u8>, u32) {
     let mut m = Memoria::nova(rom);
     plc::enfileirar(&mut m, FLUXO, 0);
-    plc::run_plc(&mut m);
+    plc::run_plc(&mut m).unwrap();
     let mut quadros = 0u32;
     while ram_w(&m, V_PLC_PATTERNSLEFT) != 0 {
         plc::process_plc_9(&mut m);
@@ -94,7 +94,7 @@ fn por_quadros_com_xor_escreve_o_mesmo_que_o_descompressor() {
 #[test]
 fn fila_vazia_nao_mexe_na_ram_nem_na_vdp() {
     let mut m = Memoria::nova(rom_com([0x00, 0x01]));
-    plc::run_plc(&mut m);
+    plc::run_plc(&mut m).unwrap();
     plc::process_plc_9(&mut m);
     assert!(m.tirar_saidas().is_empty());
     assert_eq!(ram_w(&m, V_PLC_PATTERNSLEFT), 0);

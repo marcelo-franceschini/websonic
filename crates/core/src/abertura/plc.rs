@@ -8,7 +8,7 @@
 
 use super::boot::{rom_b, rom_l, rom_w};
 use super::ram::*;
-use super::{rl, rw, wl, ww};
+use super::{ErroAbertura, rl, rw, wl, ww};
 use crate::memoria::Memoria;
 
 /// `v_ngfx_buffer`: tabela de códigos do Nemesis (`NemDec_BuildCodeTable`).
@@ -61,9 +61,9 @@ pub fn enfileirar(m: &mut Memoria, arte: u32, vram: u16) {
 
 /// `RunPLC`: se a fila tem entrada e nenhuma arte está em curso, começa a descompressão da
 /// primeira entrada: monta a tabela de códigos e guarda o estado inicial do fluxo.
-pub fn run_plc(m: &mut Memoria) {
+pub fn run_plc(m: &mut Memoria) -> Result<(), ErroAbertura> {
     if rl(m, V_PLC_BUFFER) == 0 || rw(m, V_PLC_PATTERNSLEFT) != 0 {
-        return;
+        return Ok(());
     }
     let mut a0 = rl(m, V_PLC_BUFFER);
     let mut rotina = NEM_PCD_WRITE_ROW_TO_VDP;
@@ -74,7 +74,7 @@ pub fn run_plc(m: &mut Memoria) {
         rotina = NEM_PCD_WRITE_ROW_TO_VDP_XOR;
     }
     ww(m, V_PLC_PATTERNSLEFT, cabecalho & 0x7FFF);
-    a0 = construir_tabela(m, a0);
+    a0 = construir_tabela(m, a0)?;
     // Dois bytes da janela de bits, e o deslocamento começa em $10.
     let d5 = u16::from(rom_b(m, a0)).wrapping_shl(8) | u16::from(rom_b(m, a0.wrapping_add(1)));
     a0 = a0.wrapping_add(2);
@@ -85,21 +85,28 @@ pub fn run_plc(m: &mut Memoria) {
     wl(m, V_PLC_PREVIOUSROW, 0);
     wl(m, V_PLC_DATAWORD, u32::from(d5));
     wl(m, V_PLC_SHIFTVALUE, 0x10);
+    Ok(())
 }
 
 /// `NemDec_BuildCodeTable` sobre o fluxo da ROM a partir de `a0`. Grava a tabela em
 /// `v_ngfx_buffer` e devolve o endereço depois do `$FF` final.
-fn construir_tabela(m: &mut Memoria, mut a0: u32) -> u32 {
+fn construir_tabela(m: &mut Memoria, mut a0: u32) -> Result<u32, ErroAbertura> {
     let mut d0 = rom_b(m, a0);
     a0 = a0.wrapping_add(1);
     loop {
         // `NemBCT_ChkEnd`
         if d0 == 0xFF {
-            return a0;
+            return Ok(a0);
         }
         // `NemBCT_NewPALIndex`: o byte com o bit 7 dá o nibble de paleta.
         let mut d7 = u16::from(d0);
         loop {
+            // Sem o `$FF` final, o laço leria zeros para sempre: fora da ROM é erro.
+            if fora_da_rom(m, a0) {
+                return Err(ErroAbertura::NaoImplementado(
+                    "tabela de codigos sem fim dentro da ROM",
+                ));
+            }
             d0 = rom_b(m, a0);
             a0 = a0.wrapping_add(1);
             if d0 >= 0x80 {
@@ -296,6 +303,11 @@ fn carregar_byte_se_preciso(m: &mut Memoria, e: &mut Estado) {
     e.a0 = e.a0.wrapping_add(1);
 }
 
+/// Verdadeiro se `a` está fora do arquivo da ROM (a leitura daria zero, sem sentido).
+fn fora_da_rom(m: &Memoria, a: u32) -> bool {
+    usize::try_from(a).map_or(true, |i| i >= m.rom().len())
+}
+
 /// Byte da RAM (leitura sem efeito, para a tabela de códigos).
 fn rb_ram(m: &Memoria, a: u32) -> u8 {
     let i = usize::try_from(a.wrapping_sub(0xFF_0000)).unwrap_or(0);
@@ -339,7 +351,15 @@ mod testes {
     fn construir_tabela_aceita_o_mesmo_fluxo_do_descompressor() {
         let rom = [0x81, 0x04, 0x0A, 0xFF];
         let mut m = Memoria::nova(rom.to_vec());
-        let fim = construir_tabela(&mut m, 0);
+        let fim = construir_tabela(&mut m, 0).unwrap();
         assert_eq!(fim, 4);
+    }
+
+    /// Um fluxo sem o `$FF` final não pode ficar num laço: tem de devolver erro ao sair da ROM.
+    #[test]
+    fn construir_tabela_recusa_fluxo_sem_fim() {
+        let rom = [0x81, 0x04, 0x0A];
+        let mut m = Memoria::nova(rom.to_vec());
+        assert!(construir_tabela(&mut m, 0).is_err());
     }
 }
