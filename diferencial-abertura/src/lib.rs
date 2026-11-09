@@ -28,6 +28,10 @@ const WAIT_FOR_VBLANK: u32 = 0x29A0;
 const LIMITE_FILAS_DE_ESPERA: usize = 2000;
 /// Teto de acessos do Z80 guardados pelo oráculo, para diagnóstico de memória.
 const LIMITE_ACESSOS_DO_ORACULO: usize = 2_000_000;
+/// Teto de marcas num mesmo quadro. Um quadro normal tem muito menos; passou disso, há laço preso.
+const LIMITE_MARCAS_DO_QUADRO: usize = 10_000;
+/// Teto de escritas guardadas por sequência (esperadas e obtidas). Passou disso, para com erro.
+const LIMITE_ESCRITAS: usize = 2_000_000;
 /// Estado do oráculo no fechamento de um quadro: RAM do 68000, RAM do Z80, número do quadro,
 /// se o fechamento é comparável e se o núcleo estava em trecho atômico.
 type Fechamento = (Vec<u8>, Vec<u8>, u32, bool, bool);
@@ -262,9 +266,25 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
             if chegou && pc == WAIT_FOR_VBLANK {
                 esperas_o.push_back((o.ram68k(), o.ram_z80()));
                 rel.esperas_oraculo += 1;
+                // Dentro do quadro, e não só no fim: um laço que chama a espera sem parar encheria
+                // a memória antes da checagem de fim de quadro.
+                if esperas_o.len() > LIMITE_FILAS_DE_ESPERA {
+                    return Err(format!(
+                        "quadro {}: filas de espera crescem dentro de um quadro (oraculo {})",
+                        o.quadro_atual(),
+                        esperas_o.len()
+                    ));
+                }
             }
             if chegou && let Some(i) = MARCAS.iter().position(|m| m.2 == pc) {
                 marcas.push((o.emulador().oracle_mclk(), i));
+                if marcas.len() > LIMITE_MARCAS_DO_QUADRO {
+                    return Err(format!(
+                        "quadro {}: marcas demais num quadro ({}), o oraculo parece preso num laco",
+                        o.quadro_atual(),
+                        marcas.len()
+                    ));
+                }
             }
             if let Some(q) = q {
                 break (q, mascara);
@@ -378,22 +398,19 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
                 "quadro {n}: filas de espera crescem sem consumo (oraculo {}, nucleo {})",
                 esperas_o.len(),
                 esperas_n.len()
-            )
-            .into());
+            ));
         }
         if acessos_oraculo.len() > LIMITE_ACESSOS_DO_ORACULO {
             return Err(format!(
                 "quadro {n}: acessos do Z80 no oraculo crescem sem consumo ({})",
                 acessos_oraculo.len()
-            )
-            .into());
+            ));
         }
         if nucleo.ignoradas_em.len() > LIMITE_FILAS_DE_ESPERA {
             return Err(format!(
                 "quadro {n}: interrupcoes ignoradas no nucleo crescem sem consumo ({})",
                 nucleo.ignoradas_em.len()
-            )
-            .into());
+            ));
         }
 
         // Estados nas esperas de VBlank: o k-ésimo do oráculo contra o k-ésimo do núcleo.
@@ -554,6 +571,33 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
             .map(|t| esperadas[t].len().abs_diff(obtidas[t].len()) as u64)
             .sum();
         rel.atraso_maximo = rel.atraso_maximo.max(atraso);
+        let maior_fila = esperadas
+            .iter()
+            .chain(obtidas.iter())
+            .map(Vec::len)
+            .max()
+            .unwrap_or(0);
+        if maior_fila > LIMITE_ESCRITAS {
+            return Err(format!(
+                "quadro {n}: escritas guardadas passam de {LIMITE_ESCRITAS} (maior sequencia {maior_fila})"
+            ));
+        }
+        // Diagnóstico: uma linha a cada 25 quadros e em cada quadro com marca. Se o processo for
+        // encerrado, a última linha mostra onde ele estava. Só contagens, nunca valores de memória.
+        if n % 25 == 0 || !marcas.is_empty() {
+            let nomes: Vec<String> = marcas
+                .iter()
+                .map(|(_, i)| MARCAS[*i].1.to_string())
+                .collect();
+            eprintln!(
+                "[diagnostico] quadro {n}: passos {passos}, marcas {nomes:?}, esperas (oraculo {}, nucleo {}), escritas guardadas (maior {maior_fila}), acessos Z80 do oraculo {}, pontos Z80 pendentes {}, divergencias Z80 {}",
+                esperas_o.len(),
+                esperas_n.len(),
+                acessos_oraculo.len(),
+                nucleo.mem.pontos_z80_pendentes(),
+                nucleo.mem.divergencias_z80().len(),
+            );
+        }
         rel.quadros += 1;
     }
     for (nome, p, ini) in [
