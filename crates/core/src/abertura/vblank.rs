@@ -15,6 +15,8 @@ pub const ROTINA_SEGA: u8 = 0x02;
 pub const ROTINA_PALETTE_FADE: u8 = 0x12;
 /// Índice de `VBlank_Title` (quadro da tela do título).
 pub const ROTINA_TITULO: u8 = 0x04;
+/// Índice de `VBlank_TitleCards` (cartões de título da fase; também `VBlank_Ending`).
+pub const ROTINA_CARTOES: u8 = 0x0C;
 pub const ROTINA_SEGA_PCM: u8 = 0x14;
 
 /// Macros `writeCRAM` e `writeVRAM`: DMA do 68000 para a VDP. `cram` escolhe o tipo de destino.
@@ -83,6 +85,50 @@ pub fn standard_transfers(m: &mut Memoria) -> Result<(), ErroAbertura> {
     Ok(())
 }
 
+/// `movem.l` de `longas` longas de `origem` para `destino` (as cópias `_dup` do VBlank).
+fn copiar_longas(m: &mut Memoria, origem: u32, destino: u32, longas: u32) {
+    for k in 0..longas {
+        let v = rl(m, origem.wrapping_add(k.wrapping_mul(4)));
+        wl(m, destino.wrapping_add(k.wrapping_mul(4)), v);
+    }
+}
+
+/// `VBlank_TitleCards`: como as transferências padrão, mas com a linha do HBlank, a rolagem antes
+/// dos sprites e a arte do Sonic quando ela mudou. Depois copia as posições da tela e as flags de
+/// rolagem para os `_dup`, desenha as faixas novas, anima os tiles, atualiza o HUD e anda a fila
+/// de arte.
+fn vblank_cartoes(m: &mut Memoria) -> Result<(), ErroAbertura> {
+    ww(m, Z80_BUSREQ, 0x100);
+    esperar_z80(m)?;
+    read_joypads(m);
+    if rb(m, F_WTR_STATE) != 0 {
+        dma_para_vdp(m, V_PALETTE_WATER, 0x80, 0, true);
+    } else {
+        dma_para_vdp(m, V_PALETTE, 0x80, 0, true);
+    }
+    let h = rw(m, V_HBLANK_HREG);
+    ww(m, VDP_CONTROLE, h);
+    dma_para_vdp(m, V_HSCROLLTABLEBUFFER, 0x380, 0xFC00, false);
+    let sprites = V_SPRITETABLEBUFFER_END.wrapping_sub(V_SPRITETABLEBUFFER);
+    dma_para_vdp(m, V_SPRITETABLEBUFFER, sprites, 0xF800, false);
+    if rb(m, F_SONFRAMECHG) != 0 {
+        let arte = V_SGFX_BUFFER_END.wrapping_sub(V_SGFX_BUFFER);
+        let destino = u32::from(ARTTILE_SONIC).wrapping_mul(32);
+        dma_para_vdp(m, V_SGFX_BUFFER, arte, destino, false);
+        wb(m, F_SONFRAMECHG, 0);
+    }
+    ww(m, Z80_BUSREQ, 0);
+    // `movem.l` de `v_screenposx` até `v_bg3screenposy` (oito longas) e das quatro flags.
+    copiar_longas(m, V_SCREENPOSX, V_SCREENPOSX_DUP, 8);
+    copiar_longas(m, V_FG_SCROLL_FLAGS, V_FG_SCROLL_FLAGS_DUP, 2);
+    // `ReadJoypads` deixa `a0` em `v_jpadhold1 + 4`; nada depois dele o muda (D7.26).
+    super::desenho::load_tiles_as_you_move(m, V_JPADHOLD1.wrapping_add(4))?;
+    super::animacao::animate_level_gfx(m)?;
+    super::hud::hud_update(m)?;
+    super::plc::process_plc_9(m);
+    Ok(())
+}
+
 /// Fim de `VBlank_Sega`, `VBlank_SegaPCM` e `VBlank_Title`: decrementa o temporizador genérico.
 fn temporizador_generico(m: &mut Memoria) {
     let t = rw(m, V_GENERICTIMER);
@@ -116,6 +162,7 @@ pub fn tratar(m: &mut Memoria) -> Result<(), ErroAbertura> {
                 super::plc::process_plc_9(m);
                 temporizador_generico(m);
             }
+            ROTINA_CARTOES => vblank_cartoes(m)?,
             ROTINA_PALETTE_FADE => {
                 standard_transfers(m)?;
                 let h = rw(m, V_HBLANK_HREG);

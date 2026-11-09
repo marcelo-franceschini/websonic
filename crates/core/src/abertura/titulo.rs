@@ -15,14 +15,15 @@ fn rot(e: rotinas::ErroRotina) -> ErroAbertura {
 }
 
 /// `locVRAM` para o endereço de uma tile (`tile` vezes o tamanho de 32 bytes).
-fn loc_vram(tile: u32) -> u32 {
+pub(crate) fn loc_vram(tile: u32) -> u32 {
     let a = tile.wrapping_mul(32);
     0x4000_0000u32
         .wrapping_add((a & 0x3FFF) << 16)
         .wrapping_add((a & 0xC000) >> 14)
 }
 
-fn zerar(m: &mut Memoria, ini: u32, fim: u32) {
+/// `clearRAM`: zera a RAM de `ini` até antes de `fim`, uma longa por vez.
+pub(crate) fn zerar(m: &mut Memoria, ini: u32, fim: u32) {
     let mut a = ini;
     while a < fim {
         wl(m, a, 0);

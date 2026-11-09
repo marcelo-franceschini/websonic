@@ -27,6 +27,8 @@ const ABAIXO: u16 = 224;
 const A_ESQUERDA: u16 = 0xFFF0;
 const A_DIREITA: u16 = 320;
 const MEIO_DA_TELA: u16 = 224 / 2;
+/// Quarta linha de blocos da tela (`move.w #64,d4` do `DrawBG_Block3`).
+const QUARTA_LINHA: u16 = 64;
 
 /// `DrawBlocks_LR`: a largura da tela mais duas colunas (22 blocos).
 const BLOCOS_NA_LARGURA: u16 = (320 + 16 + 16) / 16;
@@ -196,12 +198,9 @@ fn bclr(m: &mut Memoria, a: u32, bit: u8) -> bool {
     v & mascara != 0
 }
 
-/// `DrawBG_Top`: a parte de cima do fundo, pelas flags do byte `a2` (bits 0 a 3: faixa de cima,
-/// de baixo, da esquerda e da direita; bits 4 e 5: a linha inteira do plano em cima e embaixo).
-fn draw_bg_top(m: &mut Memoria, mut a0: u32, a2: u32, p: Plano) -> u32 {
-    if rb(m, a2) == 0 {
-        return a0;
-    }
+/// As quatro faixas das bordas, pelos bits 0 a 3 do byte `a2`: a linha de cima, a de baixo, a
+/// coluna da esquerda e a da direita. O mesmo código serve à frente e ao `DrawBG_Top`.
+fn faixas_das_bordas(m: &mut Memoria, mut a0: u32, a2: u32, p: Plano) -> u32 {
     if bclr(m, a2, 0) {
         let cmd = calc_vram_pos(m, ACIMA, A_ESQUERDA, p.a3);
         let pos = (ACIMA, A_ESQUERDA);
@@ -220,6 +219,16 @@ fn draw_bg_top(m: &mut Memoria, mut a0: u32, a2: u32, p: Plano) -> u32 {
         let cmd = calc_vram_pos(m, ACIMA, A_DIREITA, p.a3);
         a0 = draw_blocks_tb(m, a0, cmd, (ACIMA, A_DIREITA), BLOCOS_NA_ALTURA, p);
     }
+    a0
+}
+
+/// `DrawBG_Top`: a parte de cima do fundo, pelas flags do byte `a2` (bits 0 a 3: as bordas;
+/// bits 4 e 5: a linha inteira do plano em cima e embaixo).
+fn draw_bg_top(m: &mut Memoria, a0: u32, a2: u32, p: Plano) -> u32 {
+    if rb(m, a2) == 0 {
+        return a0;
+    }
+    let mut a0 = faixas_das_bordas(m, a0, a2, p);
     if bclr(m, a2, 4) {
         let cmd = calc_vram_pos_2(m, ACIMA, 0, p.a3);
         a0 = draw_blocks_lr(m, a0, cmd, (ACIMA, 0), BLOCOS_NO_PLANO, SomaX::Nao, p);
@@ -250,6 +259,58 @@ fn draw_bg_bottom(m: &mut Memoria, mut a0: u32, a2: u32, p: Plano) -> Result<u32
         a0 = draw_blocks_tb(m, a0, cmd, (MEIO_DA_TELA, A_DIREITA), 3, p);
     }
     Ok(a0)
+}
+
+/// `DrawBG_Block3` (REV01): o terceiro bloco do fundo. Bit 0 do byte `a2`: três blocos em coluna
+/// à esquerda, a partir da quarta linha de blocos da tela; bit 1: à direita. A MZ tem um desenho
+/// próprio, que ainda não existe aqui.
+fn draw_bg_block3(m: &mut Memoria, mut a0: u32, a2: u32, p: Plano) -> Result<u32, ErroAbertura> {
+    if rb(m, a2) == 0 {
+        return Ok(a0);
+    }
+    if rb(m, V_ZONE) == ID_MZ {
+        return Err(ErroAbertura::NaoImplementado("fundo da MZ"));
+    }
+    if bclr(m, a2, 0) {
+        let cmd = calc_vram_pos(m, QUARTA_LINHA, A_ESQUERDA, p.a3);
+        a0 = draw_blocks_tb(m, a0, cmd, (QUARTA_LINHA, A_ESQUERDA), 3, p);
+    }
+    if bclr(m, a2, 1) {
+        let cmd = calc_vram_pos(m, QUARTA_LINHA, A_DIREITA, p.a3);
+        a0 = draw_blocks_tb(m, a0, cmd, (QUARTA_LINHA, A_DIREITA), 3, p);
+    }
+    Ok(a0)
+}
+
+/// `LoadTilesAsYouMove`: as faixas novas da fase, pelas cópias que o VBlank fez das posições e
+/// das flags (`_dup`). Primeiro os três blocos do fundo, depois a frente. `a0` é o valor que o
+/// registrador tem na entrada (o chamador diz qual).
+pub fn load_tiles_as_you_move(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
+    let fundo = Plano {
+        a3: V_BGSCREENPOSX_DUP,
+        a4: V_LVLLAYOUT_BG,
+        d2: 0x6000,
+    };
+    let a0 = draw_bg_top(m, a0, V_BG1_SCROLL_FLAGS_DUP, fundo);
+    let fundo_2 = Plano {
+        a3: V_BG2SCREENPOSX_DUP,
+        ..fundo
+    };
+    let a0 = draw_bg_bottom(m, a0, V_BG2_SCROLL_FLAGS_DUP, fundo_2)?;
+    let fundo_3 = Plano {
+        a3: V_BG3SCREENPOSX_DUP,
+        ..fundo
+    };
+    let a0 = draw_bg_block3(m, a0, V_BG3_SCROLL_FLAGS_DUP, fundo_3)?;
+    let frente = Plano {
+        a3: V_SCREENPOSX_DUP,
+        a4: V_LVLLAYOUT_FG,
+        d2: 0x4000,
+    };
+    if rb(m, V_FG_SCROLL_FLAGS_DUP) != 0 {
+        faixas_das_bordas(m, a0, V_FG_SCROLL_FLAGS_DUP, frente);
+    }
+    Ok(())
 }
 
 /// `LoadTilesAsYouMove_BGOnly`: desenha as faixas novas do fundo que a rolagem do título pediu.

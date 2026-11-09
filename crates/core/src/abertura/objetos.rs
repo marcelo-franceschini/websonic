@@ -2,9 +2,9 @@
 //! e o objeto `CreditsText`. Os objetos do original são código na ROM (tabela `Obj_Index`);
 //! aqui cada identificador chama uma função nativa, citando o rótulo que reproduz.
 
-use super::boot::rom_w;
+use super::boot::{rom_b, rom_w};
 use super::ram::*;
-use super::{ErroAbertura, rb, rl, rw, wb, wl, ww};
+use super::{ErroAbertura, plc, rb, rl, rw, wb, wl, ww};
 use crate::memoria::Memoria;
 
 const SPRITES_MAX: u8 = 80;
@@ -68,8 +68,158 @@ fn rodar_objeto(m: &mut Memoria, a0: u32, id: u8) -> Result<(), ErroAbertura> {
         }
         ID_TITLE_SONIC => titulo_sonic(m, a0),
         ID_PSBTM => psbtm(m, a0),
+        ID_TITLE_CARD => cartao_de_titulo(m, a0),
         _ => Err(ErroAbertura::NaoImplementado("objeto")),
     }
+}
+
+/// Palavra com sinal (`bge` e `bmi` comparam assim).
+fn com_sinal(w: u16) -> i16 {
+    i16::from_be_bytes(w.to_be_bytes())
+}
+
+/// Objeto `TitleCard` (`34`): os quatro elementos dos cartões de título da fase (nome da zona,
+/// "ZONE", "ACT" e o oval). Rotinas 0 (carga), 2 (entrada), 4 e 6 (espera e saída).
+fn cartao_de_titulo(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
+    match rb(m, a0.wrapping_add(OB_ROUTINE)) {
+        0 => {
+            card_load_for_zone(m, a0);
+            card_move_in(m, a0);
+            Ok(())
+        }
+        2 => {
+            card_move_in(m, a0);
+            Ok(())
+        }
+        4 | 6 => card_wait(m, a0),
+        _ => Err(ErroAbertura::NaoImplementado("rotina do TitleCard")),
+    }
+}
+
+/// `Card_LoadForZone`: o objeto raiz vira o nome da zona e cria os outros três, cada um no espaço
+/// seguinte, com as posições de `Card_ConData` (início, que também é o fim, e alvo) e com a
+/// altura, a rotina e o quadro de `Card_ItemData`.
+fn card_load_for_zone(m: &mut Memoria, a0: u32) {
+    let zona_e_ato = rw(m, V_ZONE_ACT);
+    let mut d0 = u16::from(rb(m, V_ZONE));
+    if zona_e_ato == ID_LZ_ACT4 {
+        d0 = 5;
+    }
+    // `d2`: o quadro do nome da zona.
+    let mut d2 = d0;
+    if zona_e_ato == ID_FZ {
+        d0 = 6;
+        d2 = 0xB;
+    }
+    let mut a3 = CARD_CONDATA.wrapping_add(u32::from(d0).wrapping_mul(16));
+    let mut a2 = CARD_ITEMDATA;
+    let mut a1 = a0;
+    for _ in 0..4 {
+        wb(m, a1.wrapping_add(OB_ID), ID_TITLE_CARD);
+        let inicio = rom_w(m, a3);
+        ww(m, a1.wrapping_add(OB_X), inicio);
+        ww(m, a1.wrapping_add(CARD_FINALX), inicio);
+        let alvo = rom_w(m, a3.wrapping_add(2));
+        ww(m, a1.wrapping_add(CARD_MAINX), alvo);
+        a3 = a3.wrapping_add(4);
+        let y = rom_w(m, a2);
+        ww(m, a1.wrapping_add(OB_SCREENY), y);
+        let rotina = rom_b(m, a2.wrapping_add(2));
+        wb(m, a1.wrapping_add(OB_ROUTINE), rotina);
+        let mut quadro = rom_b(m, a2.wrapping_add(3));
+        a2 = a2.wrapping_add(4);
+        if quadro == 0 {
+            quadro = d2.to_be_bytes()[1];
+        }
+        // O número do ato soma o ato atual; o ato 4 (SBZ3) usa a arte do "3".
+        if quadro == 7 {
+            let ato = rb(m, V_ACT);
+            quadro = quadro.wrapping_add(ato);
+            if ato == 3 {
+                quadro = quadro.wrapping_sub(1);
+            }
+        }
+        wb(m, a1.wrapping_add(OB_FRAME), quadro);
+        wl(m, a1.wrapping_add(OB_MAP), MAP_CARD);
+        ww(m, a1.wrapping_add(OB_GFX), ARTTILE_TITLE_CARD | TILE_PRIO);
+        wb(m, a1.wrapping_add(OB_ACTWID), 240 / 2);
+        // `sprite_cam_screen`: posição de tela, sem câmera.
+        wb(m, a1.wrapping_add(OB_RENDER), 0);
+        wb(m, a1.wrapping_add(OB_PRIORITY), 0);
+        // Um segundo de espera antes de sair (palavra em `obTimeFrame`).
+        ww(m, a1.wrapping_add(OB_TIME_FRAME), 60);
+        a1 = a1.wrapping_add(OBJECT_SIZE);
+    }
+}
+
+/// `Card_MoveIn`: anda 16 pixels por quadro rumo a `card_mainX`, e aparece se está na tela.
+fn card_move_in(m: &mut Memoria, a0: u32) {
+    let alvo = rw(m, a0.wrapping_add(CARD_MAINX));
+    let x = rw(m, a0.wrapping_add(OB_X));
+    if alvo != x {
+        // `bge`: alvo maior ou igual (com sinal) quer dizer que o elemento vem da esquerda.
+        let passo = if com_sinal(alvo) >= com_sinal(x) {
+            16
+        } else {
+            0u16.wrapping_sub(16)
+        };
+        ww(m, a0.wrapping_add(OB_X), x.wrapping_add(passo));
+    }
+    card_na_tela(m, a0);
+}
+
+/// `.checkOffScreen` (FixBugs = 0): só aparece com X não negativo e abaixo de `$80+320+64`.
+fn card_na_tela(m: &mut Memoria, a0: u32) {
+    let x = rw(m, a0.wrapping_add(OB_X));
+    if com_sinal(x) < 0 || x >= 0x80 + 320 + 64 {
+        return;
+    }
+    display_sprite(m, a0);
+}
+
+/// `Card_Wait`: espera o tempo do objeto, depois sai.
+fn card_wait(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
+    let tempo = rw(m, a0.wrapping_add(OB_TIME_FRAME));
+    if tempo == 0 {
+        return card_move_out(m, a0);
+    }
+    ww(m, a0.wrapping_add(OB_TIME_FRAME), tempo.wrapping_sub(1));
+    display_sprite(m, a0);
+    Ok(())
+}
+
+/// `Card_MoveOut`: anda 32 pixels por quadro rumo a `card_finalX`. Fora da tela ou no fim, troca
+/// a arte e some.
+fn card_move_out(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
+    // `tst.b obRender(a0)` e `bpl`: o bit 7 diz se o sprite saiu na tela no último quadro.
+    if rb(m, a0.wrapping_add(OB_RENDER)) & 0x80 == 0 {
+        return card_change_art(m, a0);
+    }
+    let alvo = rw(m, a0.wrapping_add(CARD_FINALX));
+    let x = rw(m, a0.wrapping_add(OB_X));
+    if alvo == x {
+        return card_change_art(m, a0);
+    }
+    let passo = if com_sinal(alvo) >= com_sinal(x) {
+        32
+    } else {
+        0u16.wrapping_sub(32)
+    };
+    ww(m, a0.wrapping_add(OB_X), x.wrapping_add(passo));
+    card_na_tela(m, a0);
+    Ok(())
+}
+
+/// `Card_ChangeArt`: o elemento do nome da zona (rotina 4) devolve o espaço da VRAM às explosões e
+/// aos animais da zona; todos os elementos somem (`DeleteObject`).
+fn card_change_art(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
+    if rb(m, a0.wrapping_add(OB_ROUTINE)) == 4 {
+        plc::add_plc(m, PLCID_EXPLODE)?;
+        let zona = u16::from(rb(m, V_ZONE));
+        plc::add_plc(m, zona.wrapping_add(PLCID_GHZANIMALS))?;
+    }
+    delete_object(m, a0);
+    Ok(())
 }
 
 /// `AnimateSprite` (`_incObj/sub AnimateSprite.asm`): avança o roteiro de animação do objeto

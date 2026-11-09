@@ -269,3 +269,76 @@ pub const ID_SBZ: u8 = 5;
 pub const BTN_DIR: u8 = 0x0F;
 pub const BTN_C: u8 = 0x20;
 pub const BTN_START: u8 = 0x80;
+
+// Fase da demo, fatia 1: do fim do primeiro desvanecimento ao laço dos cartões de título.
+pub const V_SOUNDQUEUE0: u32 = 0xFF_F00A;
+pub const V_AIR: u32 = 0xFF_FE14;
+pub const ID_LZ: u8 = 1;
+pub const ID_MZ: u8 = 2;
+pub const ID_LZ_ACT4: u16 = 0x103;
+pub const ID_FZ: u16 = 0x502;
+/// Intervalos que `Level_ClrRam` limpa.
+pub const V_MISC_VARIABLES: u32 = 0xFF_F628;
+pub const V_MISC_VARIABLES_END: u32 = 0xFF_F680;
+pub const V_LEVELVARIABLES: u32 = 0xFF_F700;
+pub const V_LEVELVARIABLES_END: u32 = 0xFF_F800;
+pub const V_TIMINGANDSCREENVARIABLES: u32 = 0xFF_FE60;
+pub const V_TIMINGANDSCREENVARIABLES_END: u32 = 0xFF_FF80;
+/// Arte e cabeçalhos da fase.
+pub const NEM_TITLECARD: u32 = 0x3_9204;
+pub const ARTTILE_TITLE_CARD: u16 = 0x580;
+pub const LEVEL_HEADERS: u32 = 0x1_DD16;
+pub const MUSIC_LIST: u32 = 0x3796;
+pub const PALID_SONIC: u32 = 3;
+pub const PLCID_MAIN2: u16 = 1;
+pub const PLCID_EXPLODE: u16 = 2;
+pub const PLCID_GHZANIMALS: u16 = 0x15;
+/// Cartões de título (objeto `34`): quatro elementos seguidos a partir de `v_titlecard`.
+pub const ID_TITLE_CARD: u8 = 0x34;
+pub const V_TITLECARD: u32 = 0xFF_D080;
+pub const V_TTLCARDACT: u32 = 0xFF_D100;
+pub const MAP_CARD: u32 = 0xD074;
+pub const CARD_CONDATA: u32 = 0xCAD2;
+pub const CARD_ITEMDATA: u32 = 0xCAC2;
+/// `card_mainX` e `card_finalX` (`objoff_30` e `objoff_32`).
+pub const CARD_MAINX: u32 = 0x30;
+pub const CARD_FINALX: u32 = 0x32;
+/// Bit de prioridade do tile (`Tile_Prio`).
+pub const TILE_PRIO: u16 = 0x8000;
+/// Cópias que o VBlank das fases faz para o `LoadTilesAsYouMove`.
+pub const V_SCREENPOSX_DUP: u32 = 0xFF_FF10;
+pub const V_BGSCREENPOSX_DUP: u32 = 0xFF_FF18;
+pub const V_BG2SCREENPOSX_DUP: u32 = 0xFF_FF20;
+pub const V_BG3SCREENPOSX_DUP: u32 = 0xFF_FF28;
+pub const V_FG_SCROLL_FLAGS_DUP: u32 = 0xFF_FF30;
+pub const V_BG1_SCROLL_FLAGS_DUP: u32 = 0xFF_FF32;
+pub const V_BG2_SCROLL_FLAGS_DUP: u32 = 0xFF_FF34;
+pub const V_BG3_SCROLL_FLAGS_DUP: u32 = 0xFF_FF36;
+/// Arte do Sonic que muda por quadro (`v_sgfx_buffer`) e a flag de troca.
+pub const F_SONFRAMECHG: u32 = 0xFF_F767;
+pub const V_SGFX_BUFFER: u32 = 0xFF_C800;
+pub const V_SGFX_BUFFER_END: u32 = 0xFF_CAE0;
+pub const ARTTILE_SONIC: u16 = 0x780;
+/// Tiles animados (`AnimateLevelGfx`).
+pub const F_PAUSE: u32 = 0xFF_F63A;
+pub const V_GFXBIGRING: u32 = 0xFF_F7BE;
+pub const V_LANI0_FRAME: u32 = 0xFF_F7B0;
+pub const V_LANI0_TIME: u32 = 0xFF_F7B1;
+pub const V_LANI1_FRAME: u32 = 0xFF_F7B2;
+pub const V_LANI1_TIME: u32 = 0xFF_F7B3;
+pub const V_LANI2_FRAME: u32 = 0xFF_F7B4;
+pub const V_LANI2_TIME: u32 = 0xFF_F7B5;
+pub const ART_GHZWATER: u32 = 0x6_6A96;
+pub const ART_GHZFLOWER1: u32 = 0x6_6C96;
+pub const ART_GHZFLOWER2: u32 = 0x6_7096;
+pub const ART_BIGRING: u32 = 0x6_A2E4;
+pub const ARTTILE_GHZ_WATERFALL: u16 = 0x378;
+pub const ARTTILE_GHZ_BIG_FLOWER_1: u16 = 0x35C;
+pub const ARTTILE_GHZ_SMALL_FLOWER: u16 = 0x36C;
+pub const ARTTILE_GIANT_RING: u16 = 0x400;
+/// Flags de atualização do HUD.
+pub const F_LIFECOUNT: u32 = 0xFF_FE1C;
+pub const F_RINGCOUNT: u32 = 0xFF_FE1D;
+pub const F_TIMECOUNT: u32 = 0xFF_FE1E;
+pub const F_SCORECOUNT: u32 = 0xFF_FE1F;
+pub const F_ENDACTBONUS: u32 = 0xFF_F7D6;

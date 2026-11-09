@@ -33,6 +33,9 @@ fn quadros_de_espera(m: Marca) -> u32 {
         Marca::WaitForVBlank => 0,
         // `GotoDemo` não é espera do núcleo; `GM_Level` vem logo depois do `rts` do `GotoDemo`.
         Marca::GotoDemo | Marca::GmLevel => 0,
+        // Arte dos cartões e limpeza da RAM: estimado pela rodada de 970 quadros (as
+        // interrupções voltam uns 7 quadros depois do fim do desvanecimento).
+        Marca::LevelTtlCardLoop => 7,
     }
 }
 

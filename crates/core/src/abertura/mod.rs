@@ -13,10 +13,12 @@
 //! Uma interrupção que chega antes dela pega o laço no meio do trecho, e o tratador roda como no
 //! original nesse caso: com a rotina zero, só o driver de som e o contador.
 
+pub mod animacao;
 pub mod boot;
 pub mod cenario;
 pub mod desenho;
 pub mod fase;
+pub mod hud;
 pub mod objetos;
 pub mod paleta;
 pub mod plc;
@@ -65,10 +67,12 @@ pub enum Marca {
     GotoDemo,
     /// `GM_Level`: começo do modo de fase (e de demo).
     GmLevel,
+    /// `Level_TtlCardLoop`: começo do laço dos cartões de título da fase.
+    LevelTtlCardLoop,
 }
 
 /// Rótulo e endereço de cada marca (metadado de `refs/rotulos.txt`, conferido por teste).
-pub const MARCAS: [(Marca, &str, u32); 16] = [
+pub const MARCAS: [(Marca, &str, u32); 17] = [
     (Marca::GameProgram, "GameProgram", 0x300),
     (Marca::ChecksumOk, "CheckSumOk", 0x33E),
     (Marca::VdpSetupGame, "VDPSetupGame", 0x1222),
@@ -85,6 +89,7 @@ pub const MARCAS: [(Marca, &str, u32); 16] = [
     (Marca::WaitForVBlank, "WaitForVBlank", 0x29A0),
     (Marca::GotoDemo, "GotoDemo", 0x33A4),
     (Marca::GmLevel, "GM_Level", 0x379E),
+    (Marca::LevelTtlCardLoop, "Level_TtlCardLoop", 0x3912),
 ];
 
 type Passo = fn(&mut Memoria) -> Result<(), ErroAbertura>;
@@ -168,6 +173,10 @@ enum Fase {
     Entrada,
     /// `PaletteFadeOut` do começo de `GM_Level`: faltam tantos VBlanks.
     FadeOut(u8),
+    /// Preparo dos cartões de título (sem espera) até a marca `Level_TtlCardLoop`.
+    PreparoCartoes,
+    /// `Level_TtlCardLoop`: os cartões entram e a fila de arte da zona anda, um quadro por VBlank.
+    Cartoes,
     /// O resto da fase ainda não existe nesta versão do núcleo.
     Parado,
 }
@@ -294,7 +303,8 @@ impl Abertura {
                 | Titulo::PreDemo,
             ) => Espera::VBlank,
             Modo::Fase(Fase::Entrada) => Espera::Marca(Marca::GmLevel),
-            Modo::Fase(Fase::FadeOut(_)) => Espera::VBlank,
+            Modo::Fase(Fase::PreparoCartoes) => Espera::Marca(Marca::LevelTtlCardLoop),
+            Modo::Fase(Fase::FadeOut(_) | Fase::Cartoes) => Espera::VBlank,
             Modo::Fase(Fase::Parado) => Espera::Nenhuma,
         }
     }
@@ -316,7 +326,7 @@ impl Abertura {
                         | Titulo::Laco
                         | Titulo::PreDemo
                 )
-                | Modo::Fase(Fase::FadeOut(_))
+                | Modo::Fase(Fase::FadeOut(_) | Fase::Cartoes)
         )
     }
 
@@ -429,6 +439,13 @@ impl Abertura {
                 fase::gm_level_inicio(&mut self.mem);
                 self.pedir_espera();
                 self.modo = Modo::Fase(Fase::FadeOut(22));
+            }
+            (Modo::Fase(Fase::PreparoCartoes), Marca::LevelTtlCardLoop) => {
+                // O preparo dos cartões roda de uma vez (D7.10); os VBlanks no meio dele chegam
+                // antes da marca e rodam como quadros de lag (D7.25).
+                fase::preparo_dos_cartoes(&mut self.mem)?;
+                self.pedir_vblank(vblank::ROTINA_CARTOES);
+                self.modo = Modo::Fase(Fase::Cartoes);
             }
             (Modo::Titulo(Titulo::PreparoB), Marca::PaletteFadeOut) => {
                 // A parte B roda de uma vez (D7.10). Depois, o desvanecimento pede o VBlank.
@@ -596,12 +613,26 @@ impl Abertura {
                 self.modo = Modo::Fase(if restam > 0 {
                     Fase::FadeOut(restam)
                 } else {
-                    Fase::Parado
+                    Fase::PreparoCartoes
                 });
             }
-            Fase::Entrada | Fase::Parado => self.ignorar(),
+            Fase::Cartoes => {
+                self.vblanks_tratados = self.vblanks_tratados.saturating_add(1);
+                vblank::tratar(&mut self.mem)?;
+                match fase::laco_dos_cartoes(&mut self.mem)? {
+                    fase::DepoisDosCartoes::Continua => self.pedir_vblank(vblank::ROTINA_CARTOES),
+                    fase::DepoisDosCartoes::Fim => self.modo = Modo::Fase(Fase::Parado),
+                }
+            }
+            Fase::Entrada | Fase::PreparoCartoes | Fase::Parado => self.ignorar(),
         }
         Ok(())
+    }
+
+    /// `move.b #rotina,(v_vblank_routine).w` antes de `WaitForVBlank`.
+    fn pedir_vblank(&mut self, rotina: u8) {
+        wb(&mut self.mem, ram::V_VBLANK_ROUTINE, rotina);
+        self.pedir_espera();
     }
 
     /// Um VBlank de desvanecimento para preto (`PaletteFadeOut`): roda o tratador e um passo de

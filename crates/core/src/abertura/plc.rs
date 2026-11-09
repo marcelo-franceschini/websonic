@@ -49,6 +49,38 @@ pub fn new_plc(m: &mut Memoria, id: u16) {
     }
 }
 
+/// `AddPLC`: copia a lista de PLC `id` para a primeira posição livre da fila, sem limpar o que já
+/// está nela. A procura anda de seis em seis bytes até achar uma longa zerada, como no original
+/// (que não confere o fim da fila); um passo além da RAM vira erro em vez de laço sem fim.
+pub fn add_plc(m: &mut Memoria, id: u16) -> Result<(), ErroAbertura> {
+    let deslocamento = rom_w(m, ART_LOAD_CUES.wrapping_add(u32::from(id).wrapping_mul(2)));
+    let lista = ART_LOAD_CUES.wrapping_add(u32::from(deslocamento));
+    let mut destino = V_PLC_BUFFER;
+    while rl(m, destino) != 0 {
+        destino = destino.wrapping_add(PLC_SLOT_SIZE);
+        if destino >= 0x100_0000 {
+            return Err(ErroAbertura::NaoImplementado(
+                "fila de arte sem posição livre",
+            ));
+        }
+    }
+    let quantos = rom_w(m, lista);
+    // `bmi`: contagem negativa quer dizer lista vazia. `dbf` faz (contagem + 1) entradas.
+    if quantos & 0x8000 != 0 {
+        return Ok(());
+    }
+    let mut origem = lista.wrapping_add(2);
+    for _ in 0..=u32::from(quantos) {
+        let arte = rom_l(m, origem);
+        let vram = rom_w(m, origem.wrapping_add(4));
+        wl(m, destino, arte);
+        ww(m, destino.wrapping_add(4), vram);
+        origem = origem.wrapping_add(PLC_SLOT_SIZE);
+        destino = destino.wrapping_add(PLC_SLOT_SIZE);
+    }
+    Ok(())
+}
+
 /// Coloca uma entrada na primeira posição livre da fila (uso de teste e de montagem manual).
 pub fn enfileirar(m: &mut Memoria, arte: u32, vram: u16) {
     let mut a = V_PLC_BUFFER;
