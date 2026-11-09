@@ -3,7 +3,6 @@
 //! sprite: y, tamanho, ligação, tile, x).
 
 use sonic1_core::abertura::objetos::{build_sprites, display_sprite};
-use sonic1_core::abertura::ram::*;
 use sonic1_core::memoria::Memoria;
 
 const MAPA: usize = 0x1000;
