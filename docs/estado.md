@@ -11,7 +11,7 @@ Plano aprovado em 08/11/2026 (`docs/plano-etapa-7.md`, com D7.3, D7.4 e a exclus
 **Feito e provado:** experimento do nível 2 (7.8): laços curtos a poucos ppm com o refresh 128/126; a voz SEGA erra 1,54% (BACKLOG, Etapa 15). Navegador (7.7): console nominal em `crates/console`, `Jogo` em `crates/web`, site com canvas em escala inteira; caminho idêntico no nativo e no WebAssembly. O quadro da Sega no navegador ainda precisa de confirmação: depois da correção da ponte (cópia dos registradores de DMA) o diagnóstico mostrou a CRAM com 64 cores, falta rodar `scripts/etapa7-bloco5.sh` e olhar o `.ppm` do quadro 150.
 
 **Falta (critério da etapa: zero divergência do quadro 0 ao 1166, `Level_StartGame`):**
-1. Título, parte B (~395 a 526): `LevelSizeLoad`, `DeformLayers`, `LevelLayoutLoad`, `DrawChunks`, EniDec e KosDec da GHZ, objetos `TitleSonic` e `PSBTM`, `PalCycle_Title`, fila de arte (`NewPLC`, `RunPLC`, `ProcessPLC`), `Tit_MainLoop`.
+1. Título, parte B (~395 a 526). **Fatia 1 escrita (09/11/2026), sem prova com a ROM ainda**: artes e fonte do título, `LevelSizeLoad`, `DeformLayers` da GHZ, EniDec e KosDec da GHZ, `LevelLayoutLoad`, e o segundo `PaletteFadeOut` (decisões D7.13 a D7.17 em `docs/conhecimento/abertura.md`). Falta a fatia 2: `DrawChunks`, emblema, `PalLoad_Fade` do título, música, objetos `TitleSonic` e `PSBTM`, `PalCycle_Title`, fila de arte (`NewPLC`, `RunPLC`, `ProcessPLC`), `Tit_MainLoop`.
 2. Espera do título e `GotoDemo` (526 a 932).
 3. Fase da demo, `GM_Level` até `Level_StartGame` (932 a 1166).
 4. Comparar a imagem de 320x224 e VRAM, CRAM e VSRAM contra o oráculo (hoje só a ponte do navegador foi provada).

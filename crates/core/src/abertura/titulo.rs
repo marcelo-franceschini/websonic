@@ -1,5 +1,7 @@
 //! Tela do título (sub-etapa 7.5). Cada função cita o rótulo que reproduz.
 
+use super::boot::rom_w;
+use super::cenario;
 use super::objetos::{build_sprites, execute_objects};
 use super::ram::*;
 use super::sega::{clear_screen, copy_tilemap, pal_load_para};
@@ -64,6 +66,54 @@ pub fn palette_fade_in_inicio(m: &mut Memoria) {
         ww(m, a0, 0);
         a0 = a0.wrapping_add(2);
     }
+    wb(m, V_VBLANK_ROUTINE, super::vblank::ROTINA_PALETTE_FADE);
+}
+
+/// Parte B do título, fatia 1: do fim do aparecimento do "SONIC TEAM PRESENTS" até a
+/// `PaletteFadeOut` seguinte (linhas 1952 a 1995 de `GM_Title`). Carrega as artes do título na
+/// VRAM, a fonte do menu, as variáveis de sessão e o cenário da GHZ (tamanhos, deformação, blocos
+/// e layout). O `RunPLC` de dentro do desvanecimento não faz nada: a fila de arte está vazia.
+pub fn parte_b1(m: &mut Memoria) -> Result<(), ErroAbertura> {
+    for (tile, origem) in [
+        (ARTTILE_TITLE_FOREGROUND, NEM_TITLE_FG),
+        (ARTTILE_TITLE_SONIC, NEM_TITLE_SONIC),
+        (ARTTILE_TITLE_TRADEMARK, NEM_TITLE_TM),
+    ] {
+        wl(m, VDP_CONTROLE, loc_vram(u32::from(tile)));
+        rotinas::nem_dec(m, origem).map_err(rot)?;
+    }
+    // `Art_Text`: fonte do menu de fases, sem compressão, uma palavra por vez na porta de dados.
+    wl(
+        m,
+        VDP_CONTROLE,
+        loc_vram(u32::from(ARTTILE_LEVEL_SELECT_FONT)),
+    );
+    let mut a = ART_TEXT;
+    while a < ART_TEXT_END {
+        let w = rom_w(m, a);
+        ww(m, VDP_DADOS, w);
+        a = a.wrapping_add(2);
+    }
+    // Variáveis de sessão. O `UnusedOptimization` da referência é 0, então `v_unused2` também.
+    wb(m, V_LASTLAMP, 0);
+    ww(m, V_DEBUGUSE, 0);
+    ww(m, F_DEMO, 0);
+    ww(m, V_UNUSED2, 0);
+    // `id_GHZ_act1` é zero: a fase é a GHZ1.
+    ww(m, V_ZONE_ACT, 0);
+    ww(m, V_PCYC_TIME, 0);
+    cenario::level_size_load(m)?;
+    cenario::deform_layers(m)?;
+    // Blocos 16x16 (EniDec, tile inicial 0) e blocos 256x256 (KosDec) da GHZ.
+    rotinas::eni_dec(m, BLK16_GHZ, V_16X16, 0).map_err(rot)?;
+    rotinas::kos_dec(m, BLK256_GHZ, V_256X256).map_err(rot)?;
+    cenario::level_layout_load(m)
+}
+
+/// Começo de `PaletteFadeOut`: a paleta inteira (a partir de 0) e o pedido do primeiro VBlank do
+/// desvanecimento. Os passos de cada VBlank ficam em [`super::Abertura`].
+pub fn palette_fade_out_inicio(m: &mut Memoria) {
+    ww(m, V_PFADE_START, 0x003F);
     wb(m, V_VBLANK_ROUTINE, super::vblank::ROTINA_PALETTE_FADE);
 }
 

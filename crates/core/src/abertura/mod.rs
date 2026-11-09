@@ -10,6 +10,7 @@
 //! final. O comparador separa os quadros dentro de um trecho atômico dos demais.
 
 pub mod boot;
+pub mod cenario;
 pub mod objetos;
 pub mod ram;
 pub mod sega;
@@ -44,10 +45,12 @@ pub enum Marca {
     GmTitle,
     /// `PaletteFadeIn`: chamada do aparecimento da paleta.
     PaletteFadeIn,
+    /// `PaletteFadeOut`: a segunda chamada em `GM_Title`, antes da parte B do título.
+    PaletteFadeOut,
 }
 
 /// Rótulo e endereço de cada marca (metadado de `refs/rotulos.txt`, conferido por teste).
-pub const MARCAS: [(Marca, &str, u32); 11] = [
+pub const MARCAS: [(Marca, &str, u32); 12] = [
     (Marca::GameProgram, "GameProgram", 0x300),
     (Marca::ChecksumOk, "CheckSumOk", 0x33E),
     (Marca::VdpSetupGame, "VDPSetupGame", 0x1222),
@@ -59,6 +62,7 @@ pub const MARCAS: [(Marca, &str, u32); 11] = [
     (Marca::SegaWaitEnd, "Sega_WaitEnd", 0x2ED4),
     (Marca::GmTitle, "GM_Title", 0x2EF4),
     (Marca::PaletteFadeIn, "PaletteFadeIn", 0x1DA4),
+    (Marca::PaletteFadeOut, "PaletteFadeOut", 0x1E4A),
 ];
 
 type Passo = fn(&mut Memoria) -> Result<(), ErroAbertura>;
@@ -145,6 +149,10 @@ enum Titulo {
     PreparoA,
     /// `PaletteFadeIn` da tela do "SONIC TEAM PRESENTS".
     FadeIn(u8),
+    /// Parte B, fatia 1: espera a marca `PaletteFadeOut` (a fatia roda nela, de uma vez).
+    PreparoB,
+    /// `PaletteFadeOut` da parte B: faltam tantos VBlanks.
+    FadeOutB(u8),
     /// O resto do título ainda não existe nesta versão do núcleo.
     Parado,
 }
@@ -223,7 +231,10 @@ impl Abertura {
             Modo::Sega(_) => Espera::VBlank,
             Modo::Titulo(Titulo::Entrada) => Espera::Marca(Marca::GmTitle),
             Modo::Titulo(Titulo::PreparoA) => Espera::Marca(Marca::PaletteFadeIn),
-            Modo::Titulo(Titulo::FadeOut(_) | Titulo::FadeIn(_)) => Espera::VBlank,
+            Modo::Titulo(Titulo::PreparoB) => Espera::Marca(Marca::PaletteFadeOut),
+            Modo::Titulo(Titulo::FadeOut(_) | Titulo::FadeIn(_) | Titulo::FadeOutB(_)) => {
+                Espera::VBlank
+            }
             Modo::Titulo(Titulo::Parado) => Espera::Nenhuma,
         }
     }
@@ -237,7 +248,7 @@ impl Abertura {
         !matches!(
             self.modo,
             Modo::Sega(Sega::FadeOut(_) | Sega::WaitPal | Sega::WaitEnd)
-                | Modo::Titulo(Titulo::FadeOut(_) | Titulo::FadeIn(_))
+                | Modo::Titulo(Titulo::FadeOut(_) | Titulo::FadeIn(_) | Titulo::FadeOutB(_))
         )
     }
 
@@ -329,6 +340,13 @@ impl Abertura {
                 self.registrar_espera();
                 self.modo = Modo::Titulo(Titulo::FadeIn(22));
             }
+            (Modo::Titulo(Titulo::PreparoB), Marca::PaletteFadeOut) => {
+                // A parte B roda de uma vez (D7.10). Depois, o desvanecimento pede o VBlank.
+                titulo::parte_b1(&mut self.mem)?;
+                titulo::palette_fade_out_inicio(&mut self.mem);
+                self.registrar_espera();
+                self.modo = Modo::Titulo(Titulo::FadeOutB(22));
+            }
             _ => self.marcas_ignoradas = self.marcas_ignoradas.saturating_add(1),
         }
         Ok(())
@@ -358,21 +376,22 @@ impl Abertura {
     fn vblank_titulo(&mut self, t: Titulo) -> Result<(), ErroAbertura> {
         match t {
             Titulo::FadeOut(n) => {
-                self.vblanks_tratados = self.vblanks_tratados.saturating_add(1);
-                vblank::tratar(&mut self.mem)?;
-                sega::fade_out_to_black(&mut self.mem);
-                let n = n.saturating_sub(1);
-                if n > 0 {
-                    wb(
-                        &mut self.mem,
-                        ram::V_VBLANK_ROUTINE,
-                        vblank::ROTINA_PALETTE_FADE,
-                    );
-                    self.registrar_espera();
-                    self.modo = Modo::Titulo(Titulo::FadeOut(n));
+                let restam = self.vblank_fade_out(n)?;
+                let proximo = if restam > 0 {
+                    Titulo::FadeOut(restam)
                 } else {
-                    self.modo = Modo::Titulo(Titulo::PreparoA);
-                }
+                    Titulo::PreparoA
+                };
+                self.modo = Modo::Titulo(proximo);
+            }
+            Titulo::FadeOutB(n) => {
+                let restam = self.vblank_fade_out(n)?;
+                let proximo = if restam > 0 {
+                    Titulo::FadeOutB(restam)
+                } else {
+                    Titulo::Parado
+                };
+                self.modo = Modo::Titulo(proximo);
             }
             Titulo::FadeIn(n) => {
                 self.vblanks_tratados = self.vblanks_tratados.saturating_add(1);
@@ -388,12 +407,32 @@ impl Abertura {
                     self.registrar_espera();
                     self.modo = Modo::Titulo(Titulo::FadeIn(n));
                 } else {
-                    self.modo = Modo::Titulo(Titulo::Parado);
+                    self.modo = Modo::Titulo(Titulo::PreparoB);
                 }
             }
-            Titulo::Entrada | Titulo::PreparoA | Titulo::Parado => self.ignorar(),
+            Titulo::Entrada | Titulo::PreparoA | Titulo::PreparoB | Titulo::Parado => {
+                self.ignorar()
+            }
         }
         Ok(())
+    }
+
+    /// Um VBlank de desvanecimento para preto (`PaletteFadeOut`): roda o tratador e um passo de
+    /// `FadeOut_ToBlack`. Devolve os VBlanks que faltam, zero quando o desvanecimento acabou.
+    fn vblank_fade_out(&mut self, n: u8) -> Result<u8, ErroAbertura> {
+        self.vblanks_tratados = self.vblanks_tratados.saturating_add(1);
+        vblank::tratar(&mut self.mem)?;
+        sega::fade_out_to_black(&mut self.mem);
+        let restam = n.saturating_sub(1);
+        if restam > 0 {
+            wb(
+                &mut self.mem,
+                ram::V_VBLANK_ROUTINE,
+                vblank::ROTINA_PALETTE_FADE,
+            );
+            self.registrar_espera();
+        }
+        Ok(restam)
     }
 
     fn ignorar(&mut self) {

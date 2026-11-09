@@ -26,6 +26,8 @@ fn quadros_de_espera(m: Marca) -> u32 {
         Marca::SegaWaitPal => 0,
         Marca::SegaWaitEnd | Marca::GmTitle => 0,
         Marca::PaletteFadeIn => 5,
+        // A parte B entra logo depois da última VBlank do aparecimento (sem espera própria).
+        Marca::PaletteFadeOut => 0,
     }
 }
 
