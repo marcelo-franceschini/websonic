@@ -257,6 +257,7 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
     nucleo.registrar_esperas();
     let mut video = video::Video::novo();
     nucleo.definir_observador(video.observador());
+    let mut fim_da_abertura: Option<u32> = None;
     let mut esperas_o: std::collections::VecDeque<(Vec<u8>, Vec<u8>)> = Default::default();
     let mut esperas_n: std::collections::VecDeque<(Vec<u8>, Vec<u8>)> = Default::default();
 
@@ -556,7 +557,16 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
         }
         // Escritas: o núcleo pode estar atrasado ou adiantado dentro de um trecho atômico, nunca
         // diferente. Cada item é conferido assim que os dois lados o têm.
-        for e in escritas_do_quadro(&q) {
+        // O núcleo da abertura termina em `Level_StartGame`: o que o oráculo escreve depois dessa
+        // marca fica fora da contagem final (a fase seguinte é da Etapa 9).
+        if marcas
+            .iter()
+            .any(|(_, i)| MARCAS[*i].0 == Marca::LevelStartGame)
+        {
+            fim_da_abertura = Some(q.numero);
+        }
+        let dentro = fim_da_abertura.is_none_or(|f| q.numero <= f);
+        for e in escritas_do_quadro(&q).into_iter().filter(|_| dentro) {
             esperadas[usize::from(e.0)].push(e);
             rel.escritas_oraculo[usize::from(e.0)] += 1;
             if e.0 == 4 {
