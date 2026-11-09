@@ -620,7 +620,7 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
                 nucleo.mem.divergencias_z80().len(),
             );
         }
-        video.quadro_do_oraculo(&q, &o.imagem().pontos);
+        video.quadro_do_oraculo(&q, &o.imagem().pontos, o.emulador().oracle_cram());
         video.processar();
         rel.quadros += 1;
     }
@@ -817,6 +817,9 @@ pub fn imprimir(rel: &Relatorio) {
     );
     if let Some(p) = &v.primeiro {
         println!("video_primeira_divergencia: {p}");
+    }
+    for d in &v.diagnostico {
+        println!("video_diag {d}");
     }
     println!("video_avisos: {}", v.avisos);
     for (aviso, n) in &rel.avisos_nucleo {

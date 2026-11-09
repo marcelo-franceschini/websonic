@@ -23,6 +23,9 @@ struct QuadroDoOraculo {
     cram: [u8; 20],
     vsram: [u8; 20],
     imagem: [u8; 20],
+    /// Para o diagnóstico: a CRAM e a imagem do oráculo (só os primeiros divergentes se usam).
+    cram_palavras: Vec<u16>,
+    pontos: Vec<u16>,
 }
 
 /// Contagens do vídeo, para o relatório.
@@ -42,6 +45,8 @@ pub struct ResultadoVideo {
     /// O primeiro quadro que diverge e em que campos.
     pub primeiro: Option<String>,
     pub avisos: String,
+    /// Diagnóstico dos primeiros quadros divergentes: índices e contagens, nunca valores.
+    pub diagnostico: Vec<String>,
 }
 
 impl ResultadoVideo {
@@ -111,7 +116,7 @@ impl Video {
     }
 
     /// Registra um quadro do oráculo: as posições das escritas de vídeo e os hashes de fechamento.
-    pub fn quadro_do_oraculo(&mut self, q: &Quadro, imagem: &[u16]) {
+    pub fn quadro_do_oraculo(&mut self, q: &Quadro, imagem: &[u16], cram: &[u16]) {
         let mut novas = 0u64;
         for e in &q.eventos {
             if e.tipo == Tipo::Vdp {
@@ -131,6 +136,8 @@ impl Video {
             cram: q.hashes[Categoria::Cram as usize],
             vsram: q.hashes[Categoria::Vsram as usize],
             imagem: sha1(&bytes),
+            cram_palavras: cram.to_vec(),
+            pontos: imagem.to_vec(),
         });
     }
 
@@ -203,6 +210,36 @@ impl Video {
                 *diverge = diverge.saturating_add(1);
                 diferentes.push(nome);
             }
+        }
+        if !diferentes.is_empty() && res.diagnostico.len() < 6 {
+            let cram_dif: Vec<usize> = v
+                .cram()
+                .iter()
+                .zip(&f.cram_palavras)
+                .enumerate()
+                .filter(|(_, (a, b))| a != b)
+                .map(|(i, _)| i)
+                .collect();
+            let pontos = r.quadro().pontos();
+            let dif_pontos: Vec<usize> = pontos
+                .iter()
+                .zip(&f.pontos)
+                .enumerate()
+                .filter(|(_, (a, b))| a != b)
+                .map(|(i, _)| i)
+                .collect();
+            let linhas = (
+                dif_pontos.first().map(|i| i / 320),
+                dif_pontos.last().map(|i| i / 320),
+            );
+            res.diagnostico.push(format!(
+                "quadro {} campos {:?} cram_indices={:?} pontos_diferentes={} linhas={:?}",
+                f.numero,
+                diferentes,
+                cram_dif,
+                dif_pontos.len(),
+                linhas
+            ));
         }
         if !diferentes.is_empty() && res.primeiro.is_none() {
             res.primeiro = Some(format!("quadro {} campos {:?}", f.numero, diferentes));
