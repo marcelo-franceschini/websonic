@@ -4,7 +4,7 @@ Documento de acompanhamento do progresso das etapas.
 
 ## Etapa 7 (Telas de abertura): em andamento (08/11/2026)
 
-Plano aprovado em 08/11/2026 (`docs/plano-etapa-7.md`, com D7.3, D7.4 e a exclusão da pilha). Bloco 1 feito (`docs/conhecimento/abertura.md`): `N_fim` = quadro 1166 (`Level_StartGame`). Feitas com dados sintéticos: 7.0 (comparador `diferencial-abertura/` sem patch no oráculo, D7.9), 7.1 e 7.2 (boot e soma de verificação no núcleo). 7.0 a 7.3 provadas com a ROM real (relatório do comparador, quadros 0 a 329): boot, verificação da ROM e tela da Sega com voz, sem divergência em RAM do 68000 e do Z80 nas esperas de VBlank, posição do Z80 e escritas do DAC iguais. Falta o título (7.5), a fase da demo (7.6), o navegador (7.7) e o experimento do nível 2 (7.8).
+Plano aprovado em 08/11/2026 (`docs/plano-etapa-7.md`, com D7.3, D7.4 e a exclusão da pilha). Bloco 1 feito (`docs/conhecimento/abertura.md`): `N_fim` = quadro 1166 (`Level_StartGame`). Feitas com dados sintéticos: 7.0 (comparador `diferencial-abertura/` sem patch no oráculo, D7.9), 7.1 e 7.2 (boot e soma de verificação no núcleo). 7.0 a 7.3 provadas com a ROM real (relatório do comparador, quadros 0 a 329): boot, verificação da ROM e tela da Sega com voz, sem divergência em RAM do 68000 e do Z80 nas esperas de VBlank, posição do Z80 e escritas do DAC iguais. Experimento do nível 2 (7.8) feito: laços curtos a poucos ppm com o refresh 128/126, voz SEGA com erro de 1,54% (BACKLOG, Etapa 15). Falta o título (7.5), a fase da demo (7.6) e o navegador (7.7).
 
 ## Etapa 6 (Driver de som): concluída, falta a sessão de revisão (08/11/2026)
 

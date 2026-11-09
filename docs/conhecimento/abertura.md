@@ -82,3 +82,18 @@ Modelo: `crates/core/src/nivel2/`, lê as constantes dos laços nos bytes da ROM
 | Espera da voz SEGA | não saiu na tabela (o modelo não reconheceu o trecho, ou o oráculo não chegou ao fim; diagnóstico adicionado) | | |
 
 Leitura: os dois erros têm o mesmo valor relativo (15628 ppm), o que aponta para um fator de hardware constante e não para erro na contagem de instruções. A razão medido por previsto é 1,01588, igual a 128/126: perda de 2 ciclos a cada 128, a atualização (refresh) da memória. Hipótese, sem fonte de hardware conferida: com esse fator o erro previsto cai para -25 ciclos na soma e +1 ciclo na limpeza (conta feita à mão, a conferir na próxima rodada). O fator foi ajustado nesses dois pontos e não prova nada fora deles.
+
+## Experimento do nível 2 (7.8): resultado final (Marcelo, 09/11/2026, bloco 4d)
+
+Medida em ciclos do 68000 (mclk do oráculo dividido por 7), do início ao fim de cada laço, contra o modelo (`crates/core/src/nivel2/`):
+
+| Laço | Medido | Previsto (tabela do manual) | Erro | Previsto com refresh (128/126) | Erro com refresh |
+| --- | --- | --- | --- | --- | --- |
+| Soma de verificação da ROM | 6385118 | 6285326 | -99792 (-15628 ppm) | 6385093 | -25 (-3 ppm) |
+| Limpeza da RAM de `GameInit` | 363338 | 357660 | -5678 (-15627 ppm) | 363337 | -1 (-2 ppm) |
+| Espera da voz SEGA | 17039347 | 16515520 | -523827 (-30742 ppm) | 16777671 | -261676 (-15357 ppm) |
+
+- **Conclusão 1 (laços curtos):** a contagem de instruções pela tabela do manual está certa. O desvio de 1,5877% é um fator constante, igual a 128/126, isto é, 2 ciclos perdidos a cada 128 pela atualização (refresh) da memória. Com ele o erro cai para -3 e -2 ppm. Confirmado em dois laços independentes, que tiveram o mesmo desvio relativo antes do ajuste. Falta conferir o fator em fonte de hardware (hipótese).
+- **Conclusão 2 (voz SEGA, caso longo):** com o refresh o modelo ainda erra 1,54% (-261676 ciclos). O laço é feito só de `nop` e `dbf`, então o excesso vem do hardware: o Z80 lê a ROM durante a voz e segura o 68000. A voz tem 27000 amostras (54000 escritas no YM2612 pelo DAC, endereço e dado). O excesso dá cerca de 9,5 a 9,7 ciclos do 68000 por amostra, se cada amostra custar uma leitura do Z80 na ROM. Hipótese a provar na Etapa 15: modelar a parada do 68000 por leitura do Z80 (cada leitura soma 3 ciclos ao relógio do Z80 e uma parada ao 68000, ver `som.md`).
+- **Erro do modelo para a duração do boot:** os dois trechos dominantes do boot (soma da ROM, 6,39 M ciclos, e limpeza da RAM) ficam a poucos ppm com o refresh. O boot inteiro até `GM_Sega` ainda tem partes não modeladas (preenchimento da VRAM por DMA, espera do Z80, outros laços curtos), por isso a duração total do boot não foi prevista nesta rodada.
+- **Classificação:** a previsão da espera da voz erra mais de 0,1%: **BACKLOG para a Etapa 15** (dono: IA). O experimento não trava a etapa.
