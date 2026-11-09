@@ -15,4 +15,4 @@
 - [oraculo.md](oraculo.md): oráculo (jgenesis modificado), formato do trace e dos eventos, mapa de rótulos, com evidência.
 - [nucleo.md](nucleo.md): memoria espelhada, operacoes do 68000, tempo gravado, pontos de checagem, teste por rotina, cobertura, bugs injetados e bugs conhecidos (Etapa 5), com evidencia.
 - [som.md](som.md): pontos do Z80 no tempo gravado, como o Z80 do oráculo avança, IDs e inventário do som (Etapa 6), com evidência.
-- [abertura.md](abertura.md): medidas do oráculo para o trecho do boot à primeira demo (Etapa 7), achados e resultado do experimento do nível 2.
+- [abertura.md](abertura.md): do boot à primeira demo (Etapa 7): medidas do oráculo, decisões D7.9 a D7.34, provas com a ROM (veredito IGUAL do quadro 0 ao 1166, com imagem, VRAM, CRAM e VSRAM), navegador e experimento do nível 2.
