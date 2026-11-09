@@ -45,74 +45,108 @@ fn soma(a: u64, b: u64) -> Option<u64> {
     a.checked_add(b)
 }
 
+/// Por que o modelo não reconheceu um trecho: deslocamento em bytes desde o início e motivo.
+/// Só metadado, nunca o conteúdo dos bytes.
+pub type Falha = (u32, &'static str);
+
+/// Valor de uma instrução que carrega uma constante num registrador de dados: `move.w #imm,Dn`
+/// (4 bytes, 8 ciclos) ou `moveq #n,Dn` (2 bytes, 4 ciclos). Devolve (registrador, valor
+/// da palavra baixa, tamanho, ciclos).
+fn carrega_constante(rom: &[u8], pc: u32) -> Option<(u8, u64, u32, u64)> {
+    let op = palavra(rom, pc)?;
+    // move.w #imm,Dn = 0011 nnn 000 111100
+    if op & 0xF1FF == 0x303C {
+        let reg = u8::try_from((op >> 9) & 7).ok()?;
+        return Some((reg, u64::from(palavra(rom, pc.checked_add(2)?)?), 4, 8));
+    }
+    // moveq #n,Dn = 0111 nnn 0 dddddddd (o valor é estendido com sinal; a palavra baixa conta)
+    if op & 0xF100 == 0x7000 {
+        let reg = u8::try_from((op >> 9) & 7).ok()?;
+        let n = i16::from(i8::from_be_bytes([op.to_be_bytes()[1]]));
+        let baixa = u16::from_be_bytes(n.to_be_bytes());
+        return Some((reg, u64::from(baixa), 2, 4));
+    }
+    None
+}
+
 /// `PlaySegaSound` (a partir da entrada): preâmbulo e laço duplo de atraso. Devolve o custo até
 /// a instrução que ajusta a pilha para sair (`addq.w #4,sp`), que é onde o laço acaba.
 pub fn laco_da_voz(rom: &[u8], inicio: u32) -> Option<Previsao> {
+    laco_da_voz_diagnostico(rom, inicio).ok()
+}
+
+/// Como [`laco_da_voz`], e diz onde e por que falhou.
+pub fn laco_da_voz_diagnostico(rom: &[u8], inicio: u32) -> Result<Previsao, Falha> {
+    let desloc = |pc: u32| pc.wrapping_sub(inicio);
     let mut pc = inicio;
     let mut total = 0u64;
     for _ in 0..16 {
-        match palavra(rom, pc)? {
-            // move.b #imm,(abs).l e move.w #imm,(abs).l: 20 ciclos.
-            0x13FC => {
-                total = soma(total, 20)?;
-                pc = pc.checked_add(8)?;
+        let op = palavra(rom, pc).ok_or((desloc(pc), "fora da ROM"))?;
+        if op == 0x13FC {
+            // move.b #imm,(abs).l: 20 ciclos.
+            total = soma(total, 20).ok_or((desloc(pc), "estouro"))?;
+            pc = pc.wrapping_add(8);
+        } else if op == 0x33FC {
+            // move.w #imm,(abs).l: 20 ciclos.
+            total = soma(total, 20).ok_or((desloc(pc), "estouro"))?;
+            pc = pc.wrapping_add(10);
+        } else if op == 0x584F {
+            // addq.w #4,sp: o fim do trecho.
+            return Ok(Previsao {
+                ciclos: total,
+                fim: pc,
+            });
+        } else if let Some((reg_ext, externo, t1, c1)) = carrega_constante(rom, pc) {
+            // Constante do laço externo (d1) e depois a do interno (d0).
+            let inicio_interno = pc.wrapping_add(t1);
+            let (reg_int, interno, t2, c2) = carrega_constante(rom, inicio_interno).ok_or((
+                desloc(inicio_interno),
+                "esperava a constante do laço interno",
+            ))?;
+            let mut p = inicio_interno.wrapping_add(t2);
+            let primeiro_nop = p;
+            let mut nops = 0u64;
+            while palavra(rom, p) == Some(0x4E71) {
+                nops = nops.wrapping_add(1);
+                p = p.wrapping_add(2);
             }
-            0x33FC => {
-                total = soma(total, 20)?;
-                pc = pc.checked_add(10)?;
+            let dbf_interno = 0x51C8 | u16::from(reg_int);
+            let dbf_externo = 0x51C8 | u16::from(reg_ext);
+            if palavra(rom, p) != Some(dbf_interno) {
+                return Err((desloc(p), "esperava o dbf do laço interno"));
             }
-            // move.w #o,d1 ... laço duplo.
-            0x323C => {
-                let externo = u64::from(palavra(rom, pc.checked_add(2)?)?);
-                let mut p = pc.checked_add(4)?;
-                let inicio_interno = p;
-                if palavra(rom, p)? != 0x303C {
-                    return None;
-                }
-                let interno = u64::from(palavra(rom, p.checked_add(2)?)?);
-                p = p.checked_add(4)?;
-                let primeiro_nop = p;
-                let mut nops = 0u64;
-                while palavra(rom, p)? == 0x4E71 {
-                    nops = nops.checked_add(1)?;
-                    p = p.checked_add(2)?;
-                }
-                // dbf d0,primeiro_nop
-                if palavra(rom, p)? != 0x51C8 || alvo16(rom, p.checked_add(2)?)? != primeiro_nop {
-                    return None;
-                }
-                p = p.checked_add(4)?;
-                // dbf d1,inicio_interno
-                if palavra(rom, p)? != 0x51C9 || alvo16(rom, p.checked_add(2)?)? != inicio_interno {
-                    return None;
-                }
-                p = p.checked_add(4)?;
-                // Interno: cada volta tem os nops e um dbf (10 se volta, 14 na última).
+            if alvo16(rom, p.wrapping_add(2)) != Some(primeiro_nop) {
+                return Err((desloc(p), "o dbf interno não volta ao primeiro nop"));
+            }
+            p = p.wrapping_add(4);
+            if palavra(rom, p) != Some(dbf_externo) {
+                return Err((desloc(p), "esperava o dbf do laço externo"));
+            }
+            if alvo16(rom, p.wrapping_add(2)) != Some(inicio_interno) {
+                return Err((desloc(p), "o dbf externo não volta à constante interna"));
+            }
+            p = p.wrapping_add(4);
+            let conta = || -> Option<u64> {
                 let voltas_internas = interno.checked_add(1)?;
                 let interno_total = voltas_internas
                     .checked_mul(nops.checked_mul(4)?)?
                     .checked_add(interno.checked_mul(10)?)?
                     .checked_add(14)?;
-                // Externo: move.w #i,d0 (8) + interno + dbf d1 (10 se volta, 14 na última).
                 let passadas = externo.checked_add(1)?;
                 let externo_total = passadas
-                    .checked_mul(soma(8, interno_total)?)?
+                    .checked_mul(soma(c2, interno_total)?)?
                     .checked_add(externo.checked_mul(10)?)?
                     .checked_add(14)?;
-                total = soma(total, soma(8, externo_total)?)?;
-                pc = p;
-            }
-            // addq.w #4,sp: o fim do trecho.
-            0x584F => {
-                return Some(Previsao {
-                    ciclos: total,
-                    fim: pc,
-                });
-            }
-            _ => return None,
+                soma(c1, externo_total)
+            };
+            let laco = conta().ok_or((desloc(pc), "estouro"))?;
+            total = soma(total, laco).ok_or((desloc(pc), "estouro"))?;
+            pc = p;
+        } else {
+            return Err((desloc(pc), "instrução desconhecida"));
         }
     }
-    None
+    Err((desloc(pc), "trecho longo demais"))
 }
 
 /// `CheckSumCheck`: preâmbulo e laço de soma das palavras da ROM.

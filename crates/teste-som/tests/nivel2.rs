@@ -96,3 +96,17 @@ fn nunca_entra_em_panico_com_bytes_quaisquer() {
         }
     }
 }
+
+#[test]
+fn laco_da_voz_com_moveq_custa_quatro_ciclos_a_menos_por_constante() {
+    // moveq #2,d1 ; moveq #-1,d0 (contagem 65535) ; nop ; dbf d0 ; dbf d1 ; addq.w #4,sp
+    let code: Vec<u8> = vec![
+        0x72, 0x02, 0x70, 0xFF, 0x4E, 0x71, 0x51, 0xC8, 0xFF, 0xFC, 0x51, 0xC9, 0xFF, 0xF6, 0x58,
+        0x4F,
+    ];
+    let rom = rom_com(0x104, &code);
+    let p = laco_da_voz(&rom, 0x104).unwrap();
+    // Passadas externas: 3. Constantes: 1 + 3 moveq de 4 ciclos em vez de move.w de 8.
+    let esperado = simula_voz(2, 65535, 1) - 4 * (1 + 3);
+    assert_eq!(p.ciclos, esperado);
+}

@@ -10,7 +10,9 @@ use oracle_trace::TempoRaw;
 use sonic1_core::abertura::ram::{PILHA_FIM, PILHA_INICIO};
 use sonic1_core::abertura::{Abertura, EventoQuadro, MARCAS};
 use sonic1_core::memoria::{ClasseLeitura, PortaVdp, Saida, Tamanho};
-use sonic1_core::nivel2::{com_refresh, laco_da_limpeza, laco_da_soma, laco_da_voz};
+use sonic1_core::nivel2::{
+    com_refresh, laco_da_limpeza, laco_da_soma, laco_da_voz, laco_da_voz_diagnostico,
+};
 use sonic1_core::quadro::tempo::AcessoZ80;
 use sonic1_core::som::z80::PontoZ80;
 use sonic1_fidelidade::hash::{em_hex, sha1_de_partes};
@@ -208,6 +210,7 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
     let soma = laco_da_soma(&rom, 0x31C);
     let limpeza = laco_da_limpeza(&rom, 0x364);
     let voz = laco_da_voz(&rom, 0x7_1FAC);
+    let voz_falha = laco_da_voz_diagnostico(&rom, 0x7_1FAC).err();
     let mut extras: Vec<(&'static str, u32)> = Vec::new();
     for (nome, p, ini) in [
         ("soma_da_rom", soma, 0x31Cu32),
@@ -535,8 +538,13 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
         ("limpeza_da_ram", limpeza, 0x364),
         ("espera_da_voz", voz, 0x7_1FAC),
     ] {
+        let falha = if nome == "espera_da_voz" {
+            format!(" falha={voz_falha:?}")
+        } else {
+            String::new()
+        };
         rel.nivel2_estado.push(format!(
-            "{nome} reconhecido={} inicio_visto={} fim_visto={}",
+            "{nome} reconhecido={} inicio_visto={} fim_visto={}{falha}",
             p.is_some(),
             extras_mclk.contains_key(&(nome, ini)),
             p.is_some_and(|p| extras_mclk.contains_key(&(nome, p.fim)))
