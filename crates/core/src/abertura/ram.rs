@@ -76,3 +76,51 @@ pub const PAL_INDEX: u32 = 0x2160;
 pub const PAL_SEGA1: u32 = 0x20B8;
 pub const PAL_SEGA1_END: u32 = 0x20C4;
 pub const PAL_SEGA2: u32 = 0x20C4;
+
+// Objetos, sprites e a tela do título.
+pub const V_OBJSPACE: u32 = 0xFF_D000;
+pub const V_OBJSPACE_END: u32 = 0xFF_F000;
+pub const OBJECT_SIZE: u32 = 0x40;
+pub const V_PLAYER: u32 = 0xFF_D000;
+pub const V_TITLESONIC: u32 = 0xFF_D040;
+pub const V_SONICTEAM: u32 = 0xFF_D080;
+pub const V_PRESSSTART: u32 = 0xFF_D080;
+pub const V_TITLETM: u32 = 0xFF_D0C0;
+pub const V_TTLSONICHIDE: u32 = 0xFF_D100;
+pub const V_SPRITEQUEUE: u32 = 0xFF_AC00;
+pub const V_SPRITECOUNT: u32 = 0xFF_F62C;
+pub const V_CREDITSNUM: u32 = 0xFF_FFF4;
+pub const V_SCREENPOSX: u32 = 0xFF_F700;
+pub const V_BGSCREENPOSX: u32 = 0xFF_F708;
+pub const V_BG3SCREENPOSX: u32 = 0xFF_F718;
+pub const V_ZONE: u32 = 0xFF_FE10;
+pub const V_PALETTE_FADING_END: u32 = 0xFF_FC00;
+pub const V_PALETTE_FADING_LINE_3: u32 = 0xFF_FBC0;
+pub const GM_TITLE_ID: u8 = 4;
+
+// Campos de um objeto.
+pub const OB_ID: u32 = 0x00;
+pub const OB_RENDER: u32 = 0x01;
+pub const OB_GFX: u32 = 0x02;
+pub const OB_MAP: u32 = 0x04;
+pub const OB_X: u32 = 0x08;
+pub const OB_SCREENY: u32 = 0x0A;
+pub const OB_Y: u32 = 0x0C;
+pub const OB_HEIGHT: u32 = 0x16;
+pub const OB_PRIORITY: u32 = 0x18;
+pub const OB_ACTWID: u32 = 0x19;
+pub const OB_FRAME: u32 = 0x1A;
+pub const OB_ROUTINE: u32 = 0x24;
+
+// Rótulos da ROM da tela do título.
+pub const MAP_CRED: u32 = 0x1_7A8E;
+pub const NEM_JAP_NAMES: u32 = 0x2_184C;
+pub const NEM_CREDIT_TEXT: u32 = 0x6_203A;
+pub const ENI_JAP_NAMES: u32 = 0x2_178E;
+pub const PAL_FADE_IN: u32 = 0x1DA4;
+pub const PAL_FADE_OUT: u32 = 0x1E4A;
+pub const ARTTILE_CREDITS_FONT: u16 = 0x5A0;
+pub const ARTTILE_SONIC_TEAM_FONT: u16 = 0xA6;
+pub const ID_CREDITS_TEXT: u8 = 0x8A;
+pub const F_CREDITSCHEAT: u32 = 0xFF_FFE3;
+pub const V_PALETTE_WATER_FADING: u32 = 0xFF_FA00;

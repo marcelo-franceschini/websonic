@@ -103,3 +103,9 @@ Medida em ciclos do 68000 (mclk do oráculo dividido por 7), do início ao fim d
 - Caminho do navegador (console nominal, `crates/console`): determinismo PASSOU; hashes por quadro idênticos no nativo e em WebAssembly (wasmtime na imagem), 330 de 330 quadros; site monta; testes em wasm do núcleo, vídeo, console e som passam.
 - Defeito achado pelo diagnóstico (`scripts/etapa7-bloco5b.sh`): a imagem não mudava porque a CRAM ficava zerada (`cram_nao_zero=0`). Causa: a ponte lia os registradores de DMA no renderizador, que guarda as escritas atrás de um DMA ou preenchimento em andamento; o modo de preenchimento antigo escondia o DMA da paleta. Correção: a ponte guarda a própria cópia dos registradores 1 e 19 a 23. Depois da correção: `cram_nao_zero=64` a partir do quadro 100, VRAM com 3793 bytes não-zero e imagem ligada.
 - Falta ver a imagem do quadro 150 (logo da Sega) e a prova de que a imagem distinta muda ao longo dos quadros (`imagens_distintas` maior que 1).
+
+## Título, parte A (7.5, 09/11/2026): "SONIC TEAM PRESENTS"
+
+- Escrito: `abertura/objetos.rs` (`ExecuteObjects`, `DisplaySprite`, `BuildSprites` com as quatro orientações, objeto `CreditsText`) e `abertura/titulo.rs` (`GM_Title` até `PaletteFadeIn`, `FadeIn_FromBlack`). Máquina de estados do título: entrada, primeiro desvanecimento (22 VBlanks), carga (`PreparoA`, até a marca `PaletteFadeIn`), aparecimento (22 VBlanks). O resto do título (`Parado`) ainda não existe.
+- Provas sintéticas: `crates/teste-som/tests/objetos.rs` compara `BuildSprites` com um modelo direto nas quatro orientações (peças, ligações, tiles e flips), a ordem por prioridade e a ausência de pânico com mapas e filas aleatórios.
+- Armadilha achada no teste: `adda.w` estende o sinal da palavra; um deslocamento de mapa positivo não pode virar endereço de RAM alta.

@@ -81,6 +81,18 @@ fn constantes_da_abertura_batem_com_o_mapa() {
         ("Pal_Sega2", PAL_SEGA2),
         ("bgm_Stop", u32::from(BGM_STOP)),
         ("sfx_Sega", u32::from(SFX_SEGA)),
+        ("Map_Cred", MAP_CRED),
+        ("Nem_JapNames", NEM_JAP_NAMES),
+        ("Nem_CreditText", NEM_CREDIT_TEXT),
+        ("Eni_JapNames", ENI_JAP_NAMES),
+        ("PaletteFadeIn", PAL_FADE_IN),
+        ("PaletteFadeOut", PAL_FADE_OUT),
+        ("ArtTile_Credits_Font", u32::from(ARTTILE_CREDITS_FONT)),
+        (
+            "ArtTile_Sonic_Team_Font",
+            u32::from(ARTTILE_SONIC_TEAM_FONT),
+        ),
+        ("id_CreditsText", u32::from(ID_CREDITS_TEXT)),
     ];
     for (nome, valor) in rom {
         assert_eq!(u64::from(valor), m[nome], "{nome}");

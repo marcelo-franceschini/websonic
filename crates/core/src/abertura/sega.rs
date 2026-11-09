@@ -113,7 +113,7 @@ pub fn clear_screen(m: &mut Memoria) -> Result<(), ErroAbertura> {
 }
 
 /// `TilemapToVRAM` com a macro `copyTilemap`: copia `largura` por `altura` palavras de `fonte`.
-fn copy_tilemap(m: &mut Memoria, fonte: u32, destino: u32, largura: u32, altura: u32) {
+pub fn copy_tilemap(m: &mut Memoria, fonte: u32, destino: u32, largura: u32, altura: u32) {
     let mut d0 = 0x4000_0000u32
         .wrapping_add((destino & 0x3FFF) << 16)
         .wrapping_add((destino & 0xC000) >> 14);
@@ -130,12 +130,17 @@ fn copy_tilemap(m: &mut Memoria, fonte: u32, destino: u32, largura: u32, altura:
 }
 
 /// `PalLoad`: copia a paleta `id` da tabela `Pal_Index` direto para a paleta ativa.
-fn pal_load(m: &mut Memoria, id: u32) {
+pub fn pal_load(m: &mut Memoria, id: u32) {
+    pal_load_para(m, id, 0);
+}
+
+/// `PalLoad` e `PalLoad_Fade`: `soma` desloca o destino (`$80` carrega no buffer do fade-in).
+pub fn pal_load_para(m: &mut Memoria, id: u32, soma: u32) {
     let e = PAL_INDEX.wrapping_add(id.wrapping_mul(8));
     let mut a2 = rom_l(m, e);
     let alvo = rom_w(m, e.wrapping_add(4));
     // `movea.w` estende o sinal: o endereço fica na RAM alta.
-    let mut a3 = u32::from(alvo) | 0xFFFF_0000;
+    let mut a3 = (u32::from(alvo) | 0xFFFF_0000).wrapping_add(soma);
     let n = rom_w(m, e.wrapping_add(6));
     for _ in 0..=u32::from(n) {
         let l = rom_l(m, a2);
@@ -146,7 +151,7 @@ fn pal_load(m: &mut Memoria, id: u32) {
 }
 
 fn i16_de(w: u16) -> i32 {
-    i32::from(i16::from_ne_bytes(w.to_ne_bytes()))
+    i32::from(i16::from_be_bytes(w.to_be_bytes()))
 }
 
 /// `PalCycle_Sega`. Devolve `true` enquanto o efeito continua (o original devolve Z limpo).

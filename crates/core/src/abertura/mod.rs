@@ -10,8 +10,10 @@
 //! final. O comparador separa os quadros dentro de um trecho atômico dos demais.
 
 pub mod boot;
+pub mod objetos;
 pub mod ram;
 pub mod sega;
+pub mod titulo;
 pub mod vblank;
 
 use crate::memoria::{ClasseLeitura, ErroAcesso, Memoria, Tamanho};
@@ -38,10 +40,14 @@ pub enum Marca {
     SegaWaitPal,
     /// `Sega_WaitEnd`: a voz acabou.
     SegaWaitEnd,
+    /// `GM_Title`: começo da tela do título.
+    GmTitle,
+    /// `PaletteFadeIn`: chamada do aparecimento da paleta.
+    PaletteFadeIn,
 }
 
 /// Rótulo e endereço de cada marca (metadado de `refs/rotulos.txt`, conferido por teste).
-pub const MARCAS: [(Marca, &str, u32); 9] = [
+pub const MARCAS: [(Marca, &str, u32); 11] = [
     (Marca::GameProgram, "GameProgram", 0x300),
     (Marca::ChecksumOk, "CheckSumOk", 0x33E),
     (Marca::VdpSetupGame, "VDPSetupGame", 0x1222),
@@ -51,6 +57,8 @@ pub const MARCAS: [(Marca, &str, u32); 9] = [
     (Marca::GmSega, "GM_Sega", 0x2DD2),
     (Marca::SegaWaitPal, "Sega_WaitPal", 0x2EAC),
     (Marca::SegaWaitEnd, "Sega_WaitEnd", 0x2ED4),
+    (Marca::GmTitle, "GM_Title", 0x2EF4),
+    (Marca::PaletteFadeIn, "PaletteFadeIn", 0x1DA4),
 ];
 
 type Passo = fn(&mut Memoria) -> Result<(), ErroAbertura>;
@@ -123,8 +131,22 @@ enum Sega {
 enum Modo {
     Boot,
     Sega(Sega),
-    /// O título ainda não existe nesta versão do núcleo.
-    Titulo,
+    Titulo(Titulo),
+}
+
+/// Passos da tela do título (`GM_Title`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Titulo {
+    /// Esperando a chegada a `GM_Title`.
+    Entrada,
+    /// Primeiro `PaletteFadeOut`: faltam tantos VBlanks.
+    FadeOut(u8),
+    /// Carga do "SONIC TEAM PRESENTS" (sem interrupções) até `PaletteFadeIn`.
+    PreparoA,
+    /// `PaletteFadeIn` da tela do "SONIC TEAM PRESENTS".
+    FadeIn(u8),
+    /// O resto do título ainda não existe nesta versão do núcleo.
+    Parado,
 }
 
 /// O que o laço principal espera (para o tempo nominal).
@@ -199,7 +221,10 @@ impl Abertura {
             Modo::Sega(Sega::VozFim) => Espera::Marca(Marca::SegaWaitEnd),
             Modo::Sega(Sega::VozEmCurso) => Espera::VozAcabando,
             Modo::Sega(_) => Espera::VBlank,
-            Modo::Titulo => Espera::Nenhuma,
+            Modo::Titulo(Titulo::Entrada) => Espera::Marca(Marca::GmTitle),
+            Modo::Titulo(Titulo::PreparoA) => Espera::Marca(Marca::PaletteFadeIn),
+            Modo::Titulo(Titulo::FadeOut(_) | Titulo::FadeIn(_)) => Espera::VBlank,
+            Modo::Titulo(Titulo::Parado) => Espera::Nenhuma,
         }
     }
 
@@ -211,7 +236,8 @@ impl Abertura {
     pub fn em_trecho_atomico(&self) -> bool {
         !matches!(
             self.modo,
-            Modo::Sega(Sega::FadeOut(_) | Sega::WaitPal | Sega::WaitEnd) | Modo::Titulo
+            Modo::Sega(Sega::FadeOut(_) | Sega::WaitPal | Sega::WaitEnd)
+                | Modo::Titulo(Titulo::FadeOut(_) | Titulo::FadeIn(_))
         )
     }
 
@@ -292,6 +318,17 @@ impl Abertura {
                 self.registrar_espera();
                 self.modo = Modo::Sega(Sega::WaitEnd);
             }
+            (Modo::Titulo(Titulo::Entrada), Marca::GmTitle) => {
+                sega::gm_sega_inicio(&mut self.mem);
+                self.registrar_espera();
+                self.modo = Modo::Titulo(Titulo::FadeOut(22));
+            }
+            (Modo::Titulo(Titulo::PreparoA), Marca::PaletteFadeIn) => {
+                titulo::gm_title_preparo_a(&mut self.mem)?;
+                titulo::palette_fade_in_inicio(&mut self.mem);
+                self.registrar_espera();
+                self.modo = Modo::Titulo(Titulo::FadeIn(22));
+            }
             _ => self.marcas_ignoradas = self.marcas_ignoradas.saturating_add(1),
         }
         Ok(())
@@ -317,6 +354,48 @@ impl Abertura {
         }
     }
 
+    /// VBlank durante a tela do título.
+    fn vblank_titulo(&mut self, t: Titulo) -> Result<(), ErroAbertura> {
+        match t {
+            Titulo::FadeOut(n) => {
+                self.vblanks_tratados = self.vblanks_tratados.saturating_add(1);
+                vblank::tratar(&mut self.mem)?;
+                sega::fade_out_to_black(&mut self.mem);
+                let n = n.saturating_sub(1);
+                if n > 0 {
+                    wb(
+                        &mut self.mem,
+                        ram::V_VBLANK_ROUTINE,
+                        vblank::ROTINA_PALETTE_FADE,
+                    );
+                    self.registrar_espera();
+                    self.modo = Modo::Titulo(Titulo::FadeOut(n));
+                } else {
+                    self.modo = Modo::Titulo(Titulo::PreparoA);
+                }
+            }
+            Titulo::FadeIn(n) => {
+                self.vblanks_tratados = self.vblanks_tratados.saturating_add(1);
+                vblank::tratar(&mut self.mem)?;
+                titulo::fade_in_from_black(&mut self.mem);
+                let n = n.saturating_sub(1);
+                if n > 0 {
+                    wb(
+                        &mut self.mem,
+                        ram::V_VBLANK_ROUTINE,
+                        vblank::ROTINA_PALETTE_FADE,
+                    );
+                    self.registrar_espera();
+                    self.modo = Modo::Titulo(Titulo::FadeIn(n));
+                } else {
+                    self.modo = Modo::Titulo(Titulo::Parado);
+                }
+            }
+            Titulo::Entrada | Titulo::PreparoA | Titulo::Parado => self.ignorar(),
+        }
+        Ok(())
+    }
+
     fn ignorar(&mut self) {
         self.interrupcoes_ignoradas = self.interrupcoes_ignoradas.saturating_add(1);
         self.ignoradas_em
@@ -326,6 +405,9 @@ impl Abertura {
     /// Interrupção de VBlank gravada: roda o tratador e, em seguida, o laço principal até a
     /// próxima espera.
     fn vblank(&mut self) -> Result<(), ErroAbertura> {
+        if let Modo::Titulo(t) = self.modo {
+            return self.vblank_titulo(t);
+        }
         let Modo::Sega(passo) = self.modo else {
             self.ignorar();
             return Ok(());
@@ -389,7 +471,7 @@ impl Abertura {
                 };
                 if acabou || start != 0 {
                     wb(&mut self.mem, ram::V_GAMEMODE, 4);
-                    self.modo = Modo::Titulo;
+                    self.modo = Modo::Titulo(Titulo::Entrada);
                 } else {
                     wb(&mut self.mem, ram::V_VBLANK_ROUTINE, vblank::ROTINA_SEGA);
                     self.registrar_espera();

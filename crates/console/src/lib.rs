@@ -24,7 +24,8 @@ fn quadros_de_espera(m: Marca) -> u32 {
         Marca::JoypadInit => 5,
         Marca::MainGameLoop | Marca::GmSega => 0,
         Marca::SegaWaitPal => 0,
-        Marca::SegaWaitEnd => 0,
+        Marca::SegaWaitEnd | Marca::GmTitle => 0,
+        Marca::PaletteFadeIn => 5,
     }
 }
 
