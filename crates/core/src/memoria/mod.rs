@@ -51,6 +51,9 @@ pub enum Aviso {
     Z80Banco,
     /// Leitura de hardware sem valor gravado na fila (o último valor foi repetido).
     LeituraSemGravacao,
+    /// Um laço de espera do driver de som chegou ao limite: faltou tempo gravado, e o Z80 ou o
+    /// YM2612 do núcleo não saíram do estado que o laço espera.
+    EsperaDoSomEstourada,
 }
 
 /// Classe de leitura de hardware que depende do tempo e vem do arquivo gravado.
@@ -310,7 +313,7 @@ impl Memoria {
         }
     }
 
-    fn avisar(&mut self, aviso: Aviso) {
+    pub(crate) fn avisar(&mut self, aviso: Aviso) {
         let c = self.avisos.entry(aviso).or_insert(0);
         *c = c.saturating_add(1);
     }

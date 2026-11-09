@@ -89,6 +89,8 @@ pub struct Relatorio {
     /// Sequências do Z80 (sinal e estado), só para diagnóstico: oráculo e núcleo.
     pub z80_oraculo: Vec<(u32, u32)>,
     pub z80_nucleo: Vec<(u32, u32)>,
+    /// Avisos do núcleo (`Memoria::avisos`), pelo nome, com a contagem.
+    pub avisos_nucleo: BTreeMap<String, u64>,
 }
 
 impl Relatorio {
@@ -101,6 +103,8 @@ impl Relatorio {
             && self.escritas_diverge.is_none()
             && self.erro_nucleo.is_none()
             && self.divergencias_posicao_z80 == 0
+            // Uma espera do driver de som que desistiu quer dizer que faltou tempo gravado.
+            && !self.avisos_nucleo.contains_key("EsperaDoSomEstourada")
     }
 }
 
@@ -290,6 +294,13 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
                 break (q, mascara);
             }
             passos += 1;
+            // Diagnóstico: um quadro que não fecha aparece aqui antes de estourar o limite.
+            if passos.is_multiple_of(2_000_000) {
+                eprintln!(
+                    "[diagnostico] quadro {}: {passos} passos sem fechar o quadro",
+                    o.quadro_atual()
+                );
+            }
             if passos > LIMITE_PASSOS_QUADRO {
                 return Err("o quadro nao terminou".into());
             }
@@ -676,6 +687,9 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
             ));
         }
     }
+    for (aviso, n) in nucleo.mem.avisos() {
+        rel.avisos_nucleo.insert(format!("{aviso:?}"), *n);
+    }
     Ok(rel)
 }
 
@@ -763,6 +777,9 @@ pub fn imprimir(rel: &Relatorio) {
     }
     if let Some(c) = &rel.z80_contexto {
         println!("z80_primeiro_acesso_diferente {c}");
+    }
+    for (aviso, n) in &rel.avisos_nucleo {
+        println!("aviso_nucleo {aviso} vezes={n}");
     }
     println!(
         "z80_mudancas: oraculo={} nucleo={}",

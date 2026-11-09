@@ -3,7 +3,7 @@
 //! efeitos de brinquedo. O formato de música e de voz segue a documentação pública do SMPS
 //! (Sonic Retro, "SMPS" e "SMPS Music Format"). Nada vem da ROM do jogo.
 
-use sonic1_core::memoria::{Memoria, Saida, Tamanho};
+use sonic1_core::memoria::{Aviso, Memoria, Saida, Tamanho};
 use sonic1_core::som::driver::{Driver, layout::*};
 
 const TAMANHO_ROM: usize = 0x8_0000;
@@ -332,4 +332,38 @@ fn BK_0291_envelope_de_psg_so_trata_o_terminador_80() {
         1,
         "o índice andou"
     );
+}
+
+/// Uma atualização sem tempo gravado, com o byte `zDAC_Status` da RAM do Z80 como pedido.
+/// Devolve as esperas estouradas.
+fn atualizar_com_status_do_dac(m: &mut Memoria, status: u8) -> u64 {
+    m.ram_mut()[0xF000 + usize::try_from(V_SOUND_ID).unwrap()] = 0x80;
+    m.ram_z80_mut()[0x1FFD] = status;
+    let mut d = Driver::novo(m);
+    d.update_music();
+    d.esperas_estouradas
+}
+
+#[test]
+fn dac_ocupado_sem_tempo_gravado_desiste_conta_e_avisa() {
+    // Sem tempo gravado o Z80 do núcleo não anda, e o bit 7 de `zDAC_Status` nunca limpa. O laço
+    // de `UpdateMusic` tem de desistir em vez de girar para sempre (Etapa 7: a música do título
+    // prendeu o comparador nesse laço e encheu a memória).
+    let mut m = memoria();
+    assert_eq!(atualizar_com_status_do_dac(&mut m, 0x80), 1);
+    assert_eq!(m.avisos().get(&Aviso::EsperaDoSomEstourada), Some(&1));
+    // A atualização seguiu até o fim (o seletor de voz termina em $40) e soltou o Z80.
+    assert_eq!(ram(&m, F_VOICE_SELECTOR), 0x40);
+    let ultima = m
+        .tirar_saidas()
+        .into_iter()
+        .rfind(|s| matches!(s, Saida::BusReq(_)));
+    assert_eq!(ultima, Some(Saida::BusReq(false)));
+}
+
+#[test]
+fn dac_livre_nao_conta_espera() {
+    let mut m = memoria();
+    assert_eq!(atualizar_com_status_do_dac(&mut m, 0x00), 0);
+    assert_eq!(m.avisos().get(&Aviso::EsperaDoSomEstourada), None);
 }

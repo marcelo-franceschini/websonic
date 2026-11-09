@@ -10,7 +10,7 @@
 //! ([`Fluxo`] e `Option`).
 
 use crate::decisao;
-use crate::memoria::{Memoria, Tamanho};
+use crate::memoria::{Aviso, Memoria, Tamanho};
 
 // --- Endereços de hardware ---
 const Z80_RAM: u32 = 0xA0_0000;
@@ -165,12 +165,24 @@ pub struct Driver<'a> {
 /// Voltas máximas de um laço de espera antes de desistir (só vale sem tempo gravado).
 const LIMITE_ESPERA: u32 = 100_000;
 
+/// Voltas máximas do laço de `UpdateMusic` que espera o DAC aceitar comandos. O driver de DAC
+/// liga o bit 7 de `zDAC_Status` só entre `ld (hl),l` e `ld (hl),h` (45 ciclos do Z80), e cada
+/// volta solta o Z80 para ele andar: no console poucas voltas bastam.
+const LIMITE_VOLTAS_DAC_OCUPADO: u32 = 1_000;
+
 impl<'a> Driver<'a> {
     pub fn novo(m: &'a mut Memoria) -> Self {
         Self {
             m,
             esperas_estouradas: 0,
         }
+    }
+
+    /// Um laço de espera chegou ao limite: conta no `Driver` e deixa um aviso na `Memoria`, que
+    /// dura mais que o `Driver` (o tratador de VBlank cria um a cada quadro).
+    fn estourou(&mut self) {
+        self.esperas_estouradas = self.esperas_estouradas.saturating_add(1);
+        self.m.avisar(Aviso::EsperaDoSomEstourada);
     }
 
     // --- Acesso à memória ---
@@ -268,7 +280,7 @@ impl<'a> Driver<'a> {
                 return;
             }
         }
-        self.esperas_estouradas = self.esperas_estouradas.saturating_add(1);
+        self.estourou();
     }
 
     /// `WriteFMIorII`.
@@ -318,6 +330,7 @@ impl<'a> Driver<'a> {
 
     /// `UpdateMusic`: roda uma vez por VBlank.
     pub fn update_music(&mut self) {
+        let mut voltas_dac = 0u32;
         loop {
             self.stop_z80();
             // .updateloop: espera o BUSACK (bit 0 do byte lido em A11100 vira zero).
@@ -325,7 +338,7 @@ impl<'a> Driver<'a> {
             while self.rb(Z80_BUS_REQUEST) & 1 != 0 {
                 esperou = esperou.saturating_add(1);
                 if esperou >= LIMITE_ESPERA {
-                    self.esperas_estouradas = self.esperas_estouradas.saturating_add(1);
+                    self.estourou();
                     break;
                 }
             }
@@ -333,7 +346,15 @@ impl<'a> Driver<'a> {
                 "UpdateMusic:dac_ocupado",
                 self.rb(Z80_RAM + Z_DAC_STATUS) & 0x80 != 0
             ) {
-                // O DAC ainda não aceita comandos: solta o Z80 e tenta de novo.
+                // O DAC ainda não aceita comandos: solta o Z80 e tenta de novo. No console o Z80
+                // anda nesse meio tempo e limpa o bit. No núcleo ele só anda com tempo gravado;
+                // sem tempo, o bit nunca limpa. O limite desiste com o Z80 parado, que é o estado
+                // do caminho normal depois do laço.
+                voltas_dac = voltas_dac.saturating_add(1);
+                if voltas_dac >= LIMITE_VOLTAS_DAC_OCUPADO {
+                    self.estourou();
+                    break;
+                }
                 self.start_z80();
                 continue;
             }

@@ -163,9 +163,27 @@ Decisões desta fatia:
 
 - **D7.18. A fatia 2 termina na marca `Tit_MainLoop`.** A marca chega logo antes da primeira espera do laço do título. Assim a fatia termina numa espera, como D7.13 pede. O VBlank do título (rotina `$04`) ainda não existe, e entra na fatia 3.
 - **D7.19. Fila de arte por quadro com o estado em RAM.** O decodificador segue `NemPCD_NewRow`, `NemPCD_ProcessCompressedData` e `NemDec_BuildCodeTable` do disassembly, lendo a tabela de códigos de `v_ngfx_buffer`. Um teste sintético confere que, em dois quadros (9 e 3 tiles) e no modo XOR, as escritas na VDP são iguais às do `NemDec` completo, e que a tabela na RAM é igual.
-- **D7.20. Chunk zero e `a0` (risco).** Em `GetBlockData`, um chunk zero não atualiza `a0`, e `DrawBlock` lê as flags de `(a0)`. O original usa o que sobrou no registrador. Aqui `a0` começa em zero, dentro de `draw_chunks`. Se a comparação acusar diferença nas linhas do fundo, esta é a causa provável.
+- **D7.20. Chunk zero e `a0` (risco).** Em `GetBlockData`, um chunk zero não atualiza `a0`, e `DrawBlock` lê as flags de `(a0)`. O original usa o que sobrou no registrador. Aqui `a0` começa em `v_palette_water + $80` (`$FFFB00`): é o que `FadeOut_DecColor` deixa nele depois de escurecer as 64 cores da paleta de água, e `ClearScreen` não o muda. Antes começava em zero e a primeira rodada deu pânico ao ler fora da RAM (correção `d0545f7`). Se a comparação acusar diferença nas linhas do fundo, esta é a causa provável.
 - **D7.21. Parte alta de `d5` (risco).** O `RunPLC` guarda `d5` em `v_plc_dataword`. A parte alta desse registrador no original é o que sobrou de instruções anteriores, e aqui é zero. Se a comparação acusar diferença nessa variável, esta é a causa.
 - **D7.22. Fim da arte sem limpar a última posição.** `ProcessPLC_ShiftCue` (FixBugs = 0) não limpa a última posição da fila, como no original. Isso é o comportamento da referência, não um bug do núcleo.
 - **D7.23. Animação parcial.** `AnimateSprite` cobre os códigos `$FF` e `$FE`. Se o roteiro da tela do título usar outro código, o núcleo para com `NaoImplementado("flag de animação")` e não segue em silêncio.
 
 Provas sem a ROM: `cargo test -q -p sonic1-core -p sonic1-teste-som` (todos passam, inclusive `crates/teste-som/tests/plc.rs` com 3 testes), `cargo clippy --workspace --all-targets -- -D warnings` (sem erro), `cargo fmt` aplicado.
+
+## Fatia 2 com a ROM: travamento na música do título (Marcelo, 09/11/2026, rodadas de 530 quadros)
+
+- Rodada 1: pânico em `desenho.rs` (leitura fora da RAM, ver D7.20). Corrigido em `d0545f7`.
+- Rodadas 2 a 4: o comparador cresceu até ser morto (OOM com 3,6 GB, depois SIGTERM sob o teto de 6 GB do `systemd-run`). O `NemDec_BuildCodeTable` da fila lia zeros para sempre se faltasse o `$FF` final: virou erro (`1edb5f7`), mas não era a causa.
+- Rodadas 5 e 6, com diagnóstico (uma linha por quadro no comparador, `ea9c260`, e rastreio temporário no núcleo): até o quadro 504 as filas do comparador ficam estáveis (esperas de 0 a 2, 54000 escritas guardadas, nenhuma divergência do Z80). A parte C roda inteira no quadro 505 e termina. O travamento é no 19º VBlank do aparecimento (faltam 4): o tratador de VBlank não volta.
+- Causa provável: o laço de `UpdateMusic` que espera o DAC aceitar comandos (bit 7 de `zDAC_Status`, `$1FFD`) não tinha limite. A música do título (`$8A`) é a primeira que o núcleo toca, e a trilha de DAC põe o Z80 a tocar amostras. Esse bit fica ligado só enquanto o Z80 escreve uma amostra no YM. No console o Z80 anda enquanto o 68000 solta o barramento e tenta de novo. No núcleo o Z80 só anda ao consumir pontos gravados. Com a fila de pontos vazia, ele para dentro da janela, o bit nunca limpa, e cada volta empilha saídas de BUSREQ e registros de acesso.
+
+Decisão:
+
+- **D7.24. Laço do DAC ocupado com limite.** `UpdateMusic` desiste depois de 1000 voltas (`LIMITE_VOLTAS_DAC_OCUPADO`) e segue com o Z80 parado, que é o estado do caminho normal depois do laço. A janela de ocupado tem 45 ciclos do Z80, então no console poucas voltas bastam. Cada desistência conta em `esperas_estouradas` e deixa o aviso `EsperaDoSomEstourada` na `Memoria`, porque o tratador cria um `Driver` novo a cada VBlank e o contador se perderia. As outras duas esperas do driver (BUSACK e YM ocupado) deixam o mesmo aviso. O comparador imprime os avisos do núcleo (`aviso_nucleo`) e não dá OK com esse aviso. Teste: `dac_ocupado_sem_tempo_gravado_desiste_conta_e_avisa` em `crates/teste-som/tests/driver.rs`.
+
+Achados:
+
+- Laço do DAC ocupado sem limite: **BLOQUEIA**, corrigido (D7.24).
+- Por que a fila de pontos do Z80 acaba nesse VBlank (o núcleo faz mais acessos ao Z80 que o oráculo, ou o Z80 do núcleo está em outro ponto): **BLOQUEIA**. A próxima rodada mostra o aviso, as divergências do Z80 e o primeiro acesso diferente.
+- `BuildSprites` gira para sempre se a contagem de uma fila de prioridade for ímpar: **BACKLOG**. O original faz o mesmo, e isso só acontece com a RAM já errada.
+- As escritas guardadas no comparador crescem durante a rodada: **DESCARTADO**. São dezenas de milhares, e o teto de 2 milhões para com erro.
