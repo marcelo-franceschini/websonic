@@ -139,3 +139,12 @@ Provas sem a ROM (`cargo test -q -p sonic1-core -p sonic1-teste-som`, `cargo cli
 - `crates/teste-som/tests/cenario_layout.rs`: endereços de RAM e de tabelas da ROM conferidos contra `refs/rotulos.txt`.
 
 Limites conhecidos desta fatia (ver `docs/backlog.md`): a fase é a GHZ1 sem lampião e sem créditos; o `DeformLayers` de outras zonas e o `DynamicLevelEvents` de GHZ2 e GHZ3 não existem; o fundo do título ainda não tem a parte de `DrawChunks`, que vem na fatia 2.
+
+## Prova da fatia 1 com a ROM (Marcelo, 09/11/2026, 600 quadros, `sh scripts/etapa7-bloco2.sh ROM 600`)
+
+- A marca `PaletteFadeOut` da parte B chegou no quadro 455 (oráculo). O núcleo rodou a parte B nesse mesmo quadro.
+- Esperas de VBlank: 195 do núcleo contra 195 do oráculo no ponto de comparação, todas iguais, `diverge=0`, e `z80_diverge=0`. São as 173 anteriores mais as 22 do segundo desvanecimento.
+- `posicao_z80_divergencias=0`. Interrupções tratadas: 196 (174 anteriores mais 22).
+- O núcleo entrou em `Titulo(Parado)` no quadro 477, depois do desvanecimento. Dali em diante ele ignora as VBlanks (97 ignoradas, de 505 a 600). Isso é o limite da fatia, não divergência.
+- O veredito continua `DIVERGE` só na contagem final: vídeo 27146 contra 42999, PSG 12 contra 48, YM do 68000 128 contra 582, Z80 798 contra 1226. As diferenças são a parte C (`ClearScreen`, `DrawChunks`, emblema, música e objetos do título), que é a fatia 2. Não há divergência no prefixo.
+- Limite da comparação: `ram68k` com `diverge_em_trecho_atomico=533` não é comparada nesses quadros. A RAM da parte B só é provada nas esperas de VBlank, que é o que D7.13 pede.
