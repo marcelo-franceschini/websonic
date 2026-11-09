@@ -2,9 +2,20 @@
 
 Documento de acompanhamento do progresso das etapas.
 
-## Etapa 7 (Telas de abertura): em andamento (08/11/2026)
+## Etapa 7 (Telas de abertura): em andamento (09/11/2026)
 
-Plano aprovado em 08/11/2026 (`docs/plano-etapa-7.md`, com D7.3, D7.4 e a exclusão da pilha). Bloco 1 feito (`docs/conhecimento/abertura.md`): `N_fim` = quadro 1166 (`Level_StartGame`). Feitas com dados sintéticos: 7.0 (comparador `diferencial-abertura/` sem patch no oráculo, D7.9), 7.1 e 7.2 (boot e soma de verificação no núcleo). 7.0 a 7.3 provadas com a ROM real (relatório do comparador, quadros 0 a 329): boot, verificação da ROM e tela da Sega com voz, sem divergência em RAM do 68000 e do Z80 nas esperas de VBlank, posição do Z80 e escritas do DAC iguais. Experimento do nível 2 (7.8) feito: laços curtos a poucos ppm com o refresh 128/126, voz SEGA com erro de 1,54% (BACKLOG, Etapa 15). Falta o título (7.5), a fase da demo (7.6) e o navegador (7.7).
+Plano aprovado em 08/11/2026 (`docs/plano-etapa-7.md`, com D7.3, D7.4 e a exclusão da pilha). Decisões novas D7.9 a D7.12 na seção 11 do plano. Conhecimento e provas em `docs/conhecimento/abertura.md`. Modo de trabalho: a IA decide sozinha, só para pedir blocos de comandos ao Marcelo.
+
+**Provado com a ROM real** (comparador `diferencial-abertura/`, `scripts/etapa7-bloco2.sh ROM QUADROS`): quadros 0 a ~395, isto é, boot (7.1), verificação da ROM (7.2), tela e voz SEGA (7.3) e a primeira parte do título, "SONIC TEAM PRESENTS" (7.5 parte A): RAM do 68000 e do Z80 iguais em todas as esperas de VBlank (173 de 173), posição do Z80 sem divergência, escritas do DAC (54000), PSG e YM iguais. A correção do comparador (contar toda escrita do BUSREQ e do RESET) ainda não foi rodada.
+
+**Feito e provado:** experimento do nível 2 (7.8): laços curtos a poucos ppm com o refresh 128/126; a voz SEGA erra 1,54% (BACKLOG, Etapa 15). Navegador (7.7): console nominal em `crates/console`, `Jogo` em `crates/web`, site com canvas em escala inteira; caminho idêntico no nativo e no WebAssembly. O quadro da Sega no navegador ainda precisa de confirmação: depois da correção da ponte (cópia dos registradores de DMA) o diagnóstico mostrou a CRAM com 64 cores, falta rodar `scripts/etapa7-bloco5.sh` e olhar o `.ppm` do quadro 150.
+
+**Falta (critério da etapa: zero divergência do quadro 0 ao 1166, `Level_StartGame`):**
+1. Título, parte B (~395 a 526): `LevelSizeLoad`, `DeformLayers`, `LevelLayoutLoad`, `DrawChunks`, EniDec e KosDec da GHZ, objetos `TitleSonic` e `PSBTM`, `PalCycle_Title`, fila de arte (`NewPLC`, `RunPLC`, `ProcessPLC`), `Tit_MainLoop`.
+2. Espera do título e `GotoDemo` (526 a 932).
+3. Fase da demo, `GM_Level` até `Level_StartGame` (932 a 1166).
+4. Comparar a imagem de 320x224 e VRAM, CRAM e VSRAM contra o oráculo (hoje só a ponte do navegador foi provada).
+5. Fechamento: patch do `relatorio` (manifesto com `diferencial-som/` e `diferencial-abertura/`), `docs/pedidos/etapa7-ci.patch` (aplica limpo, é do Marcelo aplicar), manifesto assinado, resumo para o chat de planejamento.
 
 ## Etapa 6 (Driver de som): concluída, falta a sessão de revisão (08/11/2026)
 
