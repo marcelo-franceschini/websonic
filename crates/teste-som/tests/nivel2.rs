@@ -110,3 +110,18 @@ fn laco_da_voz_com_moveq_custa_quatro_ciclos_a_menos_por_constante() {
     let esperado = simula_voz(2, 65535, 1) - 4 * (1 + 3);
     assert_eq!(p.ciclos, esperado);
 }
+
+#[test]
+fn preambulo_da_voz_move_imediato_para_endereco_longo_tem_oito_bytes() {
+    // move.b #$88,(abs).l ; move.w #0,(abs).l ; moveq #0,d1 ; moveq #0,d0 ; dbf d0 ; dbf d1 ; addq
+    let code: Vec<u8> = vec![
+        0x13, 0xFC, 0x00, 0x88, 0x00, 0xA0, 0x1F, 0xFF, // 8 bytes, 20 ciclos
+        0x33, 0xFC, 0x00, 0x00, 0x00, 0xA1, 0x11, 0x00, // 8 bytes, 20 ciclos
+        0x72, 0x00, 0x70, 0x00, 0x4E, 0x71, 0x51, 0xC8, 0xFF, 0xFC, 0x51, 0xC9, 0xFF, 0xF6, 0x58,
+        0x4F,
+    ];
+    let rom = rom_com(0x104, &code);
+    let p = laco_da_voz(&rom, 0x104).unwrap();
+    assert_eq!(p.fim, 0x104 + 30);
+    assert_eq!(p.ciclos, 40 + simula_voz(0, 0, 1) - 4 * 2);
+}

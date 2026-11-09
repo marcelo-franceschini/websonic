@@ -89,7 +89,7 @@ pub fn laco_da_voz_diagnostico(rom: &[u8], inicio: u32) -> Result<Previsao, Falh
         } else if op == 0x33FC {
             // move.w #imm,(abs).l: 20 ciclos.
             total = soma(total, 20).ok_or((desloc(pc), "estouro"))?;
-            pc = pc.wrapping_add(10);
+            pc = pc.wrapping_add(8);
         } else if op == 0x584F {
             // addq.w #4,sp: o fim do trecho.
             return Ok(Previsao {
