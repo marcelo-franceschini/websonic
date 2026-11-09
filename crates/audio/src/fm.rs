@@ -5,7 +5,7 @@
 //! fase, pelo envelope e pelo operador (log-seno mais exponencial). O ritmo exato de cada
 //! estágio foi medido por experimento contra o Nuked-OPN2 (`sintese.md`, D8.2).
 
-use crate::tabelas::{DETUNE, EXP, LOGSIN};
+use crate::tabelas::{DETUNE, EG_INC_ALTO, EG_INC_BAIXO, EXP, LOGSIN};
 
 /// Ciclos internos por amostra.
 pub const CICLOS_POR_AMOSTRA: u32 = 24;
@@ -63,6 +63,9 @@ pub struct Fm {
     zera_fase: [bool; 24],
     tecla_ligada: [bool; 24],
     eg_saida: [u16; 24],
+    eg_estado: [Eg; 24],
+    eg_visto: [u16; 24],
+    eg_timer: u16,
     // Saida do grupo 0 da amostra anterior, para o latch do canal.
     g0_anterior: [i32; 6],
     pino_valor: [i32; 6],
@@ -98,6 +101,9 @@ impl Fm {
             zera_fase: [false; 24],
             tecla_ligada: [false; 24],
             eg_saida: [1023; 24],
+            eg_estado: [Eg::Libera; 24],
+            eg_visto: [0; 24],
+            eg_timer: 0,
             g0_anterior: [0; 6],
             pino_valor: [0; 6],
             op_anterior: [0; 24],
@@ -224,17 +230,27 @@ impl Fm {
             }
         }
         self.tempo = agora.wrapping_add(1);
+        // O contador do envelope anda uma vez a cada 3 amostras, no ciclo 1 (medido).
+        if agora >= 97 && agora.wrapping_sub(97) % 72 == 0 {
+            self.eg_timer = self.eg_timer.wrapping_add(1) & 0xFFF;
+        }
         let c = self.ciclo;
         // Estagio do envelope: o slot cujo ciclo de envelope e este.
         let ie = usize::try_from(c.wrapping_add(22) % 24).unwrap_or(0);
+        self.passo_envelope(ie);
         self.aplica_teclas(ie);
         if self.tecla_pedida[ie] != self.tecla_ligada[ie] {
             self.tecla_ligada[ie] = self.tecla_pedida[ie];
             if self.tecla_ligada[ie] {
-                self.nivel[ie] = 0;
+                self.eg_estado[ie] = Eg::Ataque;
                 self.zera_fase[ie] = true;
+                // Taxa de ataque 62 ou 63 leva o nivel a zero na hora.
+                if self.taxa_atual(ie) >= 62 {
+                    self.nivel[ie] = 0;
+                    self.eg_estado[ie] = Eg::Decai1;
+                }
             } else {
-                self.nivel[ie] = 1023;
+                self.eg_estado[ie] = Eg::Libera;
             }
         }
         // Slot processado neste ciclo: indice i = (ciclo - 5) mod 24.
@@ -391,5 +407,94 @@ impl Fm {
             }
         }
         self.kon_fila.retain(|e| !e.3.iter().all(|&x| x));
+    }
+}
+
+/// Fases do envelope de um slot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Eg {
+    Ataque,
+    Decai1,
+    Decai2,
+    Libera,
+}
+
+impl Fm {
+    /// Codigo de tecla (5 bits) do canal, a partir do bloco e dos bits altos do F-number.
+    fn kcode(&self, ch: usize) -> u32 {
+        let c = &self.canal[ch];
+        let f = u32::from(c.fnum);
+        let n4 = (f >> 10) & 1;
+        let n3 = if n4 == 1 { u32::from(f & 0x380 != 0) } else { u32::from(f & 0x380 == 0x380) };
+        (u32::from(c.bloco) << 2) | (n4 << 1) | n3
+    }
+
+    /// Taxa efetiva (0 a 63) da fase atual do slot.
+    fn taxa_atual(&self, i: usize) -> u32 {
+        let (g, ch) = (i / 6, i % 6);
+        let o = GRUPO_DO_OP.iter().position(|&x| x == g).unwrap_or(0);
+        let p = &self.op[ch][o];
+        let r5 = match self.eg_estado[i] {
+            Eg::Ataque => u32::from(p.ar),
+            Eg::Decai1 => u32::from(p.d1r),
+            Eg::Decai2 => u32::from(p.d2r),
+            Eg::Libera => u32::from(p.rr).wrapping_mul(2).wrapping_add(1),
+        };
+        if r5 == 0 {
+            return 0;
+        }
+        let ksv = self.kcode(ch) >> 3_u32.wrapping_sub(u32::from(p.ks));
+        r5.wrapping_mul(2).wrapping_add(ksv).min(63)
+    }
+
+    /// Passo do envelope do slot: so age quando o contador mudou desde o ultimo passo do slot.
+    fn passo_envelope(&mut self, i: usize) {
+        // Os 16 ultimos niveis (1008 a 1022) viram silencio total na amostra seguinte (medido).
+        if self.nivel[i] >= 1008 {
+            self.nivel[i] = 1023;
+        }
+        if self.eg_visto[i] == self.eg_timer {
+            return;
+        }
+        self.eg_visto[i] = self.eg_timer;
+        // A fase e decidida com o nivel do passo anterior, antes de escolher a taxa.
+        {
+            let (g, ch) = (i / 6, i % 6);
+            let o = GRUPO_DO_OP.iter().position(|&x| x == g).unwrap_or(0);
+            let sl = u32::from(self.op[ch][o].sl);
+            let limite = if sl == 15 { 0x3E0 } else { sl << 5 };
+            if self.eg_estado[i] == Eg::Ataque && self.nivel[i] == 0 {
+                self.eg_estado[i] = Eg::Decai1;
+            }
+            if self.eg_estado[i] == Eg::Decai1 && u32::from(self.nivel[i]) >= limite {
+                self.eg_estado[i] = Eg::Decai2;
+            }
+        }
+        let taxa = self.taxa_atual(i);
+        if taxa == 0 {
+            return;
+        }
+        let timer = u32::from(self.eg_timer);
+        let inc = if taxa >= 48 {
+            u32::from(EG_INC_ALTO[taxa.wrapping_sub(48) as usize][(timer.wrapping_sub(if taxa & 3 == 3 { 3 } else { 1 }) & 7) as usize])
+        } else {
+            let sh = 11_u32.wrapping_sub(taxa >> 2);
+            if timer & ((1u32 << sh).wrapping_sub(1)) != 0 {
+                return;
+            }
+            u32::from(EG_INC_BAIXO[(taxa & 3) as usize][((timer >> sh) & 7) as usize])
+        };
+        let nivel = i32::from(self.nivel[i]);
+        let inc_i = i32::try_from(inc).unwrap_or(0);
+        match self.eg_estado[i] {
+            Eg::Ataque => {
+                let novo = nivel.wrapping_add((nivel.wrapping_neg().wrapping_sub(1).wrapping_mul(inc_i)) >> 4);
+                self.nivel[i] = u16::try_from(novo.clamp(0, 1023)).unwrap_or(0);
+            }
+            Eg::Decai1 | Eg::Decai2 | Eg::Libera => {
+                let novo = nivel.wrapping_add(inc_i).min(1023);
+                self.nivel[i] = u16::try_from(novo).unwrap_or(1023);
+            }
+        }
     }
 }
