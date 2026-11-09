@@ -24,6 +24,10 @@ use websonic_oracle::{Entradas, Oraculo};
 const RACE_Z80: [usize; 2] = [0x1FFD, 0x1FFF];
 /// `WaitForVBlank` (metadado de `refs/rotulos.txt`).
 const WAIT_FOR_VBLANK: u32 = 0x29A0;
+/// Teto de filas de espera guardadas (cada uma tem a RAM inteira). Passou disso, para com erro.
+const LIMITE_FILAS_DE_ESPERA: usize = 2000;
+/// Teto de acessos do Z80 guardados pelo oráculo, para diagnóstico de memória.
+const LIMITE_ACESSOS_DO_ORACULO: usize = 2_000_000;
 /// Estado do oráculo no fechamento de um quadro: RAM do 68000, RAM do Z80, número do quadro,
 /// se o fechamento é comparável e se o núcleo estava em trecho atômico.
 type Fechamento = (Vec<u8>, Vec<u8>, u32, bool, bool);
@@ -365,6 +369,31 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
             && rel.erro_nucleo.is_none()
         {
             rel.erro_nucleo = Some(format!("quadro {n}: {e:?}"));
+        }
+
+        // Diagnóstico de memória: filas que deveriam estar quase vazias não podem crescer sem
+        // limite. Cada espera guarda cerca de 72 KB de RAM, então 2000 entradas já são 144 MB.
+        if esperas_o.len() > LIMITE_FILAS_DE_ESPERA || esperas_n.len() > LIMITE_FILAS_DE_ESPERA {
+            return Err(format!(
+                "quadro {n}: filas de espera crescem sem consumo (oraculo {}, nucleo {})",
+                esperas_o.len(),
+                esperas_n.len()
+            )
+            .into());
+        }
+        if acessos_oraculo.len() > LIMITE_ACESSOS_DO_ORACULO {
+            return Err(format!(
+                "quadro {n}: acessos do Z80 no oraculo crescem sem consumo ({})",
+                acessos_oraculo.len()
+            )
+            .into());
+        }
+        if nucleo.ignoradas_em.len() > LIMITE_FILAS_DE_ESPERA {
+            return Err(format!(
+                "quadro {n}: interrupcoes ignoradas no nucleo crescem sem consumo ({})",
+                nucleo.ignoradas_em.len()
+            )
+            .into());
         }
 
         // Estados nas esperas de VBlank: o k-ésimo do oráculo contra o k-ésimo do núcleo.
