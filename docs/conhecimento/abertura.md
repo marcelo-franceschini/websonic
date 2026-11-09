@@ -238,3 +238,13 @@ Decisões desta fatia:
 - **D7.29. O que não existe para.** Start no título (`Tit_ChkLevSel`), a volta à Sega em `$1C00`, a demo do estágio especial, os ciclos de paleta de outras zonas e o fundo da SBZ devolvem `NaoImplementado`. Nenhum acontece na rodada da demo.
 
 Provas sem a ROM: `cargo test -q -p sonic1-core -p sonic1-teste-som -p sonic1-console` (95 testes, 13 novos em `crates/teste-som/tests/titulo_laco.rs`), `cargo clippy --workspace --all-targets -- -D warnings` e o clippy do comparador sem erro, `cargo fmt` aplicado.
+
+## Prova da fatia 3 com a ROM (Marcelo, 09/11/2026, 970 quadros, `sh scripts/etapa7-bloco2.sh ROM 970`)
+
+- Rodada de 13,9 segundos, com pico de 430 MB.
+- Marcas: `Tit_MainLoop` 376 vezes, do quadro 526 ao 901 (o temporizador de 376 quadros, exato). `GotoDemo` no 902. `MainGameLoop`, `GM_Level` e `PaletteFadeOut` no 932.
+- Esperas de VBlank: 645 do núcleo, todas iguais às do oráculo (`diverge=0`, `z80_diverge=0`). O oráculo tem 652: as 7 a mais são da carga da fase, depois do fim da fatia.
+- `posicao_z80_divergencias=0`. RAM do 68000 e do Z80 com `diverge=0` fora dos trechos atômicos. Nenhum aviso do núcleo.
+- Interrupções: 657 do oráculo, 647 tratadas pelo núcleo (1 de lag) e 10 ignoradas, todas em `Fase(Parado)`, a partir do quadro 962. Entre o fim do desvanecimento e o 962 não há interrupção: o `GM_Level` desliga as interrupções para descomprimir a arte dos cartões de título.
+- Escritas: conferem por prefixo. As do DAC pelo Z80 batem até na contagem final (213416). Vídeo (55943 contra 52375), PSG (269 contra 251), YM do 68000 (2004 contra 1616) e BUSREQ (2806 contra 2776) diferem só depois do fim da fatia, na carga da fase. Por isso o veredito é `DIVERGE`, como nas provas das fatias 1 e 2.
+- A abertura está provada do quadro 0 ao fim do `PaletteFadeOut` do começo de `GM_Level` (quadro ~954), com zero divergência nas esperas. Falta a fase da demo até `Level_StartGame` (~1166).
