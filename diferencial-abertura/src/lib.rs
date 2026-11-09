@@ -710,7 +710,11 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
         }
     }
     for t in 0..5 {
-        if esperadas[t].len() != obtidas[t].len() && rel.escritas_diverge.is_none() {
+        // O Z80 do núcleo só anda quando o 68000 o toca (nível 1): as escritas dele no YM podem
+        // terminar atrás do oráculo, nunca à frente nem diferentes (o prefixo já foi conferido).
+        let z80_atrasado = t == 3 && obtidas[t].len() <= esperadas[t].len();
+        if esperadas[t].len() != obtidas[t].len() && !z80_atrasado && rel.escritas_diverge.is_none()
+        {
             rel.escritas_diverge = Some(format!(
                 "contagem final sequencia {} oraculo {} nucleo {}",
                 NOMES_SEQ[t],
