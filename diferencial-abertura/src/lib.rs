@@ -187,9 +187,12 @@ fn primeira_diferenca(a: &[u8], b: &[u8]) -> Option<(usize, usize)> {
 }
 
 /// Escritas do oráculo num quadro, na ordem do trace.
-fn escritas_do_quadro(q: &sonic1_fidelidade::Quadro) -> Vec<Escrita> {
+fn escritas_do_quadro(q: &sonic1_fidelidade::Quadro, limite: Option<u64>) -> Vec<Escrita> {
     let mut v = Vec::new();
     for e in &q.eventos {
+        if limite.is_some_and(|l| e.mclk > l) {
+            continue;
+        }
         match (e.tipo, e.origem) {
             (Tipo::Vdp, _) => v.push((0, e.a, e.b, e.c)),
             (Tipo::Psg, _) => v.push((1, e.a, 0, 0)),
@@ -257,7 +260,7 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
     nucleo.registrar_esperas();
     let mut video = video::Video::novo();
     nucleo.definir_observador(video.observador());
-    let mut fim_da_abertura: Option<u32> = None;
+    let mut fim_da_abertura: Option<u64> = None;
     let mut esperas_o: std::collections::VecDeque<(Vec<u8>, Vec<u8>)> = Default::default();
     let mut esperas_n: std::collections::VecDeque<(Vec<u8>, Vec<u8>)> = Default::default();
 
@@ -558,15 +561,17 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
         // Escritas: o núcleo pode estar atrasado ou adiantado dentro de um trecho atômico, nunca
         // diferente. Cada item é conferido assim que os dois lados o têm.
         // O núcleo da abertura termina em `Level_StartGame`: o que o oráculo escreve depois dessa
-        // marca fica fora da contagem final (a fase seguinte é da Etapa 9).
-        if marcas
-            .iter()
-            .any(|(_, i)| MARCAS[*i].0 == Marca::LevelStartGame)
+        // marca (o resto do quadro e os seguintes) fica fora da contagem final, porque a fase em
+        // andamento é da Etapa 9. O corte é no `mclk` da marca.
+        if fim_da_abertura.is_none()
+            && let Some((mclk, _)) = marcas
+                .iter()
+                .find(|(_, i)| MARCAS[*i].0 == Marca::LevelStartGame)
         {
-            fim_da_abertura = Some(q.numero);
+            fim_da_abertura = Some(*mclk);
         }
-        let dentro = fim_da_abertura.is_none_or(|f| q.numero <= f);
-        for e in escritas_do_quadro(&q).into_iter().filter(|_| dentro) {
+        let limite = fim_da_abertura;
+        for e in escritas_do_quadro(&q, limite) {
             esperadas[usize::from(e.0)].push(e);
             rel.escritas_oraculo[usize::from(e.0)] += 1;
             if e.0 == 4 {
