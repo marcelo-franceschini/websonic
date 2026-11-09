@@ -290,3 +290,12 @@ Escrita, sem prova com a ROM ainda. Rodada pendente: `sh scripts/etapa7-bloco2.s
 - Escritas conferem por prefixo. As contagens finais diferem só pelos 4 quadros depois do fim (vídeo 96554 contra 96964, PSG 531 contra 543, YM do 68000 2944 contra 3004). O veredito `DIVERGE` vem só dessas contagens.
 - Objetos criados na partida da GHZ1: Sonic, HUD, anéis (`25`) e monitores (`26`). Nenhum outro ID faltou.
 - **Zero divergência do quadro 0 a `Level_StartGame` (1166)** na RAM, nas esperas, no Z80 e na ordem das escritas. Falta a comparação da imagem, da VRAM, da CRAM e da VSRAM por quadro (7.7), o navegador e o fechamento.
+
+## Critério da Etapa 7 cumprido (Marcelo, 09/11/2026, 1170 quadros, `sh scripts/etapa7-bloco2.sh ROM 1170`): veredito IGUAL
+
+- Do quadro 0 a `Level_StartGame` (quadro 1166): **zero divergência**.
+- RAM do 68000 e do Z80 nas esperas de VBlank (822 iguais) e nos fechamentos fora de trechos atômicos; posição do Z80 (`posicao_z80_divergencias=0`); ordem e conteúdo das escritas de vídeo, PSG, YM do 68000 e BUSREQ (contagens finais iguais); YM do Z80 igual no prefixo.
+- **Vídeo (7.7):** 1166 quadros comparados, `imagem=1166/0 vram=1166/0 cram=1166/0 vsram=1166/0` (iguais/diferentes). O renderizador de vídeo recebe só as escritas do núcleo, na ordem dele, com a posição (linha, coluna) do oráculo para a escrita de mesmo índice e o DMA lido da RAM do núcleo. O quadro 1166 e os 4 seguintes não entram: a marca cai no meio do quadro 1166 e o resto é a fase em andamento (Etapa 9).
+- Defeitos achados e corrigidos pela comparação, na ordem: laço do DAC sem limite (D7.24), quadro de lag (D7.25), objetos `25` e `26` da partida, DMA da paleta lido depois do passo do laço principal (o observador recolhe as escritas logo depois do tratador de VBlank).
+- Regras do comparador, para o fechamento: a contagem final das escritas esperadas corta no `mclk` da marca `Level_StartGame`; as escritas do Z80 no YM podem terminar atrás do oráculo (o Z80 do núcleo só anda quando o 68000 o toca, nível 1), nunca diferentes.
+- Limites aceitos, no backlog: a física do Sonic fora do chão plano, objetos além de Sonic, HUD, anéis e monitores, e as zonas além da GHZ.
