@@ -46,3 +46,23 @@ fn dma_da_ram_para_a_cram_chega_a_cram() {
     assert_eq!(cram.get(1).copied(), Some(0x0EEE), "cor 1 na CRAM");
     assert_eq!(cram.get(2).copied(), Some(0x000E), "cor 2 na CRAM");
 }
+
+#[test]
+fn transferencias_padrao_do_vblank_levam_a_paleta_para_a_cram() {
+    use sonic1_core::abertura::vblank::standard_transfers;
+    let mut mem = Memoria::nova(vec![0; 0x100]);
+    // O jogo deixa o registrador 1 com DMA ligado antes de tudo.
+    mem.ram_mut()[0xFB02..0xFB04].copy_from_slice(&0x0EEEu16.to_be_bytes());
+    mem.ram_mut()[0xFB04..0xFB06].copy_from_slice(&0x000Eu16.to_be_bytes());
+    let mut ponte = Ponte::nova();
+    ponte.aplicar(&mut mem, &ctrl(0x8174), 0, 0);
+    ponte.aplicar(&mut mem, &ctrl(0x8F02), 0, 0);
+    standard_transfers(&mut mem).unwrap();
+    for s in mem.tirar_saidas() {
+        ponte.aplicar(&mut mem, &s, 224, 0);
+    }
+    let _ = ponte.fechar_quadro();
+    let cram = ponte.renderizador().vdp().cram();
+    assert_eq!(cram.get(1).copied(), Some(0x0EEE), "cor 1 na CRAM");
+    assert_eq!(cram.get(2).copied(), Some(0x000E), "cor 2 na CRAM");
+}

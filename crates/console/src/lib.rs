@@ -36,6 +36,9 @@ pub struct Ponte {
     rend: Renderizador,
     /// Primeira palavra de um comando de duas palavras, à espera da segunda.
     primeira: Option<u16>,
+    /// Cópia dos registradores da VDP que a ponte precisa para o DMA. O renderizador guarda as
+    /// escritas atrás de um DMA em andamento, então os registradores dele podem estar atrasados.
+    regs: [u8; 24],
 }
 
 impl Default for Ponte {
@@ -49,6 +52,7 @@ impl Ponte {
         Self {
             rend: Renderizador::novo(),
             primeira: None,
+            regs: [0; 24],
         }
     }
 
@@ -58,12 +62,14 @@ impl Ponte {
 
     /// Lê as palavras de um DMA da memória para a VDP, do endereço dado pelos registradores.
     fn palavras_do_dma(&self, mem: &mut Memoria) -> Vec<u16> {
-        let r = &self.rend.vdp().registros;
-        let reg = |i: usize| r.brutos.get(i).copied().unwrap_or(0);
+        let reg = |i: usize| self.regs.get(i).copied().unwrap_or(0);
         let base =
             u32::from(reg(21)) | (u32::from(reg(22)) << 8) | (u32::from(reg(23) & 0x7F) << 16);
         let mut a = base.wrapping_mul(2);
-        let n = r.comprimento_dma().min(0x1_0000);
+        let n = match u32::from(reg(19)) | (u32::from(reg(20)) << 8) {
+            0 => 0x1_0000,
+            n => n,
+        };
         let mut v = Vec::new();
         for _ in 0..n {
             let w = mem.ler(a, Tamanho::Word).unwrap_or(0);
@@ -71,6 +77,13 @@ impl Ponte {
             a = a.wrapping_add(2);
         }
         v
+    }
+
+    /// O DMA da memória para a VDP está permitido e pedido, pelos registradores copiados?
+    fn dma_de_memoria(&self) -> bool {
+        let r1 = self.regs.get(1).copied().unwrap_or(0);
+        let r23 = self.regs.get(23).copied().unwrap_or(0);
+        r1 & 0x10 != 0 && r23 >> 6 < 2
     }
 
     /// Aplica uma saída do núcleo na posição dada. Só as escritas da VDP interessam aqui.
@@ -94,13 +107,13 @@ impl Ponte {
                 let e_registrador = valor & 0xC000 == 0x8000;
                 if e_registrador {
                     self.primeira = None;
+                    let n = usize::from((valor >> 8) & 0x1F);
+                    if let Some(r) = self.regs.get_mut(n) {
+                        *r = valor.to_le_bytes()[0];
+                    }
                 } else if let Some(_primeira) = self.primeira.take() {
                     // Segunda palavra: o bit 7 pede DMA. Se for da memória, entrega as palavras.
-                    let r = &self.rend.vdp().registros;
-                    let dma = valor & 0x0080 != 0
-                        && r.dma_permitido()
-                        && r.modo_dma() == sonic1_video::registros::ModoDma::MemoriaParaVdp;
-                    if dma {
+                    if valor & 0x0080 != 0 && self.dma_de_memoria() {
                         let palavras = self.palavras_do_dma(mem);
                         self.rend.entregar_dma(&palavras);
                     }
