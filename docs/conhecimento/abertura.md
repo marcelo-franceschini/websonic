@@ -219,3 +219,22 @@ Achados:
 - Interrupções: 223 do oráculo, 219 tratadas pelo núcleo (1 de lag, a do segundo VBlank do aparecimento) e 4 ignoradas (quadros 527 a 530, `Parado`).
 - Escritas: PSG 23 e YM do 68000 482 nos dois lados. As escritas conferem por prefixo. As contagens finais diferem só nos VBlanks do título (527 a 529), que o núcleo ainda ignora: vídeo 41225 contra 41125, YM pelo Z80 61498 contra 58498 (o Z80 do núcleo só anda quando o 68000 o toca) e BUSREQ 912 contra 895. Por isso o veredito é `DIVERGE`, como na prova da fatia 1. Não há divergência no prefixo.
 - A fatia 2 (parte C até `Tit_MainLoop`) está provada. A próxima é a fatia 3: o laço do título até `GotoDemo`.
+
+## Título, fatia 3 (7.5, 09/11/2026): laço do título, `GotoDemo` e começo de `GM_Level`
+
+Escrita, sem prova com a ROM ainda. Rodada pendente: `sh scripts/etapa7-bloco2.sh ROM 970`. O temporizador de 376 quadros só anda no VBlank do título, então o `GotoDemo` deve chegar perto do quadro 903, o `GM_Level` perto do 933, e o desvanecimento do começo da fase acaba perto do 955.
+
+- **O que roda.** `Tit_MainLoop` (estado `Laco`), um quadro por VBlank: objetos, `DeformLayers`, `BuildSprites`, `PalCycle_Title`, `RunPLC`, o objeto 0 que anda 2 pixels e puxa a câmera, a entrada do código e o temporizador. Depois o laço de 30 quadros do `GotoDemo` (estado `PreDemo`: `DeformLayers`, `PaletteCycle` da GHZ, `RunPLC` e o objeto 0), a preparação da demo e o começo de `GM_Level` até o fim do `PaletteFadeOut` (estado `Fase`).
+- **VBlank do título (`VBlank_Title`, rotina `$04`).** Transferências padrão, `LoadTilesAsYouMove_BGOnly`, `ProcessPLC_9Tiles` e o temporizador genérico.
+- **Desenho do fundo durante a rolagem (`desenho.rs`).** `DrawBG_Top` e `DrawBG_Bottom` (REV01), as faixas `DrawBlocks_LR`, `DrawBlocks_LR_3`, `DrawBlocks_TB` e `DrawBlocks_TB_2`, e as variantes `GetBlockData_2` e `Calc_VRAM_Pos_2`. Na tela do título só o `DrawBG_Bottom` desenha: o `Deform_GHZ` da REV01 move só os blocos 2 e 3 do fundo, e as flags do bloco 1 nunca ligam. O bloco 2 (colinas) anda meio pixel por pixel da câmera e pede uma coluna de três blocos a cada 16 pixels.
+- **Ciclos de paleta (`paleta.rs`).** `PalCycle_Title` e `PaletteCycle` da GHZ, que são o mesmo código (`PCycGHZ_Go`) com tabelas diferentes.
+- **Código e Start.** A entrada do código da seleção de fases (`Tit_ChkRegion` a `Tit_CountC`, FixBugs = 0) e o botão C estão escritos e testados com ROM sintética. Na rodada da demo não há botões.
+
+Decisões desta fatia:
+
+- **D7.26. `a0` no desenho do fundo do VBlank.** Num chunk zero, `DrawBlock` lê as flags de `(a0)` (como na D7.20). No VBlank do título, `a0` é o que o `ReadJoypads` deixa: `v_jpadhold1 + 4`, depois de gravar os dois controles. As macros de DMA de `VBlank_StandardTransfers` só usam `a5`. O valor sai do código, não de um registrador que sobrou de antes, então não é risco.
+- **D7.27. Fim da fatia.** A fatia termina no fim do `PaletteFadeOut` do começo de `GM_Level` (estado `Fase(Parado)`). Assim a preparação da demo e o começo da fase são provados nas 22 esperas desse desvanecimento (D7.13). O resto da carga da fase entra na próxima fatia.
+- **D7.28. Marca `GotoDemo` só para o relatório.** O núcleo decide o fim do laço do título pelo próprio temporizador (`v_generictimer`). A marca mostra em que quadro o oráculo chegou lá; se o núcleo errar o temporizador, a comparação acusa nas esperas.
+- **D7.29. O que não existe para.** Start no título (`Tit_ChkLevSel`), a volta à Sega em `$1C00`, a demo do estágio especial, os ciclos de paleta de outras zonas e o fundo da SBZ devolvem `NaoImplementado`. Nenhum acontece na rodada da demo.
+
+Provas sem a ROM: `cargo test -q -p sonic1-core -p sonic1-teste-som -p sonic1-console` (95 testes, 13 novos em `crates/teste-som/tests/titulo_laco.rs`), `cargo clippy --workspace --all-targets -- -D warnings` e o clippy do comparador sem erro, `cargo fmt` aplicado.

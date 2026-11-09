@@ -16,7 +16,9 @@
 pub mod boot;
 pub mod cenario;
 pub mod desenho;
+pub mod fase;
 pub mod objetos;
+pub mod paleta;
 pub mod plc;
 pub mod ram;
 pub mod sega;
@@ -58,10 +60,15 @@ pub enum Marca {
     /// `WaitForVBlank`: o laço principal chegou à espera do VBlank. Uma interrupção que chega
     /// antes desta marca é quadro de lag (D7.25).
     WaitForVBlank,
+    /// `GotoDemo`: o temporizador do título acabou. Só para o relatório: o núcleo decide pela
+    /// própria RAM.
+    GotoDemo,
+    /// `GM_Level`: começo do modo de fase (e de demo).
+    GmLevel,
 }
 
 /// Rótulo e endereço de cada marca (metadado de `refs/rotulos.txt`, conferido por teste).
-pub const MARCAS: [(Marca, &str, u32); 14] = [
+pub const MARCAS: [(Marca, &str, u32); 16] = [
     (Marca::GameProgram, "GameProgram", 0x300),
     (Marca::ChecksumOk, "CheckSumOk", 0x33E),
     (Marca::VdpSetupGame, "VDPSetupGame", 0x1222),
@@ -76,6 +83,8 @@ pub const MARCAS: [(Marca, &str, u32); 14] = [
     (Marca::PaletteFadeOut, "PaletteFadeOut", 0x1E4A),
     (Marca::TitMainLoop, "Tit_MainLoop", 0x315E),
     (Marca::WaitForVBlank, "WaitForVBlank", 0x29A0),
+    (Marca::GotoDemo, "GotoDemo", 0x33A4),
+    (Marca::GmLevel, "GM_Level", 0x379E),
 ];
 
 type Passo = fn(&mut Memoria) -> Result<(), ErroAbertura>;
@@ -149,6 +158,18 @@ enum Modo {
     Boot,
     Sega(Sega),
     Titulo(Titulo),
+    Fase(Fase),
+}
+
+/// Passos do modo de fase e de demo (`GM_Level`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Fase {
+    /// O `GotoDemo` preparou a demo; falta a chegada a `GM_Level`.
+    Entrada,
+    /// `PaletteFadeOut` do começo de `GM_Level`: faltam tantos VBlanks.
+    FadeOut(u8),
+    /// O resto da fase ainda não existe nesta versão do núcleo.
+    Parado,
 }
 
 /// Passos da tela do título (`GM_Title`).
@@ -172,8 +193,10 @@ enum Titulo {
     FadeInC(u8),
     /// Espera a marca `Tit_MainLoop`, que é o começo do laço do título.
     PreparoTit,
-    /// O resto do título ainda não existe nesta versão do núcleo.
-    Parado,
+    /// `Tit_MainLoop`: um quadro do título por VBlank, até o temporizador acabar.
+    Laco,
+    /// `GotoDemo_PreDelayLoop`: os 30 quadros de espera antes da demo.
+    PreDemo,
 }
 
 /// O que o laço principal espera (para o tempo nominal).
@@ -263,9 +286,16 @@ impl Abertura {
             Modo::Titulo(Titulo::PreparoC) => Espera::Marca(Marca::PaletteFadeIn),
             Modo::Titulo(Titulo::PreparoTit) => Espera::Marca(Marca::TitMainLoop),
             Modo::Titulo(
-                Titulo::FadeOut(_) | Titulo::FadeIn(_) | Titulo::FadeOutB(_) | Titulo::FadeInC(_),
+                Titulo::FadeOut(_)
+                | Titulo::FadeIn(_)
+                | Titulo::FadeOutB(_)
+                | Titulo::FadeInC(_)
+                | Titulo::Laco
+                | Titulo::PreDemo,
             ) => Espera::VBlank,
-            Modo::Titulo(Titulo::Parado) => Espera::Nenhuma,
+            Modo::Fase(Fase::Entrada) => Espera::Marca(Marca::GmLevel),
+            Modo::Fase(Fase::FadeOut(_)) => Espera::VBlank,
+            Modo::Fase(Fase::Parado) => Espera::Nenhuma,
         }
     }
 
@@ -283,7 +313,10 @@ impl Abertura {
                         | Titulo::FadeIn(_)
                         | Titulo::FadeOutB(_)
                         | Titulo::FadeInC(_)
+                        | Titulo::Laco
+                        | Titulo::PreDemo
                 )
+                | Modo::Fase(Fase::FadeOut(_))
         )
     }
 
@@ -387,10 +420,15 @@ impl Abertura {
                 self.modo = Modo::Titulo(Titulo::FadeInC(22));
             }
             (Modo::Titulo(Titulo::PreparoTit), Marca::TitMainLoop) => {
-                // `Tit_MainLoop` pede o VBlank do título e para a fatia aqui.
+                // `Tit_MainLoop` pede o VBlank do título; o laço anda um quadro por VBlank.
                 wb(&mut self.mem, ram::V_VBLANK_ROUTINE, vblank::ROTINA_TITULO);
                 self.pedir_espera();
-                self.modo = Modo::Titulo(Titulo::Parado);
+                self.modo = Modo::Titulo(Titulo::Laco);
+            }
+            (Modo::Fase(Fase::Entrada), Marca::GmLevel) => {
+                fase::gm_level_inicio(&mut self.mem);
+                self.pedir_espera();
+                self.modo = Modo::Fase(Fase::FadeOut(22));
             }
             (Modo::Titulo(Titulo::PreparoB), Marca::PaletteFadeOut) => {
                 // A parte B roda de uma vez (D7.10). Depois, o desvanecimento pede o VBlank.
@@ -496,12 +534,72 @@ impl Abertura {
                 };
                 self.modo = Modo::Titulo(proximo);
             }
+            Titulo::Laco => {
+                self.vblanks_tratados = self.vblanks_tratados.saturating_add(1);
+                vblank::tratar(&mut self.mem)?;
+                match titulo::laco_do_titulo(&mut self.mem)? {
+                    titulo::DepoisDoTitulo::Continua => self.pedir_vblank_do_titulo(),
+                    titulo::DepoisDoTitulo::GotoDemo => {
+                        // `GotoDemo`: meio segundo no último quadro do aceno, antes da demo.
+                        ww(&mut self.mem, ram::V_GENERICTIMER, 30);
+                        self.pedir_vblank_do_titulo();
+                        self.modo = Modo::Titulo(Titulo::PreDemo);
+                    }
+                    titulo::DepoisDoTitulo::VoltaSega => {
+                        return Err(ErroAbertura::NaoImplementado("volta à Sega pelo título"));
+                    }
+                    titulo::DepoisDoTitulo::Jogar => {
+                        return Err(ErroAbertura::NaoImplementado("começo do jogo pelo título"));
+                    }
+                }
+            }
+            Titulo::PreDemo => {
+                self.vblanks_tratados = self.vblanks_tratados.saturating_add(1);
+                vblank::tratar(&mut self.mem)?;
+                match titulo::goto_demo_passo(&mut self.mem)? {
+                    titulo::DepoisDoGotoDemo::Continua => self.pedir_vblank_do_titulo(),
+                    titulo::DepoisDoGotoDemo::Demo => {
+                        // O `rts` volta ao `MainGameLoop`, que chama o modo novo.
+                        if rb(&mut self.mem, ram::V_GAMEMODE) != ram::ID_DEMO {
+                            return Err(ErroAbertura::NaoImplementado("demo do estágio especial"));
+                        }
+                        self.modo = Modo::Fase(Fase::Entrada);
+                    }
+                    titulo::DepoisDoGotoDemo::VoltaSega => {
+                        return Err(ErroAbertura::NaoImplementado("volta à Sega pelo título"));
+                    }
+                    titulo::DepoisDoGotoDemo::Jogar => {
+                        return Err(ErroAbertura::NaoImplementado("começo do jogo pelo título"));
+                    }
+                }
+            }
             Titulo::Entrada
             | Titulo::PreparoA
             | Titulo::PreparoB
             | Titulo::PreparoC
-            | Titulo::PreparoTit
-            | Titulo::Parado => self.ignorar(),
+            | Titulo::PreparoTit => self.ignorar(),
+        }
+        Ok(())
+    }
+
+    /// `move.b #id_VBlank_Title,(v_vblank_routine).w` antes de `WaitForVBlank`.
+    fn pedir_vblank_do_titulo(&mut self) {
+        wb(&mut self.mem, ram::V_VBLANK_ROUTINE, vblank::ROTINA_TITULO);
+        self.pedir_espera();
+    }
+
+    /// VBlank no modo de fase.
+    fn vblank_fase(&mut self, f: Fase) -> Result<(), ErroAbertura> {
+        match f {
+            Fase::FadeOut(n) => {
+                let restam = self.vblank_fade_out(n)?;
+                self.modo = Modo::Fase(if restam > 0 {
+                    Fase::FadeOut(restam)
+                } else {
+                    Fase::Parado
+                });
+            }
+            Fase::Entrada | Fase::Parado => self.ignorar(),
         }
         Ok(())
     }
@@ -556,7 +654,7 @@ impl Abertura {
     fn vblank(&mut self) -> Result<(), ErroAbertura> {
         match self.modo {
             // Boot (sem VBlank) e fim da parte implementada: nada roda.
-            Modo::Boot | Modo::Titulo(Titulo::Parado) => {
+            Modo::Boot | Modo::Fase(Fase::Parado) => {
                 self.ignorar();
                 return Ok(());
             }
@@ -568,6 +666,9 @@ impl Abertura {
         self.na_espera = false;
         if let Modo::Titulo(t) = self.modo {
             return self.vblank_titulo(t);
+        }
+        if let Modo::Fase(f) = self.modo {
+            return self.vblank_fase(f);
         }
         let Modo::Sega(passo) = self.modo else {
             self.ignorar();

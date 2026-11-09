@@ -31,6 +31,8 @@ fn quadros_de_espera(m: Marca) -> u32 {
         Marca::TitMainLoop => 0,
         // Vem junto com o VBlank (ver `eventos_nominais`); o console não espera por ela.
         Marca::WaitForVBlank => 0,
+        // `GotoDemo` não é espera do núcleo; `GM_Level` vem logo depois do `rts` do `GotoDemo`.
+        Marca::GotoDemo | Marca::GmLevel => 0,
     }
 }
 

@@ -83,8 +83,8 @@ pub fn standard_transfers(m: &mut Memoria) -> Result<(), ErroAbertura> {
     Ok(())
 }
 
-/// `VBlank_SegaPCM` (e o fim de `VBlank_Sega`): decrementa o temporizador genérico.
-fn segapcm(m: &mut Memoria) {
+/// Fim de `VBlank_Sega`, `VBlank_SegaPCM` e `VBlank_Title`: decrementa o temporizador genérico.
+fn temporizador_generico(m: &mut Memoria) {
     let t = rw(m, V_GENERICTIMER);
     if t != 0 {
         ww(m, V_GENERICTIMER, t.wrapping_sub(1));
@@ -105,9 +105,17 @@ pub fn tratar(m: &mut Memoria) -> Result<(), ErroAbertura> {
         match rotina & 0x3E {
             ROTINA_SEGA => {
                 standard_transfers(m)?;
-                segapcm(m);
+                temporizador_generico(m);
             }
-            ROTINA_SEGA_PCM => segapcm(m),
+            ROTINA_SEGA_PCM => temporizador_generico(m),
+            ROTINA_TITULO => {
+                standard_transfers(m)?;
+                // `ReadJoypads` deixa `a0` em `v_jpadhold1 + 4`, e as macros de DMA só usam `a5`:
+                // é esse o `a0` que `DrawBlock` lê num chunk zero (D7.26).
+                super::desenho::load_tiles_as_you_move_bg_only(m, V_JPADHOLD1.wrapping_add(4))?;
+                super::plc::process_plc_9(m);
+                temporizador_generico(m);
+            }
             ROTINA_PALETTE_FADE => {
                 standard_transfers(m)?;
                 let h = rw(m, V_HBLANK_HREG);

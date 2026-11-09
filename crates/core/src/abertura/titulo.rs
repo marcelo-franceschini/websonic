@@ -1,12 +1,12 @@
 //! Tela do título (sub-etapa 7.5). Cada função cita o rótulo que reproduz.
 
-use super::boot::rom_w;
+use super::boot::{rom_b, rom_w};
 use super::cenario;
 use super::desenho;
 use super::objetos::{build_sprites, execute_objects};
 use super::ram::*;
 use super::sega::{clear_screen, copy_tilemap, pal_load_para};
-use super::{ErroAbertura, rb, rw, wb, wl, ww};
+use super::{ErroAbertura, paleta, plc, rb, rw, wb, wl, ww};
 use crate::memoria::Memoria;
 use crate::rotinas;
 
@@ -196,4 +196,159 @@ pub fn fade_in_from_black(m: &mut Memoria) {
             (a0, a1) = fade_in_add_color(m, a0, a1);
         }
     }
+}
+
+/// Para onde o laço do título vai depois de um quadro.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DepoisDoTitulo {
+    /// Pede o VBlank do título e repete o laço.
+    Continua,
+    /// O temporizador acabou: `GotoDemo`.
+    GotoDemo,
+    /// O "Sonic" do objeto 0 passou de `$1C00`: volta à Sega (não acontece com o temporizador).
+    VoltaSega,
+    /// Start apertado: `Tit_ChkLevSel` e o começo do jogo.
+    Jogar,
+}
+
+/// `Tit_MainLoop`, depois da espera: objetos, fundo, sprites, ciclo de paleta, fila de arte, o
+/// "Sonic" do objeto 0 que puxa a câmera, os códigos e o temporizador.
+pub fn laco_do_titulo(m: &mut Memoria) -> Result<DepoisDoTitulo, ErroAbertura> {
+    execute_objects(m)?;
+    cenario::deform_layers(m)?;
+    build_sprites(m)?;
+    paleta::pal_cycle_title(m);
+    plc::run_plc(m)?;
+    if andar_o_sonic(m) {
+        return Ok(DepoisDoTitulo::VoltaSega);
+    }
+    codigos(m);
+    // `Tit_ChkStartOrDemo`.
+    if rw(m, V_GENERICTIMER) == 0 {
+        return Ok(DepoisDoTitulo::GotoDemo);
+    }
+    if start_apertado(m) {
+        return Ok(DepoisDoTitulo::Jogar);
+    }
+    Ok(DepoisDoTitulo::Continua)
+}
+
+/// `move.w (v_player+obX).w,d0`, `addq.w #2,d0`, `cmpi.w #$1C00,d0` e `blo`: o objeto 0 anda 2
+/// pixels para a direita, e a câmera o segue. Diz se ele passou de `$1C00`.
+fn andar_o_sonic(m: &mut Memoria) -> bool {
+    let x = rw(m, V_PLAYER.wrapping_add(OB_X)).wrapping_add(2);
+    ww(m, V_PLAYER.wrapping_add(OB_X), x);
+    x >= 0x1C00
+}
+
+/// `andi.b #btnStart,(v_jpadpress1).w` e `beq`: a instrução grava o byte mascarado de volta.
+fn start_apertado(m: &mut Memoria) -> bool {
+    let start = rb(m, V_JPADPRESS1) & BTN_START;
+    wb(m, V_JPADPRESS1, start);
+    start != 0
+}
+
+/// `adda.w`: a palavra entra com sinal na soma do endereço.
+fn estender(w: u16) -> u32 {
+    u32::from_be_bytes(i32::from(i16::from_be_bytes(w.to_be_bytes())).to_be_bytes())
+}
+
+/// `Tit_ChkRegion` a `Tit_CountC` (FixBugs = 0): a entrada do código pelo direcional e a
+/// contagem do botão C.
+fn codigos(m: &mut Memoria) {
+    let codigo = if rb(m, V_MEGADRIVE) & 0x80 != 0 {
+        LEVSELCODE_US
+    } else {
+        LEVSELCODE_J
+    };
+    let feitos = rw(m, V_TITLE_DCOUNT);
+    let esperado = rom_b(m, codigo.wrapping_add(estender(feitos)));
+    let direcional = rb(m, V_JPADPRESS1) & BTN_DIR;
+    if direcional == esperado {
+        ww(m, V_TITLE_DCOUNT, feitos.wrapping_add(1));
+        // O zero no fim da sequência quer dizer que o código entrou inteiro.
+        if direcional == 0 {
+            ativar_codigo(m);
+        }
+    } else if direcional != 0 && feitos != 9 {
+        // `Tit_ResetCheat`: um botão errado recomeça a sequência.
+        ww(m, V_TITLE_DCOUNT, 0);
+    }
+    if rb(m, V_JPADPRESS1) & BTN_C != 0 {
+        let c = rw(m, V_TITLE_CCOUNT).wrapping_add(1);
+        ww(m, V_TITLE_CCOUNT, c);
+    }
+}
+
+/// `Tit_ActivateCheat` e `Tit_PlayRing`: o código liga a trapaça que a contagem do C escolhe (fora
+/// do Japão, duas vezes C ou mais liga a câmera lenta e o modo de depuração) e toca o anel.
+fn ativar_codigo(m: &mut Memoria) {
+    let mut d1 = (rw(m, V_TITLE_CCOUNT) >> 1) & 3;
+    if d1 != 0 && rb(m, V_MEGADRIVE) & 0x80 != 0 {
+        d1 = 1;
+        // `move.b d1,1(a0,d1.w)`: liga o byte depois do escolhido.
+        wb(m, F_LEVSELCHEAT.wrapping_add(2), 1);
+    }
+    wb(m, F_LEVSELCHEAT.wrapping_add(u32::from(d1)), 1);
+    wb(m, V_SOUNDQUEUE1, SFX_RING);
+}
+
+/// Para onde o laço de espera do `GotoDemo` vai depois de um quadro.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DepoisDoGotoDemo {
+    /// Pede o VBlank do título e repete o laço.
+    Continua,
+    /// A demo foi preparada: o `rts` volta ao `MainGameLoop`, que chama o modo novo.
+    Demo,
+    /// O "Sonic" do objeto 0 passou de `$1C00`: volta à Sega.
+    VoltaSega,
+    /// Start apertado durante a espera: `Tit_ChkLevSel`.
+    Jogar,
+}
+
+/// `GotoDemo_PreDelayLoop`, depois da espera: fundo, ciclo de paleta da zona, fila de arte e o
+/// objeto 0. No fim do temporizador de 30 quadros, prepara a demo.
+pub fn goto_demo_passo(m: &mut Memoria) -> Result<DepoisDoGotoDemo, ErroAbertura> {
+    cenario::deform_layers(m)?;
+    paleta::palette_cycle(m)?;
+    plc::run_plc(m)?;
+    if andar_o_sonic(m) {
+        return Ok(DepoisDoGotoDemo::VoltaSega);
+    }
+    if start_apertado(m) {
+        return Ok(DepoisDoGotoDemo::Jogar);
+    }
+    if rw(m, V_GENERICTIMER) != 0 {
+        return Ok(DepoisDoGotoDemo::Continua);
+    }
+    preparar_demo(m);
+    Ok(DepoisDoGotoDemo::Demo)
+}
+
+/// Fim de `GotoDemo` (REV01): apaga a música, escolhe a fase da demo pela `Demo_Levels`, liga o
+/// modo de demo e zera vidas, anéis, tempo e pontos.
+fn preparar_demo(m: &mut Memoria) {
+    wb(m, V_SOUNDQUEUE1, BGM_FADE);
+    let numero = rw(m, V_DEMONUM) & 7;
+    let fase = rom_w(
+        m,
+        DEMO_LEVELS.wrapping_add(u32::from(numero).wrapping_mul(2)),
+    );
+    ww(m, V_ZONE_ACT, fase);
+    let proximo = rw(m, V_DEMONUM).wrapping_add(1);
+    ww(m, V_DEMONUM, if proximo < 4 { proximo } else { 0 });
+    ww(m, F_DEMO, 1);
+    wb(m, V_GAMEMODE, ID_DEMO);
+    // `$600` é o valor de mentira que leva à demo do estágio especial.
+    if fase == 0x600 {
+        wb(m, V_GAMEMODE, ID_SPECIAL);
+        ww(m, V_ZONE_ACT, 0);
+        wb(m, V_LASTSPECIAL, 0);
+    }
+    wb(m, V_LIVES, 3);
+    ww(m, V_RINGS, 0);
+    wl(m, V_TIME, 0);
+    wl(m, V_SCORE, 0);
+    // REV01: a vida extra seguinte vem nos 50000 pontos.
+    wl(m, V_SCORELIFE, 5000);
 }

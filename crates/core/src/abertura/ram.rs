@@ -237,3 +237,35 @@ pub const MAP_TSON: u32 = 0xAF12;
 pub const MAP_PSB: u32 = 0xAE4E;
 /// Rótulo `Tit_MainLoop`: começo do laço do título, depois da parte C.
 pub const TIT_MAIN_LOOP: u32 = 0x315E;
+
+// Laço do título, `GotoDemo` e começo de `GM_Level` (fatia 3).
+pub const V_PALETTE_LINE_3: u32 = 0xFF_FB40;
+pub const V_JPADPRESS1: u32 = 0xFF_F605;
+pub const F_LEVSELCHEAT: u32 = 0xFF_FFE0;
+pub const V_DEMONUM: u32 = 0xFF_FFF2;
+pub const V_LIVES: u32 = 0xFF_FE12;
+pub const V_LASTSPECIAL: u32 = 0xFF_FE16;
+pub const V_RINGS: u32 = 0xFF_FE20;
+pub const V_TIME: u32 = 0xFF_FE22;
+pub const V_SCORE: u32 = 0xFF_FE26;
+pub const V_SCORELIFE: u32 = 0xFF_FFC0;
+/// Tabelas de quatro cores dos ciclos de paleta da água (título e GHZ).
+pub const PAL_TITLECYC_WATER: u32 = 0x1B5E;
+pub const PAL_GHZCYC_WATER: u32 = 0x1B7E;
+/// Sequências do código da seleção de fases (`LevSelCode_J` e `LevSelCode_US`).
+pub const LEVSELCODE_J: u32 = 0x3396;
+pub const LEVSELCODE_US: u32 = 0x339E;
+/// `Demo_Levels`: a fase de cada demo, em palavras.
+pub const DEMO_LEVELS: u32 = 0x3454;
+/// Comando de som que apaga a música aos poucos (`bgm_Fade`).
+pub const BGM_FADE: u8 = 0xE0;
+/// Som do anel (`sfx_Ring`), tocado quando o código entra.
+pub const SFX_RING: u8 = 0xB5;
+/// Modos de jogo (`id_Demo`, `id_Special`) e a zona `id_SBZ`.
+pub const ID_DEMO: u8 = 0x08;
+pub const ID_SPECIAL: u8 = 0x10;
+pub const ID_SBZ: u8 = 5;
+/// Botões (`btnDir`, `btnC`, `btnStart`).
+pub const BTN_DIR: u8 = 0x0F;
+pub const BTN_C: u8 = 0x20;
+pub const BTN_START: u8 = 0x80;

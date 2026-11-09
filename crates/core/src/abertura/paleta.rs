@@ -1,0 +1,48 @@
+//! Ciclos de paleta (`_inc/PaletteCycle.asm`): `PalCycle_Title` no laço do título e
+//! `PaletteCycle` da GHZ no `GotoDemo`. Os dois usam o mesmo código (`PCycGHZ_Go`) com tabelas
+//! diferentes na ROM.
+
+use super::boot::rom_l;
+use super::ram::*;
+use super::{ErroAbertura, rb, rw, wl, ww};
+use crate::memoria::Memoria;
+
+/// Quadros entre dois passos do ciclo da água (`move.w #6-1,(v_pcyc_time).w`).
+const QUADROS_POR_PASSO: u16 = 6;
+
+/// `PalCycle_Title`: ciclo da água do título.
+pub fn pal_cycle_title(m: &mut Memoria) {
+    pcyc_ghz_go(m, PAL_TITLECYC_WATER);
+}
+
+/// `PaletteCycle`: o ciclo da zona atual (`PalCycle_Index`). A GHZ e o final (zona 6, que reusa
+/// a GHZ) existem aqui; as outras zonas devolvem `NaoImplementado`.
+pub fn palette_cycle(m: &mut Memoria) -> Result<(), ErroAbertura> {
+    match rb(m, V_ZONE) {
+        0 | 6 => {
+            pcyc_ghz_go(m, PAL_GHZCYC_WATER);
+            Ok(())
+        }
+        _ => Err(ErroAbertura::NaoImplementado(
+            "ciclo de paleta de outra zona",
+        )),
+    }
+}
+
+/// `PCycGHZ_Go`: a cada seis quadros, quatro cores da tabela vão para as cores 8 a 11 da linha 3
+/// da paleta. A tabela tem quatro passos de oito bytes.
+fn pcyc_ghz_go(m: &mut Memoria, tabela: u32) {
+    let tempo = rw(m, V_PCYC_TIME).wrapping_sub(1);
+    ww(m, V_PCYC_TIME, tempo);
+    // `bpl .return`: ainda há tempo (o contador não ficou negativo).
+    if tempo & 0x8000 == 0 {
+        return;
+    }
+    ww(m, V_PCYC_TIME, QUADROS_POR_PASSO.wrapping_sub(1));
+    let passo = rw(m, V_PCYC_NUM);
+    ww(m, V_PCYC_NUM, passo.wrapping_add(1));
+    let origem = tabela.wrapping_add(u32::from(passo & 3).wrapping_mul(8));
+    let destino = V_PALETTE_LINE_3.wrapping_add(8 * 2);
+    wl(m, destino, rom_l(m, origem));
+    wl(m, destino.wrapping_add(4), rom_l(m, origem.wrapping_add(4)));
+}
