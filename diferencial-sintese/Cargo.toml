@@ -1,0 +1,19 @@
+[package]
+name = "sonic1-diferencial-sintese"
+description = "Sintetizador contra os chips de referencia Nuked-OPN2 e Nuked-PSG (Etapa 8). GPLv3, workspace proprio"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "GPL-3.0-only"
+build = "build.rs"
+
+[dependencies]
+sonic1-audio = { path = "../crates/audio" }
+sonic1-fidelidade = { path = "../crates/fidelidade" }
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+
+# Workspace proprio: liga codigo C sob LGPL 2.1+ e GPL 2+ (os Nuked) e nunca entra no build do
+# jogo nem do site. O fonte dos Nuked fica fora do git (SONIC1_EXT_DIR/trabalho/nuked).
+[workspace]
