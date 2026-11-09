@@ -27,6 +27,9 @@ fn main() -> std::process::ExitCode {
     for q in 0..n {
         let rgba = c.executar_quadro();
         println!("quadro {q} {:016x}", c.hash_da_imagem());
+        if q % 10 == 0 || q < 5 {
+            eprintln!("diag quadro={q} {}", c.diagnostico());
+        }
         if let Some((pq, arq)) = &ppm
             && *pq == q
         {

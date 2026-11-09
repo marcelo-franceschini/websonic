@@ -153,6 +153,7 @@ pub struct Console {
     ponte: Ponte,
     espera_atual: Option<Espera>,
     quadros_na_espera: u32,
+    escritas_no_quadro: usize,
 }
 
 impl Console {
@@ -162,6 +163,7 @@ impl Console {
             ponte: Ponte::nova(),
             espera_atual: None,
             quadros_na_espera: 0,
+            escritas_no_quadro: 0,
         }
     }
 
@@ -199,6 +201,7 @@ impl Console {
         // Posição nominal: o tratador de VBlank escreve na linha 224; o resto, na linha 0.
         let linha = if teve_vblank { LINHA_VBLANK } else { 0 };
         let saidas = self.ab.mem.tirar_saidas();
+        self.escritas_no_quadro = saidas.len();
         for s in &saidas {
             self.ponte.aplicar(&mut self.ab.mem, s, linha, 0);
         }
@@ -207,6 +210,21 @@ impl Console {
 
     pub fn hash_da_imagem(&self) -> u64 {
         self.ponte.hash_da_imagem()
+    }
+
+    /// Números para achar defeitos: o que o laço espera, quantas escritas o quadro teve, quantas
+    /// cores e bytes de VRAM não são zero e se a imagem está ligada. Nenhum valor de dado.
+    pub fn diagnostico(&self) -> String {
+        let v = self.ponte.renderizador().vdp();
+        let cram = v.cram().iter().filter(|c| **c != 0).count();
+        let vram = v.vram().iter().filter(|b| **b != 0).count();
+        format!(
+            "espera={:?} escritas={} cram_nao_zero={cram} vram_nao_zero={vram} imagem_ligada={} avisos={}",
+            self.ab.espera(),
+            self.escritas_no_quadro,
+            v.imagem_ligada(),
+            v.avisos.total()
+        )
     }
 
     pub fn erro(&self) -> Option<String> {
