@@ -1,4 +1,5 @@
 //! Camada fina entre o JavaScript e os crates do projeto. Sem lógica própria.
+use sonic1_console::Console;
 use sonic1_rom::{Veredito, identificar as identificar_rom};
 use wasm_bindgen::prelude::*;
 
@@ -54,9 +55,86 @@ pub fn identificar(dados: &[u8]) -> Resultado {
     }
 }
 
+/// O jogo rodando: o núcleo com tempo nominal, a ponte de vídeo e a imagem do último quadro.
+/// A síntese de som é a Etapa 8: aqui não há som.
+#[wasm_bindgen]
+pub struct Jogo {
+    console: Console,
+}
+
+impl Jogo {
+    /// Cria o jogo sem conferir a ROM (para testes com ROM sintética). A página só chama
+    /// [`Jogo::criar`].
+    pub fn sem_validar(rom: Vec<u8>) -> Self {
+        Self {
+            console: Console::novo(rom),
+        }
+    }
+
+    pub fn console(&self) -> &Console {
+        &self.console
+    }
+}
+
+#[wasm_bindgen]
+impl Jogo {
+    /// Cria o jogo. Só aceita a REV01: qualquer outro arquivo é recusado.
+    pub fn criar(dados: &[u8]) -> Result<Jogo, String> {
+        let id = identificar_rom(dados);
+        match id.veredito {
+            Veredito::Rev01 => Ok(Self::sem_validar(dados.to_vec())),
+            Veredito::Recusada(m) => Err(m.descricao()),
+        }
+    }
+
+    /// Botões apertados: bits 0 a 7 = cima, baixo, esquerda, direita, B, C, A, Start.
+    pub fn botoes(&mut self, mascara: u8) {
+        self.console.definir_botoes(mascara);
+    }
+
+    /// Roda um quadro e devolve a imagem de 320 por 224 em RGBA.
+    pub fn quadro(&mut self) -> Vec<u8> {
+        self.console.executar_quadro()
+    }
+
+    /// Hash da imagem de 9 bits do último quadro, em hexadecimal (para conferir com o relatório).
+    pub fn hash_da_imagem(&self) -> String {
+        format!("{:016x}", self.console.hash_da_imagem())
+    }
+
+    /// Erro do núcleo, se parou. Vazio se está tudo bem.
+    pub fn erro(&self) -> String {
+        self.console.erro().unwrap_or_default()
+    }
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    #[test]
+    fn jogo_recusa_arquivo_que_nao_e_a_rev01() {
+        assert!(Jogo::criar(b"abc").is_err());
+    }
+
+    #[test]
+    fn jogo_com_rom_sintetica_roda_quadros_deterministicos_com_imagem_do_tamanho_certo() {
+        // ROM de zeros: o núcleo para na verificação da soma, sem pânico. O quadro tem o tamanho certo.
+        let rodar = || {
+            let mut j = Jogo::sem_validar(vec![0u8; 0x4000]);
+            let mut ultimo = Vec::new();
+            for _ in 0..70 {
+                ultimo = j.quadro();
+            }
+            (ultimo.len(), j.hash_da_imagem(), j.erro())
+        };
+        let (n, h, e) = rodar();
+        assert_eq!(n, 320 * 224 * 4);
+        assert_eq!((n, h.clone(), e.clone()), {
+            let (a, b, c) = rodar();
+            (a, b, c)
+        });
+    }
 
     #[test]
     fn recusa_arquivo_qualquer_e_mostra_o_hash() {

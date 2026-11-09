@@ -45,6 +45,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
+name = "sonic1-console"
+version = "0.0.0"
+dependencies = [
+ "sonic1-core",
+ "sonic1-video",
+]
+
+[[package]]
 name = "sonic1-core"
 version = "0.0.0"
 
@@ -99,6 +107,7 @@ version = "0.0.0"
 name = "sonic1-web"
 version = "0.0.0"
 dependencies = [
+ "sonic1-console",
  "sonic1-rom",
  "wasm-bindgen",
 ]

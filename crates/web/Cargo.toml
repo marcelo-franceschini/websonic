@@ -12,6 +12,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 sonic1-rom = { path = "../rom" }
+sonic1-console = { path = "../console" }
 # Mesma versao do wasm-bindgen-cli da imagem (ARG WASM_BINDGEN_VERSION).
 wasm-bindgen = "=0.2.129"
 

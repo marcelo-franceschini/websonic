@@ -13,6 +13,9 @@
     #resultado { margin-top: 1rem; padding: 1rem; border: 2px solid #888; border-radius: .5rem; }
     #resultado.ok { border-color: #1a7f37; }
     #resultado.erro { border-color: #b3261e; }
+    /* Imagem de 320x224 em escala inteira, sem suavizar os pontos. */
+    #tela { display: block; margin: 1rem 0; background: #000; image-rendering: pixelated; }
+    #aviso { color: #555; font-size: .9rem; }
   </style>
 </head>
 <body>
@@ -25,6 +28,10 @@
     <p>SHA-1: <code id="sha1"></code></p>
     <p>Tamanho: <span id="tamanho"></span> bytes</p>
   </div>
+  <canvas id="tela" width="320" height="224" hidden></canvas>
+  <p id="aviso" hidden>Provisório: sem som (síntese na Etapa 8) e com tempo aproximado, sem os atrasos do
+     console original. Teclas: setas, Z (A), X (B), C (C), Enter (Start).</p>
+  <p id="erro-jogo" hidden></p>
   <script type="module" src="app.js"></script>
 </body>
 </html>

@@ -127,6 +127,19 @@ enum Modo {
     Titulo,
 }
 
+/// O que o laço principal espera (para o tempo nominal).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Espera {
+    /// Está num trecho que termina na marca.
+    Marca(Marca),
+    /// Está esperando o próximo VBlank.
+    VBlank,
+    /// O tratador do VBlank da voz está rodando; o fim dele é a próxima interrupção.
+    VozAcabando,
+    /// Nada mais a rodar nesta versão do núcleo.
+    Nenhuma,
+}
+
 /// O console no trecho da abertura.
 pub struct Abertura {
     pub mem: Memoria,
@@ -146,6 +159,8 @@ pub struct Abertura {
     esperas: Option<Vec<(Vec<u8>, Vec<u8>)>>,
     /// Eventos do quadro anterior, ainda não rodados (olhar adiante de um quadro).
     pendentes: Vec<EventoQuadro>,
+    /// Com tempo gravado os eventos rodam um quadro depois; no modo nominal rodam na hora.
+    atraso: bool,
 }
 
 impl Abertura {
@@ -159,9 +174,32 @@ impl Abertura {
             ignoradas_em: Vec::new(),
             esperas: None,
             pendentes: Vec::new(),
+            atraso: true,
             quadro: 0,
             erro: None,
             marcas_ignoradas: 0,
+        }
+    }
+
+    /// Console sem tempo gravado (navegador): os eventos rodam na hora do quadro em que chegam.
+    pub fn nova_nominal(rom: Vec<u8>) -> Self {
+        let mut a = Self::nova(rom);
+        a.atraso = false;
+        a
+    }
+
+    /// O que o laço principal espera agora. O modo nominal usa isto para criar o tempo.
+    pub fn espera(&self) -> Espera {
+        match self.modo {
+            Modo::Boot => SEQUENCIA
+                .get(self.cursor)
+                .map_or(Espera::Nenhuma, |(m, _)| Espera::Marca(*m)),
+            Modo::Sega(Sega::Entrada) => Espera::Marca(Marca::GmSega),
+            Modo::Sega(Sega::Preparo) => Espera::Marca(Marca::SegaWaitPal),
+            Modo::Sega(Sega::VozFim) => Espera::Marca(Marca::SegaWaitEnd),
+            Modo::Sega(Sega::VozEmCurso) => Espera::VozAcabando,
+            Modo::Sega(_) => Espera::VBlank,
+            Modo::Titulo => Espera::Nenhuma,
         }
     }
 
@@ -191,7 +229,11 @@ impl Abertura {
                 _ => {}
             }
         }
-        let anteriores = std::mem::replace(&mut self.pendentes, eventos.to_vec());
+        let anteriores = if self.atraso {
+            std::mem::replace(&mut self.pendentes, eventos.to_vec())
+        } else {
+            eventos.to_vec()
+        };
         for e in anteriores {
             if self.erro.is_some() {
                 break;
@@ -234,20 +276,20 @@ impl Abertura {
         match (self.modo, m) {
             (Modo::Sega(Sega::Entrada), Marca::GmSega) => {
                 sega::gm_sega_inicio(&mut self.mem);
-                self.espera();
+                self.registrar_espera();
                 self.modo = Modo::Sega(Sega::FadeOut(22));
             }
             (Modo::Sega(Sega::Preparo), Marca::SegaWaitPal) => {
                 sega::gm_sega_preparo(&mut self.mem)?;
                 wb(&mut self.mem, ram::V_VBLANK_ROUTINE, vblank::ROTINA_SEGA);
-                self.espera();
+                self.registrar_espera();
                 self.modo = Modo::Sega(Sega::WaitPal);
             }
             (Modo::Sega(Sega::VozFim), Marca::SegaWaitEnd) => {
                 // O laço principal volta a rodar depois do VBlank atrasado.
                 ww(&mut self.mem, ram::V_GENERICTIMER, 30);
                 wb(&mut self.mem, ram::V_VBLANK_ROUTINE, vblank::ROTINA_SEGA);
-                self.espera();
+                self.registrar_espera();
                 self.modo = Modo::Sega(Sega::WaitEnd);
             }
             _ => self.marcas_ignoradas = self.marcas_ignoradas.saturating_add(1),
@@ -269,7 +311,7 @@ impl Abertura {
     }
 
     /// O laço principal chegou a `WaitForVBlank`: o estado de hoje é o de comparação.
-    fn espera(&mut self) {
+    fn registrar_espera(&mut self) {
         if let Some(l) = &mut self.esperas {
             l.push((self.mem.ram().to_vec(), self.mem.ram_z80().to_vec()));
         }
@@ -300,7 +342,7 @@ impl Abertura {
                         ram::V_VBLANK_ROUTINE,
                         vblank::ROTINA_PALETTE_FADE,
                     );
-                    self.espera();
+                    self.registrar_espera();
                     self.modo = Modo::Sega(Sega::FadeOut(n));
                 } else {
                     self.modo = Modo::Sega(Sega::Preparo);
@@ -311,7 +353,7 @@ impl Abertura {
                 vblank::tratar(&mut self.mem)?;
                 if sega::pal_cycle_sega(&mut self.mem) {
                     wb(&mut self.mem, ram::V_VBLANK_ROUTINE, vblank::ROTINA_SEGA);
-                    self.espera();
+                    self.registrar_espera();
                 } else {
                     wb(&mut self.mem, ram::V_SOUNDQUEUE1, ram::SFX_SEGA);
                     wb(
@@ -319,7 +361,7 @@ impl Abertura {
                         ram::V_VBLANK_ROUTINE,
                         vblank::ROTINA_SEGA_PCM,
                     );
-                    self.espera();
+                    self.registrar_espera();
                     self.modo = Modo::Sega(Sega::Voz);
                 }
             }
@@ -350,7 +392,7 @@ impl Abertura {
                     self.modo = Modo::Titulo;
                 } else {
                     wb(&mut self.mem, ram::V_VBLANK_ROUTINE, vblank::ROTINA_SEGA);
-                    self.espera();
+                    self.registrar_espera();
                 }
             }
             Sega::Entrada | Sega::Preparo | Sega::VozFim => self.ignorar(),
