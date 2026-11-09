@@ -29,6 +29,8 @@ fn quadros_de_espera(m: Marca) -> u32 {
         // A parte B entra logo depois da última VBlank do aparecimento (sem espera própria).
         Marca::PaletteFadeOut => 0,
         Marca::TitMainLoop => 0,
+        // Vem junto com o VBlank (ver `eventos_nominais`); o console não espera por ela.
+        Marca::WaitForVBlank => 0,
     }
 }
 
@@ -195,7 +197,11 @@ impl Console {
         self.quadros_na_espera = self.quadros_na_espera.saturating_add(1);
         match espera {
             Espera::Marca(m) if ja >= quadros_de_espera(m) => vec![EventoQuadro::Marca(m)],
-            Espera::VBlank => vec![EventoQuadro::Interrupcao { nivel: 6, pc: 0 }],
+            // No tempo nominal não há lag: o laço chega à espera antes de cada VBlank (D7.25).
+            Espera::VBlank => vec![
+                EventoQuadro::Marca(Marca::WaitForVBlank),
+                EventoQuadro::Interrupcao { nivel: 6, pc: 0 },
+            ],
             Espera::VozAcabando if ja >= QUADROS_DA_VOZ => {
                 vec![EventoQuadro::Interrupcao { nivel: 6, pc: 0 }]
             }

@@ -8,6 +8,10 @@
 //!
 //! Limite (D7.10 do plano): um trecho é atômico. Seu efeito aparece de uma vez, no quadro da marca
 //! final. O comparador separa os quadros dentro de um trecho atômico dos demais.
+//!
+//! Quadros de lag (D7.25): o laço só está na espera do VBlank depois da marca `WaitForVBlank`.
+//! Uma interrupção que chega antes dela pega o laço no meio do trecho, e o tratador roda como no
+//! original nesse caso: com a rotina zero, só o driver de som e o contador.
 
 pub mod boot;
 pub mod cenario;
@@ -51,10 +55,13 @@ pub enum Marca {
     PaletteFadeOut,
     /// `Tit_MainLoop`: começo do laço do título, depois da parte C.
     TitMainLoop,
+    /// `WaitForVBlank`: o laço principal chegou à espera do VBlank. Uma interrupção que chega
+    /// antes desta marca é quadro de lag (D7.25).
+    WaitForVBlank,
 }
 
 /// Rótulo e endereço de cada marca (metadado de `refs/rotulos.txt`, conferido por teste).
-pub const MARCAS: [(Marca, &str, u32); 13] = [
+pub const MARCAS: [(Marca, &str, u32); 14] = [
     (Marca::GameProgram, "GameProgram", 0x300),
     (Marca::ChecksumOk, "CheckSumOk", 0x33E),
     (Marca::VdpSetupGame, "VDPSetupGame", 0x1222),
@@ -68,6 +75,7 @@ pub const MARCAS: [(Marca, &str, u32); 13] = [
     (Marca::PaletteFadeIn, "PaletteFadeIn", 0x1DA4),
     (Marca::PaletteFadeOut, "PaletteFadeOut", 0x1E4A),
     (Marca::TitMainLoop, "Tit_MainLoop", 0x315E),
+    (Marca::WaitForVBlank, "WaitForVBlank", 0x29A0),
 ];
 
 type Passo = fn(&mut Memoria) -> Result<(), ErroAbertura>;
@@ -194,8 +202,14 @@ pub struct Abertura {
     pub interrupcoes_ignoradas: u32,
     /// VBlanks que rodaram o tratador (diagnóstico do relatório).
     pub vblanks_tratados: u32,
+    /// Quantos desses VBlanks foram quadros de lag (diagnóstico do relatório).
+    pub quadros_de_lag: u32,
     /// Onde as interrupções ignoradas caíram: quadro e estado (diagnóstico).
     pub ignoradas_em: Vec<(u32, String)>,
+    /// O laço pediu o VBlank e vai esperar, mas a marca `WaitForVBlank` ainda não chegou.
+    espera_pedida: bool,
+    /// O laço está parado em `WaitForVBlank`: a próxima interrupção é o VBlank que ele pediu.
+    na_espera: bool,
     /// Diagnóstico: RAM do 68000 e do Z80 cada vez que o laço principal chega a uma espera de VBlank.
     esperas: Option<Vec<(Vec<u8>, Vec<u8>)>>,
     /// Eventos do quadro anterior, ainda não rodados (olhar adiante de um quadro).
@@ -212,7 +226,10 @@ impl Abertura {
             modo: Modo::Boot,
             interrupcoes_ignoradas: 0,
             vblanks_tratados: 0,
+            quadros_de_lag: 0,
             ignoradas_em: Vec::new(),
+            espera_pedida: false,
+            na_espera: false,
             esperas: None,
             pendentes: Vec::new(),
             atraso: true,
@@ -315,6 +332,10 @@ impl Abertura {
     }
 
     fn marca(&mut self, m: Marca) -> Result<(), ErroAbertura> {
+        if m == Marca::WaitForVBlank {
+            self.chegar_na_espera();
+            return Ok(());
+        }
         if self.modo == Modo::Boot {
             match SEQUENCIA.get(self.cursor) {
                 Some((esperada, passo)) if *esperada == m => {
@@ -331,51 +352,51 @@ impl Abertura {
         match (self.modo, m) {
             (Modo::Sega(Sega::Entrada), Marca::GmSega) => {
                 sega::gm_sega_inicio(&mut self.mem);
-                self.registrar_espera();
+                self.pedir_espera();
                 self.modo = Modo::Sega(Sega::FadeOut(22));
             }
             (Modo::Sega(Sega::Preparo), Marca::SegaWaitPal) => {
                 sega::gm_sega_preparo(&mut self.mem)?;
                 wb(&mut self.mem, ram::V_VBLANK_ROUTINE, vblank::ROTINA_SEGA);
-                self.registrar_espera();
+                self.pedir_espera();
                 self.modo = Modo::Sega(Sega::WaitPal);
             }
             (Modo::Sega(Sega::VozFim), Marca::SegaWaitEnd) => {
                 // O laço principal volta a rodar depois do VBlank atrasado.
                 ww(&mut self.mem, ram::V_GENERICTIMER, 30);
                 wb(&mut self.mem, ram::V_VBLANK_ROUTINE, vblank::ROTINA_SEGA);
-                self.registrar_espera();
+                self.pedir_espera();
                 self.modo = Modo::Sega(Sega::WaitEnd);
             }
             (Modo::Titulo(Titulo::Entrada), Marca::GmTitle) => {
                 sega::gm_sega_inicio(&mut self.mem);
-                self.registrar_espera();
+                self.pedir_espera();
                 self.modo = Modo::Titulo(Titulo::FadeOut(22));
             }
             (Modo::Titulo(Titulo::PreparoA), Marca::PaletteFadeIn) => {
                 titulo::gm_title_preparo_a(&mut self.mem)?;
                 titulo::palette_fade_in_inicio(&mut self.mem);
-                self.registrar_espera();
+                self.pedir_espera();
                 self.modo = Modo::Titulo(Titulo::FadeIn(22));
             }
             (Modo::Titulo(Titulo::PreparoC), Marca::PaletteFadeIn) => {
                 // A parte C roda de uma vez, até a chamada de `PaletteFadeIn` (D7.10).
                 titulo::parte_c(&mut self.mem)?;
                 titulo::palette_fade_in_inicio(&mut self.mem);
-                self.registrar_espera();
+                self.pedir_espera();
                 self.modo = Modo::Titulo(Titulo::FadeInC(22));
             }
             (Modo::Titulo(Titulo::PreparoTit), Marca::TitMainLoop) => {
                 // `Tit_MainLoop` pede o VBlank do título e para a fatia aqui.
                 wb(&mut self.mem, ram::V_VBLANK_ROUTINE, vblank::ROTINA_TITULO);
-                self.registrar_espera();
+                self.pedir_espera();
                 self.modo = Modo::Titulo(Titulo::Parado);
             }
             (Modo::Titulo(Titulo::PreparoB), Marca::PaletteFadeOut) => {
                 // A parte B roda de uma vez (D7.10). Depois, o desvanecimento pede o VBlank.
                 titulo::parte_b1(&mut self.mem)?;
                 titulo::palette_fade_out_inicio(&mut self.mem);
-                self.registrar_espera();
+                self.pedir_espera();
                 self.modo = Modo::Titulo(Titulo::FadeOutB(22));
             }
             _ => self.marcas_ignoradas = self.marcas_ignoradas.saturating_add(1),
@@ -401,6 +422,39 @@ impl Abertura {
         if let Some(l) = &mut self.esperas {
             l.push((self.mem.ram().to_vec(), self.mem.ram_z80().to_vec()));
         }
+    }
+
+    /// O laço principal terminou o trecho, pediu o VBlank (a rotina já está em `v_vblank_routine`)
+    /// e vai esperar. A espera só começa com a marca `WaitForVBlank` do tempo gravado: até lá,
+    /// uma interrupção é quadro de lag (D7.25).
+    fn pedir_espera(&mut self) {
+        self.espera_pedida = true;
+    }
+
+    /// Marca `WaitForVBlank`: o laço chegou à espera que pediu. Sem pedido (laço que o núcleo não
+    /// roda, como o do título depois da fatia), a marca não muda nada.
+    fn chegar_na_espera(&mut self) {
+        if self.espera_pedida {
+            self.espera_pedida = false;
+            self.na_espera = true;
+            self.registrar_espera();
+        }
+    }
+
+    /// Quadro de lag: a interrupção chegou com o laço principal no meio do trecho, antes da
+    /// marca `WaitForVBlank`. No original o laço ainda não pediu a rotina (o `move.b` vem logo
+    /// antes de `WaitForVBlank`), então `v_vblank_routine` está em zero: o tratador só roda o
+    /// driver de som e soma o contador. O núcleo roda o trecho de uma vez e já pode ter gravado o
+    /// pedido; o tratador roda com zero, e o pedido volta depois, como o laço faria. O estado do
+    /// laço não muda.
+    fn vblank_de_lag(&mut self) -> Result<(), ErroAbertura> {
+        self.vblanks_tratados = self.vblanks_tratados.saturating_add(1);
+        self.quadros_de_lag = self.quadros_de_lag.saturating_add(1);
+        let pedido = rb(&mut self.mem, ram::V_VBLANK_ROUTINE);
+        wb(&mut self.mem, ram::V_VBLANK_ROUTINE, 0);
+        vblank::tratar(&mut self.mem)?;
+        wb(&mut self.mem, ram::V_VBLANK_ROUTINE, pedido);
+        Ok(())
     }
 
     /// VBlank durante a tela do título.
@@ -467,7 +521,7 @@ impl Abertura {
                 ram::V_VBLANK_ROUTINE,
                 vblank::ROTINA_PALETTE_FADE,
             );
-            self.registrar_espera();
+            self.pedir_espera();
         }
         Ok(restam)
     }
@@ -486,7 +540,7 @@ impl Abertura {
                 ram::V_VBLANK_ROUTINE,
                 vblank::ROTINA_PALETTE_FADE,
             );
-            self.registrar_espera();
+            self.pedir_espera();
         }
         Ok(restam)
     }
@@ -498,8 +552,20 @@ impl Abertura {
     }
 
     /// Interrupção de VBlank gravada: roda o tratador e, em seguida, o laço principal até a
-    /// próxima espera.
+    /// próxima espera. Se o laço ainda não chegou à espera, é quadro de lag.
     fn vblank(&mut self) -> Result<(), ErroAbertura> {
+        match self.modo {
+            // Boot (sem VBlank) e fim da parte implementada: nada roda.
+            Modo::Boot | Modo::Titulo(Titulo::Parado) => {
+                self.ignorar();
+                return Ok(());
+            }
+            // O tratador da voz foi adiado; esta interrupção o fecha, sem passar pela espera.
+            Modo::Sega(Sega::VozEmCurso) => {}
+            _ if !self.na_espera => return self.vblank_de_lag(),
+            _ => {}
+        }
+        self.na_espera = false;
         if let Modo::Titulo(t) = self.modo {
             return self.vblank_titulo(t);
         }
@@ -519,7 +585,7 @@ impl Abertura {
                         ram::V_VBLANK_ROUTINE,
                         vblank::ROTINA_PALETTE_FADE,
                     );
-                    self.registrar_espera();
+                    self.pedir_espera();
                     self.modo = Modo::Sega(Sega::FadeOut(n));
                 } else {
                     self.modo = Modo::Sega(Sega::Preparo);
@@ -530,7 +596,7 @@ impl Abertura {
                 vblank::tratar(&mut self.mem)?;
                 if sega::pal_cycle_sega(&mut self.mem) {
                     wb(&mut self.mem, ram::V_VBLANK_ROUTINE, vblank::ROTINA_SEGA);
-                    self.registrar_espera();
+                    self.pedir_espera();
                 } else {
                     wb(&mut self.mem, ram::V_SOUNDQUEUE1, ram::SFX_SEGA);
                     wb(
@@ -538,7 +604,7 @@ impl Abertura {
                         ram::V_VBLANK_ROUTINE,
                         vblank::ROTINA_SEGA_PCM,
                     );
-                    self.registrar_espera();
+                    self.pedir_espera();
                     self.modo = Modo::Sega(Sega::Voz);
                 }
             }
@@ -569,7 +635,7 @@ impl Abertura {
                     self.modo = Modo::Titulo(Titulo::Entrada);
                 } else {
                     wb(&mut self.mem, ram::V_VBLANK_ROUTINE, vblank::ROTINA_SEGA);
-                    self.registrar_espera();
+                    self.pedir_espera();
                 }
             }
             Sega::Entrada | Sega::Preparo | Sega::VozFim => self.ignorar(),

@@ -205,3 +205,91 @@ fn marcas_tem_enderecos_distintos() {
     e.dedup();
     assert_eq!(e.len(), MARCAS.len());
 }
+
+/// Boot inteiro e chegada a `GM_Sega` no modo nominal (os eventos rodam na hora). O laço fica
+/// no primeiro `PaletteFadeOut`, com a rotina `$12` pedida e ainda fora da espera.
+fn na_tela_da_sega() -> Abertura {
+    let mut a = Abertura::nova_nominal(rom_sintetica(3));
+    a.registrar_esperas();
+    for m in [
+        Marca::GameProgram,
+        Marca::ChecksumOk,
+        Marca::VdpSetupGame,
+        Marca::DacDriverLoad,
+        Marca::JoypadInit,
+        Marca::MainGameLoop,
+        Marca::GmSega,
+    ] {
+        a.executar_quadro(&[EventoQuadro::Marca(m)]);
+        assert_eq!(a.erro, None, "{m:?}");
+    }
+    a
+}
+
+fn byte_da_ram(a: &Abertura, endereco: u32) -> u8 {
+    a.mem.ram()[usize::try_from(endereco - 0xFF_0000).unwrap()]
+}
+
+fn contador_de_vblank(a: &Abertura) -> u32 {
+    let i = usize::try_from(V_VBLANK_COUNT - 0xFF_0000).unwrap();
+    u32::from_be_bytes(a.mem.ram()[i..i + 4].try_into().unwrap())
+}
+
+#[test]
+fn vblank_antes_da_espera_e_quadro_de_lag() {
+    // A interrupção chega antes da marca `WaitForVBlank`: o laço ainda não está na espera. O
+    // tratador roda com a rotina zero (só o som e o contador, nada na VDP), o desvanecimento
+    // não anda e nenhuma espera é registrada (D7.25).
+    let mut a = na_tela_da_sega();
+    let pedido = byte_da_ram(&a, V_VBLANK_ROUTINE);
+    assert_ne!(pedido, 0, "o desvanecimento pediu a rotina");
+    let antes = contador_de_vblank(&a);
+    let _ = a.mem.tirar_saidas();
+    a.executar_quadro(&[EventoQuadro::Interrupcao { nivel: 6, pc: 0 }]);
+    assert_eq!(a.erro, None);
+    assert_eq!(a.quadros_de_lag, 1);
+    assert_eq!(contador_de_vblank(&a), antes.wrapping_add(1));
+    assert_eq!(
+        byte_da_ram(&a, V_VBLANK_ROUTINE),
+        pedido,
+        "o pedido do laço fica"
+    );
+    assert!(
+        !a.mem
+            .saidas()
+            .iter()
+            .any(|s| matches!(s, Saida::Vdp { .. })),
+        "o tratador de lag não toca a VDP"
+    );
+    assert!(a.tirar_esperas().is_empty());
+    // O laço chega à espera, e o VBlank seguinte é o do desvanecimento, que pede o próximo.
+    a.executar_quadro(&[
+        EventoQuadro::Marca(Marca::WaitForVBlank),
+        EventoQuadro::Interrupcao { nivel: 6, pc: 0 },
+    ]);
+    assert_eq!(a.erro, None);
+    assert_eq!(a.quadros_de_lag, 1);
+    assert_eq!(a.vblanks_tratados, 2);
+    assert_eq!(a.tirar_esperas().len(), 1);
+    assert_eq!(contador_de_vblank(&a), antes.wrapping_add(2));
+    assert!(
+        a.mem
+            .saidas()
+            .iter()
+            .any(|s| matches!(s, Saida::Vdp { .. })),
+        "o VBlank do desvanecimento transfere a paleta"
+    );
+}
+
+#[test]
+fn marca_de_espera_sem_pedido_nao_registra_nada() {
+    // Depois da espera registrada, outra marca `WaitForVBlank` (laço que o núcleo não roda) não
+    // muda o estado nem registra uma segunda espera.
+    let mut a = na_tela_da_sega();
+    a.executar_quadro(&[EventoQuadro::Marca(Marca::WaitForVBlank)]);
+    a.executar_quadro(&[EventoQuadro::Marca(Marca::WaitForVBlank)]);
+    assert_eq!(a.erro, None);
+    assert_eq!(a.tirar_esperas().len(), 1);
+    a.executar_quadro(&[EventoQuadro::Interrupcao { nivel: 6, pc: 0 }]);
+    assert_eq!(a.quadros_de_lag, 0, "o laço estava na espera");
+}

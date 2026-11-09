@@ -184,6 +184,28 @@ Decisão:
 Achados:
 
 - Laço do DAC ocupado sem limite: **BLOQUEIA**, corrigido (D7.24).
-- Por que a fila de pontos do Z80 acaba nesse VBlank (o núcleo faz mais acessos ao Z80 que o oráculo, ou o Z80 do núcleo está em outro ponto): **BLOQUEIA**. A próxima rodada mostra o aviso, as divergências do Z80 e o primeiro acesso diferente.
+- Por que a fila de pontos do Z80 acaba nesse VBlank (o núcleo faz mais acessos ao Z80 que o oráculo, ou o Z80 do núcleo está em outro ponto): **BLOQUEIA**. Causa achada na rodada seguinte: quadro de lag (D7.25).
 - `BuildSprites` gira para sempre se a contagem de uma fila de prioridade for ímpar: **BACKLOG**. O original faz o mesmo, e isso só acontece com a RAM já errada.
 - As escritas guardadas no comparador crescem durante a rodada: **DESCARTADO**. São dezenas de milhares, e o teto de 2 milhões para com erro.
+
+## Fatia 2, rodada com o limite do DAC: quadro de lag (Marcelo, 09/11/2026, 530 quadros)
+
+- A rodada terminou em 13 segundos, com pico de 489 MB (journal do systemd). O estouro de memória acabou.
+- A marca `Tit_MainLoop` chegou no quadro 526, como previsto. Esperas: 218 do núcleo contra 221 do oráculo (as 3 a mais são do laço do título, que é a fatia 3). 196 iguais e 22 diferentes. A primeira diferente é a 196, logo depois do primeiro VBlank do aparecimento da parte C. Divergem só variáveis do driver de som e `v_vblank_byte`. A paleta e a fila de arte batem.
+- `posicao_z80_divergencias=810` e 4 desistências do laço do DAC (D7.24). O primeiro acesso diferente ao Z80 é do segundo VBlank do aparecimento: o oráculo pede o barramento e lê o status do DAC direto, sem o par de BUSREQ das transferências padrão.
+- Causa: esse VBlank foi um quadro de lag no oráculo. O primeiro VBlank do aparecimento começa a música do título (as vozes de todos os canais do YM, com as esperas do chip), e o laço principal não chega à espera seguinte antes do VBlank. Então `v_vblank_routine` está em zero e o tratador só roda o driver de som e o contador. O núcleo tratou esse VBlank como um passo do aparecimento, terminou os 22 passos um VBlank antes, e o VBlank que sobrou foi ignorado (quadro 526, `PreparoTit`). Daí a música e o contador defasados de um tique nas 22 esperas, e a fila do Z80 desalinhada até o laço do DAC.
+- O vídeo (41225 contra 41125) só difere nos quadros 527 a 529, que são do VBlank do título (fatia 3).
+
+Decisão:
+
+- **D7.25. Quadro de lag pelo tempo gravado.** `WaitForVBlank` (`$29A0`) vira marca. O núcleo grava o pedido da rotina no fim do trecho, como antes, mas só registra a espera quando a marca chega. Uma interrupção antes da marca é quadro de lag: o tratador roda com a rotina zero, o pedido volta depois, e o estado do laço não muda. Nos estados de preparo (trechos atômicos), as interrupções, que antes eram ignoradas, agora rodam como lag, como no original. As exceções são o boot, o fim da fatia (`Parado`) e a interrupção que fecha o tratador adiado da voz SEGA. O console, sem tempo gravado, manda a marca junto com cada VBlank (sem lag). Motivo: o requisito põe os quadros de lag e o fim de cada espera no tempo gravado do nível 1, e a chegada à espera é o fato que separa um caso do outro. Testes: `vblank_antes_da_espera_e_quadro_de_lag` e `marca_de_espera_sem_pedido_nao_registra_nada` em `crates/teste-som/tests/abertura.rs`.
+
+Riscos (**BACKLOG**):
+
+- Uma interrupção entre o `move.b` do pedido e a chegada a `WaitForVBlank` (poucos ciclos) roda o tratador completo no original e o de lag no núcleo. Se a comparação acusar, a marca tem de ser a escrita do pedido.
+- O núcleo roda o trecho inteiro antes do tratador de lag. Se o trecho e o tratador usarem a mesma memória (fila de som, contador de VBlank), a ordem muda. Se a comparação acusar, entram marcas no meio do trecho (D7.10).
+- O tratador de lag no modo de fase (`VBla_00`, ramo da fase) ainda não existe: com a rotina zero o núcleo só roda o som. Entra com a fase da demo.
+
+Achados:
+
+- VBlank de lag tratado como passo do aparecimento: **BLOQUEIA**, corrigido (D7.25). A próxima rodada prova.

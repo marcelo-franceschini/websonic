@@ -8,7 +8,7 @@
 
 use oracle_trace::TempoRaw;
 use sonic1_core::abertura::ram::{PILHA_FIM, PILHA_INICIO};
-use sonic1_core::abertura::{Abertura, EventoQuadro, MARCAS};
+use sonic1_core::abertura::{Abertura, EventoQuadro, MARCAS, Marca};
 use sonic1_core::memoria::{ClasseLeitura, PortaVdp, Saida, Tamanho};
 use sonic1_core::nivel2::{
     com_refresh, laco_da_limpeza, laco_da_soma, laco_da_voz, laco_da_voz_diagnostico,
@@ -82,6 +82,8 @@ pub struct Relatorio {
     /// Quadros cujo fechamento cai dentro do tratador de VBlank ou com VBlank no quadro.
     pub fechamento_nao_comparavel: u32,
     pub int6_nucleo_tratadas: u32,
+    /// Das tratadas, quantas foram quadros de lag (D7.25).
+    pub int6_nucleo_lag: u32,
     pub int6_nucleo_ignoradas: u32,
     pub ignoradas_em: Vec<(u32, String)>,
     /// Quadros em que cada marca chegou.
@@ -593,13 +595,15 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
                 "quadro {n}: escritas guardadas passam de {LIMITE_ESCRITAS} (maior sequencia {maior_fila})"
             ));
         }
-        // Diagnóstico: uma linha a cada 25 quadros e em cada quadro com marca. Se o processo for
-        // encerrado, a última linha mostra onde ele estava. Só contagens, nunca valores de memória.
-        if n % 25 == 0 || !marcas.is_empty() {
-            let nomes: Vec<String> = marcas
-                .iter()
-                .map(|(_, i)| MARCAS[*i].1.to_string())
-                .collect();
+        // Diagnóstico: uma linha a cada 25 quadros e em cada quadro com marca (fora `WaitForVBlank`,
+        // que vem em quase todo quadro). Se o processo for encerrado, a última linha mostra onde ele
+        // estava. Só contagens, nunca valores de memória.
+        let nomes: Vec<String> = marcas
+            .iter()
+            .filter(|(_, i)| MARCAS[*i].0 != Marca::WaitForVBlank)
+            .map(|(_, i)| MARCAS[*i].1.to_string())
+            .collect();
+        if n % 25 == 0 || !nomes.is_empty() {
             eprintln!(
                 "[diagnostico] quadro {n}: passos {passos}, marcas {nomes:?}, esperas (oraculo {}, nucleo {}), escritas guardadas (maior {maior_fila}), acessos Z80 do oraculo {}, pontos Z80 pendentes {}, divergencias Z80 {}",
                 esperas_o.len(),
@@ -638,6 +642,7 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
         }
     }
     rel.int6_nucleo_tratadas = nucleo.vblanks_tratados;
+    rel.int6_nucleo_lag = nucleo.quadros_de_lag;
     rel.int6_nucleo_ignoradas = nucleo.interrupcoes_ignoradas;
     rel.ignoradas_em = nucleo.ignoradas_em.clone();
     let log = nucleo.mem.acessos_z80();
@@ -713,7 +718,13 @@ pub fn imprimir(rel: &Relatorio) {
     println!("atraso_maximo_de_escritas={}", rel.atraso_maximo);
     println!("posicao_z80_divergencias={}", rel.divergencias_posicao_z80);
     for (m, v) in &rel.marcas_vistas {
-        println!("marca {m} quadros={v:?}");
+        // Listas longas (`WaitForVBlank` vem em quase todo quadro) saem resumidas.
+        match (v.first(), v.last()) {
+            (Some(a), Some(b)) if v.len() > 40 => {
+                println!("marca {m} vezes={} primeiro={a} ultimo={b}", v.len());
+            }
+            _ => println!("marca {m} quadros={v:?}"),
+        }
     }
     for (k, v) in &rel.z80_por_acesso {
         println!("z80_divergencia {k} vezes={v}");
@@ -722,8 +733,8 @@ pub fn imprimir(rel: &Relatorio) {
         println!("z80_divergencia_inicial {p}");
     }
     println!(
-        "interrupcoes_nivel6: oraculo={} nucleo_tratadas={} nucleo_ignoradas={}",
-        rel.int6_oraculo, rel.int6_nucleo_tratadas, rel.int6_nucleo_ignoradas
+        "interrupcoes_nivel6: oraculo={} nucleo_tratadas={} nucleo_lag={} nucleo_ignoradas={}",
+        rel.int6_oraculo, rel.int6_nucleo_tratadas, rel.int6_nucleo_lag, rel.int6_nucleo_ignoradas
     );
     println!(
         "esperas_de_vblank: oraculo={} nucleo={} iguais={} diverge={} z80_diverge={}",
