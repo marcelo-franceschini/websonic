@@ -263,3 +263,11 @@ Decisões desta fatia:
 - **D7.31. O que não existe para.** A demo dos créditos (`f_demo` negativo), a água da LZ, os fundos especiais da MZ e da SBZ, os tiles animados das outras zonas, os números do HUD e o HUD de depuração devolvem `NaoImplementado`. Na demo da GHZ as flags do HUD estão em zero até depois dos cartões, então o `HUD_Update` não escreve nada nesta fatia.
 
 Provas sem a ROM: `cargo test -q -p sonic1-core -p sonic1-teste-som -p sonic1-console` (102 testes, 7 novos em `crates/teste-som/tests/fase_cartoes.rs`), o clippy dos dois workspaces sem erro e `cargo fmt` aplicado.
+
+## Prova da fase da demo, fatia 1 (Marcelo, 09/11/2026, 1170 quadros, `sh scripts/etapa7-bloco2.sh ROM 1170`)
+
+- Marcas: `Level_TtlCardLoop` 151 vezes, do quadro 962 ao 1114. O laço dos cartões acaba no 1114 e o núcleo para ali (`Fase(Parado)`), as 55 interrupções ignoradas vêm depois.
+- Esperas de VBlank: 796 do núcleo, todas iguais às do oráculo (`diverge=0`, `z80_diverge=0`). O oráculo tem 826: as 30 a mais são do resto da carga da fase.
+- `posicao_z80_divergencias=0`. RAM do 68000 e do Z80 com `diverge=0` fora dos trechos atômicos. Quadros de lag do núcleo: 5. Nenhum aviso.
+- As contagens finais diferem (vídeo 96964 contra 84985, YM do Z80 281706 contra 267516) só depois do fim da fatia. Veredito `DIVERGE`, como nas fatias anteriores, sem divergência no prefixo.
+- Provado do quadro 0 ao 1114. Falta o resto da carga da fase até `Level_StartGame` (~1166): `LevelDataLoad`, `LoadTilesFromStart`, objetos, `ObjPosLoad`, HUD e o desvanecimento final.
