@@ -179,6 +179,7 @@ pub fn preparo_final(m: &mut Memoria) -> Result<(), ErroAbertura> {
     ww(m, V_JPADHOLD2, 0);
     ww(m, V_JPADHOLD1, 0);
     objpos::obj_pos_load(m)?;
+    objetos_faltando(m)?;
     execute_objects(m)?;
     build_sprites(m)?;
     if rb(m, V_LASTLAMP_FASE) == 0 {
@@ -224,4 +225,26 @@ pub fn level_start_game(m: &mut Memoria) -> Result<(), ErroAbertura> {
     let modo = rb(m, V_GAMEMODE) & 0x7F;
     wb(m, V_GAMEMODE, modo);
     Ok(())
+}
+
+/// Confere antes de executar os objetos criados: os IDs sem código entram todos numa máscara
+/// (diagnóstico da rodada), em vez de parar no primeiro.
+fn objetos_faltando(m: &mut Memoria) -> Result<(), ErroAbertura> {
+    let mut mascara = [0u128; 2];
+    let mut a = V_OBJSPACE;
+    while a < V_OBJSPACE_END {
+        let id = rb(m, a.wrapping_add(OB_ID));
+        if id != 0 && !super::objetos::objeto_existe(id) {
+            let palavra = usize::from(id >> 7);
+            if let Some(p) = mascara.get_mut(palavra) {
+                *p |= 1u128.wrapping_shl(u32::from(id & 0x7F));
+            }
+        }
+        a = a.wrapping_add(OBJECT_SIZE);
+    }
+    if mascara == [0, 0] {
+        Ok(())
+    } else {
+        Err(ErroAbertura::ObjetosNaoImplementados(mascara))
+    }
 }

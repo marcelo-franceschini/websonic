@@ -72,8 +72,106 @@ fn rodar_objeto(m: &mut Memoria, a0: u32, id: u8) -> Result<(), ErroAbertura> {
         ID_SONIC => super::fisica::sonic_player(m, a0),
         ID_HUD => hud_objeto(m, a0),
         ID_RINGS => aneis(m, a0),
+        ID_MONITOR => monitor(m, a0),
         outro => Err(ErroAbertura::ObjetoNaoImplementado(outro)),
     }
+}
+
+/// Os IDs que `rodar_objeto` conhece.
+pub fn objeto_existe(id: u8) -> bool {
+    matches!(
+        id,
+        ID_CREDITS_TEXT
+            | ID_TITLE_SONIC
+            | ID_PSBTM
+            | ID_TITLE_CARD
+            | ID_SONIC
+            | ID_HUD
+            | ID_RINGS
+            | ID_MONITOR
+    )
+}
+
+/// `Monitor` (`26`): a caixa de item. Rotina 0 prepara; rotina 2 confere o Sonic em cima, ao lado
+/// e embaixo (aqui só "longe"), anima e mostra. As rotinas de quebrar ficam para a Etapa 9.
+fn monitor(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
+    match rb(m, a0.wrapping_add(OB_ROUTINE)) {
+        0 => {
+            wb(m, a0.wrapping_add(OB_ROUTINE), 2);
+            wb(m, a0.wrapping_add(OB_HEIGHT), 14);
+            wb(m, a0.wrapping_add(OB_WIDTH), 14);
+            wl(m, a0.wrapping_add(OB_MAP), MAP_MONITOR);
+            ww(m, a0.wrapping_add(OB_GFX), ARTTILE_MONITOR);
+            wb(m, a0.wrapping_add(OB_RENDER), 4);
+            wb(m, a0.wrapping_add(OB_PRIORITY), 3);
+            wb(m, a0.wrapping_add(OB_ACTWID), 15);
+            let marca = V_OBJSTATE
+                .wrapping_add(2)
+                .wrapping_add(u32::from(rb(m, a0.wrapping_add(OB_RESPAWNNO))));
+            let b = rb(m, marca) & 0x7F;
+            wb(m, marca, b);
+            if b & 1 != 0 {
+                wb(m, a0.wrapping_add(OB_ROUTINE), 8);
+                wb(m, a0.wrapping_add(OB_FRAME), 0xB);
+                return Ok(());
+            }
+            wb(m, a0.wrapping_add(OB_COLTYPE), 0x46);
+            let sub = rb(m, a0.wrapping_add(OB_SUBTYPE));
+            wb(m, a0.wrapping_add(OB_ANIM), sub);
+            monitor_solido(m, a0)
+        }
+        2 => monitor_solido(m, a0),
+        8 => mon_display(m, a0),
+        _ => Err(ErroAbertura::NaoImplementado("monitor quebrando")),
+    }
+}
+
+/// `Mon_Solid` (rotina normal): o Sonic não pode estar tocando o monitor.
+fn monitor_solido(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
+    if rb(m, a0.wrapping_add(OB_ROUTINE_2)) != 0 {
+        return Err(ErroAbertura::NaoImplementado("monitor com o Sonic em cima"));
+    }
+    if mon_solid_sides(m, a0) || rb(m, a0.wrapping_add(OB_STATUS)) & 0x20 != 0 {
+        return Err(ErroAbertura::NaoImplementado("Sonic tocando o monitor"));
+    }
+    animate_sprite(m, a0, ANI_MONITOR)?;
+    mon_display(m, a0)
+}
+
+/// `Mon_SolidSides`: o Sonic está dentro da caixa do monitor?
+fn mon_solid_sides(m: &mut Memoria, a0: u32) -> bool {
+    let d1 = 15u16.wrapping_add(11);
+    let sx = rw(m, V_PLAYER.wrapping_add(OB_X));
+    let d0 = sx
+        .wrapping_sub(rw(m, a0.wrapping_add(OB_X)))
+        .wrapping_add(d1);
+    if com_sinal(d0) < 0 || d0 > d1.wrapping_mul(2) {
+        return false;
+    }
+    let altura = u16::from_be_bytes(
+        i16::from(i8::from_be_bytes([rb(m, V_PLAYER.wrapping_add(OB_HEIGHT))])).to_be_bytes(),
+    );
+    let d2 = 15u16.wrapping_add(altura);
+    let sy = rw(m, V_PLAYER.wrapping_add(OB_Y));
+    let d3 = sy
+        .wrapping_sub(rw(m, a0.wrapping_add(OB_Y)))
+        .wrapping_add(d2);
+    if com_sinal(d3) < 0 || d3 >= d2.wrapping_mul(2) {
+        return false;
+    }
+    rb(m, F_PLAYERCTRL) & 0x80 == 0
+        && rb(m, V_PLAYER.wrapping_add(OB_ROUTINE)) < 6
+        && rw(m, V_DEBUGUSE) == 0
+}
+
+/// `Mon_Display` (FixBugs = 0): mostra e some fora da janela.
+fn mon_display(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
+    display_sprite(m, a0);
+    let x = rw(m, a0.wrapping_add(OB_X));
+    if fora_da_janela(m, x) {
+        delete_object(m, a0);
+    }
+    Ok(())
 }
 
 /// Deslocamento (X, Y) entre os anéis de uma fileira, por subtipo (`Ring_PosData`).

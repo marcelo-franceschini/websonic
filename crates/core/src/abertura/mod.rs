@@ -138,6 +138,9 @@ pub enum ErroAbertura {
     NaoImplementado(&'static str),
     /// O ID de um objeto que a fase pediu e que o núcleo ainda não tem.
     ObjetoNaoImplementado(u8),
+    /// Os IDs de objeto que a partida criou e que o núcleo não tem, como máscara de 256 bits
+    /// (bit `id % 128` da palavra `id / 128`).
+    ObjetosNaoImplementados([u128; 2]),
 }
 
 impl From<ErroAcesso> for ErroAbertura {
