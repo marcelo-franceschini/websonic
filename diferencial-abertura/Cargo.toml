@@ -10,6 +10,7 @@ license = "GPL-3.0-only"
 websonic-oracle = { path = "../oracle/runner" }
 genesis-core = { path = "../target/oracle-fonte/backend/genesis-core" }
 oracle-trace = { path = "../target/oracle-fonte/common/oracle-trace" }
+sonic1-console = { path = "../crates/console" }
 sonic1-core = { path = "../crates/core" }
 sonic1-fidelidade = { path = "../crates/fidelidade" }
 

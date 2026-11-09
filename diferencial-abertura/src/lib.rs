@@ -6,6 +6,8 @@
 //! Roda só pelo Marcelo, com a ROM. Saída: contagens, nomes, endereços e vereditos. Nunca
 //! valores de memória, pixels nem áudio.
 
+pub mod video;
+
 use oracle_trace::TempoRaw;
 use sonic1_core::abertura::ram::{PILHA_FIM, PILHA_INICIO};
 use sonic1_core::abertura::{Abertura, EventoQuadro, MARCAS, Marca};
@@ -93,6 +95,8 @@ pub struct Relatorio {
     pub z80_nucleo: Vec<(u32, u32)>,
     /// Avisos do núcleo (`Memoria::avisos`), pelo nome, com a contagem.
     pub avisos_nucleo: BTreeMap<String, u64>,
+    /// Comparação do vídeo (imagem, VRAM, CRAM e VSRAM) feita com as escritas do núcleo.
+    pub video: video::ResultadoVideo,
 }
 
 impl Relatorio {
@@ -107,6 +111,7 @@ impl Relatorio {
             && self.divergencias_posicao_z80 == 0
             // Uma espera do driver de som que desistiu quer dizer que faltou tempo gravado.
             && !self.avisos_nucleo.contains_key("EsperaDoSomEstourada")
+            && self.video.zero()
     }
 }
 
@@ -250,6 +255,8 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
     let mut ultimo_pc = u32::MAX;
     let mut pend: Option<Fechamento> = None;
     nucleo.registrar_esperas();
+    let mut video = video::Video::novo();
+    nucleo.definir_observador(video.observador());
     let mut esperas_o: std::collections::VecDeque<(Vec<u8>, Vec<u8>)> = Default::default();
     let mut esperas_n: std::collections::VecDeque<(Vec<u8>, Vec<u8>)> = Default::default();
 
@@ -556,7 +563,7 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
                 rel.z80_oraculo.push((e.1, e.2));
             }
         }
-        for s in &nucleo.mem.tirar_saidas() {
+        for s in &video.tirar_saidas() {
             if let Some(e) = escrita_do_nucleo(s) {
                 // O oráculo registra toda escrita no BUSREQ e no RESET do Z80, mesmo as que não
                 // mudam o estado (visto no segundo `DACDriverLoad`, que solta um RESET já solto).
@@ -613,6 +620,8 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
                 nucleo.mem.divergencias_z80().len(),
             );
         }
+        video.quadro_do_oraculo(&q, &o.imagem().pontos);
+        video.processar();
         rel.quadros += 1;
     }
     for (nome, p, ini) in [
@@ -669,6 +678,9 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
             &consumidos[de..fim]
         ));
     }
+    video.processar();
+    video.terminar();
+    rel.video = video.resultado.clone();
     rel.divergencias_posicao_z80 = nucleo.mem.divergencias_z80().len();
     for d in nucleo.mem.divergencias_z80() {
         let t = format!("{d:?}");
@@ -789,6 +801,24 @@ pub fn imprimir(rel: &Relatorio) {
     if let Some(c) = &rel.z80_contexto {
         println!("z80_primeiro_acesso_diferente {c}");
     }
+    let v = &rel.video;
+    println!(
+        "video: quadros_comparados={} pendentes={} imagem={}/{} vram={}/{} cram={}/{} vsram={}/{}",
+        v.quadros,
+        v.pendentes,
+        v.imagem_iguais,
+        v.imagem_diverge,
+        v.vram_iguais,
+        v.vram_diverge,
+        v.cram_iguais,
+        v.cram_diverge,
+        v.vsram_iguais,
+        v.vsram_diverge
+    );
+    if let Some(p) = &v.primeiro {
+        println!("video_primeira_divergencia: {p}");
+    }
+    println!("video_avisos: {}", v.avisos);
     for (aviso, n) in &rel.avisos_nucleo {
         println!("aviso_nucleo {aviso} vezes={n}");
     }

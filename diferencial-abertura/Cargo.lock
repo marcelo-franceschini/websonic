@@ -824,6 +824,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
+name = "sonic1-console"
+version = "0.0.0"
+dependencies = [
+ "sonic1-core",
+ "sonic1-video",
+]
+
+[[package]]
 name = "sonic1-core"
 version = "0.0.0"
 
@@ -833,6 +841,7 @@ version = "0.0.0"
 dependencies = [
  "genesis-core",
  "oracle-trace",
+ "sonic1-console",
  "sonic1-core",
  "sonic1-fidelidade",
  "websonic-oracle",
@@ -851,6 +860,10 @@ version = "0.0.0"
 
 [[package]]
 name = "sonic1-rom"
+version = "0.0.0"
+
+[[package]]
+name = "sonic1-video"
 version = "0.0.0"
 
 [[package]]

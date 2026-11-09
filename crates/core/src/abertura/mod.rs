@@ -269,7 +269,13 @@ pub struct Abertura {
     pendentes: Vec<EventoQuadro>,
     /// Com tempo gravado os eventos rodam um quadro depois; no modo nominal rodam na hora.
     atraso: bool,
+    /// Chamado depois de cada evento (marca ou interrupção) com a memória: o comparador recolhe
+    /// as saídas da VDP na hora em que saem, quando a RAM ainda é a do evento (o DMA lê dela).
+    observador: Option<Observador>,
 }
+
+/// Função chamada depois de cada evento processado.
+pub type Observador = Box<dyn FnMut(&mut Memoria)>;
 
 impl Abertura {
     pub fn nova(rom: Vec<u8>) -> Self {
@@ -286,10 +292,16 @@ impl Abertura {
             esperas: None,
             pendentes: Vec::new(),
             atraso: true,
+            observador: None,
             quadro: 0,
             erro: None,
             marcas_ignoradas: 0,
         }
+    }
+
+    /// Liga o observador de eventos (só para o comparador).
+    pub fn definir_observador(&mut self, o: Observador) {
+        self.observador = Some(o);
     }
 
     /// Console sem tempo gravado (navegador): os eventos rodam na hora do quadro em que chegam.
@@ -389,6 +401,9 @@ impl Abertura {
             };
             if let Err(erro) = r {
                 self.erro = Some(erro);
+            }
+            if let Some(o) = self.observador.as_mut() {
+                o(&mut self.mem);
             }
         }
         self.quadro = self.quadro.saturating_add(1);

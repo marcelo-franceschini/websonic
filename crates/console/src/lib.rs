@@ -45,6 +45,15 @@ fn quadros_de_espera(m: Marca) -> u32 {
 /// Quadros que o tratador da voz leva até devolver o controle (134 no oráculo).
 const QUADROS_DA_VOZ: u32 = 134;
 
+/// Uma escrita da VDP já acompanhada pela ponte, com o DMA da memória que ela dispara, se houver.
+#[derive(Clone, Debug)]
+pub struct Capturada {
+    porta: PortaVdp,
+    valor: u16,
+    tamanho: Tamanho,
+    dma: Option<Vec<u16>>,
+}
+
 /// A ponte: aplica as escritas do núcleo ao renderizador.
 pub struct Ponte {
     rend: Renderizador,
@@ -100,43 +109,77 @@ impl Ponte {
         r1 & 0x10 != 0 && r23 >> 6 < 2
     }
 
-    /// Aplica uma saída do núcleo na posição dada. Só as escritas da VDP interessam aqui.
-    pub fn aplicar(&mut self, mem: &mut Memoria, saida: &Saida, linha: u16, coluna: u64) {
+    /// Primeira fase de `aplicar`: acompanha os registradores e, se a saída pede um DMA da
+    /// memória, lê as palavras agora (a memória muda depois). Devolve `None` para o que não é VDP.
+    pub fn capturar(&mut self, mem: &mut Memoria, saida: &Saida) -> Option<Capturada> {
         let Saida::Vdp {
             porta,
             valor,
             tamanho,
         } = *saida
         else {
-            return;
+            return None;
         };
-        match porta {
-            PortaVdp::Dados => {
-                let t = if tamanho == Tamanho::Byte { 1 } else { 2 };
-                self.rend
-                    .aplicar(linha, coluna, Escrita::Dados { valor, tamanho: t });
-            }
-            PortaVdp::Controle => {
-                // Registrador (010x xxxx...): palavra única. Senão é metade de um comando.
-                let e_registrador = valor & 0xC000 == 0x8000;
-                if e_registrador {
-                    self.primeira = None;
-                    let n = usize::from((valor >> 8) & 0x1F);
-                    if let Some(r) = self.regs.get_mut(n) {
-                        *r = valor.to_le_bytes()[0];
-                    }
-                } else if let Some(_primeira) = self.primeira.take() {
-                    // Segunda palavra: o bit 7 pede DMA. Se for da memória, entrega as palavras.
-                    if valor & 0x0080 != 0 && self.dma_de_memoria() {
-                        let palavras = self.palavras_do_dma(mem);
-                        self.rend.entregar_dma(&palavras);
-                    }
-                } else {
-                    self.primeira = Some(valor);
+        let mut dma = None;
+        if porta == PortaVdp::Controle {
+            // Registrador (010x xxxx...): palavra única. Senão é metade de um comando.
+            let e_registrador = valor & 0xC000 == 0x8000;
+            if e_registrador {
+                self.primeira = None;
+                let n = usize::from((valor >> 8) & 0x1F);
+                if let Some(r) = self.regs.get_mut(n) {
+                    *r = valor.to_le_bytes()[0];
                 }
-                self.rend.aplicar(linha, coluna, Escrita::Controle(valor));
+            } else if let Some(_primeira) = self.primeira.take() {
+                // Segunda palavra: o bit 7 pede DMA. Se for da memória, lê as palavras.
+                if valor & 0x0080 != 0 && self.dma_de_memoria() {
+                    dma = Some(self.palavras_do_dma(mem));
+                }
+            } else {
+                self.primeira = Some(valor);
             }
         }
+        Some(Capturada {
+            porta,
+            valor,
+            tamanho,
+            dma,
+        })
+    }
+
+    /// Segunda fase: entrega o DMA lido e aplica a escrita na posição dada.
+    pub fn aplicar_capturada(&mut self, c: &Capturada, linha: u16, coluna: u64) {
+        match c.porta {
+            PortaVdp::Dados => {
+                let t = if c.tamanho == Tamanho::Byte { 1 } else { 2 };
+                self.rend.aplicar(
+                    linha,
+                    coluna,
+                    Escrita::Dados {
+                        valor: c.valor,
+                        tamanho: t,
+                    },
+                );
+            }
+            PortaVdp::Controle => {
+                if let Some(palavras) = &c.dma {
+                    self.rend.entregar_dma(palavras);
+                }
+                self.rend.aplicar(linha, coluna, Escrita::Controle(c.valor));
+            }
+        }
+    }
+
+    /// Aplica uma saída do núcleo na posição dada. Só as escritas da VDP interessam aqui.
+    pub fn aplicar(&mut self, mem: &mut Memoria, saida: &Saida, linha: u16, coluna: u64) {
+        if let Some(c) = self.capturar(mem, saida) {
+            self.aplicar_capturada(&c, linha, coluna);
+        }
+    }
+
+    /// Fecha o quadro na coluna dada da linha 232 (como o oráculo fecha) e guarda a imagem.
+    pub fn fechar_quadro_em(&mut self, coluna: u64) {
+        self.rend.fechar_quadro_em(coluna);
     }
 
     /// Fecha o quadro e devolve a imagem em RGBA (320 por 224).
