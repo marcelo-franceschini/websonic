@@ -6,7 +6,9 @@
 //! Regras do crate (checadas pelo clippy): sem float, sem estouro implícito, sem casts que truncam.
 #![forbid(unsafe_code)]
 
+pub mod fm;
 pub mod psg;
+mod tabelas;
 
 /// Ciclos do relógio mestre NTSC por ciclo do PSG (mestre/15).
 pub const MCLK_POR_CICLO_PSG: u64 = 15;

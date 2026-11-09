@@ -80,3 +80,19 @@ impl Drop for RefOpn2 {
         unsafe { ref_opn2_libera(self.0) }
     }
 }
+
+impl RefOpn2 {
+    /// Estado interno por camada (diagnostico): 0 fase, 1 nivel do envelope, 2 saida do envelope,
+    /// 3 saida do operador, 4 saida do canal, 5 incremento de fase, 6 estado do envelope,
+    /// 7 modulacao, 8 diversos (ciclo, canal, mol, mor, timer do envelope, contador do LFO...).
+    pub fn estado(&self, camada: i32) -> Vec<i32> {
+        let mut v = [0i32; 24];
+        // SAFETY: `v` tem 24 posicoes, o maximo que a funcao escreve.
+        let n = unsafe { ref_opn2_estado(self.0, camada, v.as_mut_ptr()) };
+        v[..usize::try_from(n).unwrap()].to_vec()
+    }
+}
+
+unsafe extern "C" {
+    fn ref_opn2_estado(c: *mut c_void, camada: i32, out: *mut i32) -> i32;
+}
