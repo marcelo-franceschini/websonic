@@ -271,3 +271,13 @@ Provas sem a ROM: `cargo test -q -p sonic1-core -p sonic1-teste-som -p sonic1-co
 - `posicao_z80_divergencias=0`. RAM do 68000 e do Z80 com `diverge=0` fora dos trechos atômicos. Quadros de lag do núcleo: 5. Nenhum aviso.
 - As contagens finais diferem (vídeo 96964 contra 84985, YM do Z80 281706 contra 267516) só depois do fim da fatia. Veredito `DIVERGE`, como nas fatias anteriores, sem divergência no prefixo.
 - Provado do quadro 0 ao 1114. Falta o resto da carga da fase até `Level_StartGame` (~1166): `LevelDataLoad`, `LoadTilesFromStart`, objetos, `ObjPosLoad`, HUD e o desvanecimento final.
+
+## Fase da demo, fatia 2 (09/11/2026): da saída dos cartões a `Level_StartGame`
+
+Escrita, sem prova com a ROM ainda. Rodada pendente: `sh scripts/etapa7-bloco2.sh ROM 1170`.
+
+- **O que roda.** Na marca `Level_Delay` (de uma vez): a arte do HUD (`Hud_Base`), a paleta do Sonic, `LevelSizeLoad`, `DeformLayers`, `LevelDataLoad` (blocos, chunks, layout, paleta, segunda lista de arte), `LoadTilesFromStart` (frente e fundo da GHZ), `ColIndexLoad`, os objetos do Sonic e do HUD, `ObjPosLoad`, `ExecuteObjects`, `BuildSprites`, as variáveis de partida nova, `OscillateNumInit` e o temporizador da demo. Depois quatro VBlanks `$08` (`VBlank_Levels`), os 22 VBlanks do `PalFadeIn_Alt` (linhas 2 a 4) e, na marca `Level_StartGame`, os cartões começam a sair e o bit 7 do modo se apaga.
+- **D7.32. O Sonic roda um quadro antes de `Level_StartGame`.** O plano dizia que ele ainda não rodou. Não é assim: o `ExecuteObjects` de `Level_LoadObj` executa `Sonic_Main` e cai em `Sonic_Control`, com os botões zerados. O núcleo porta só esse quadro (`fisica.rs`): `Sonic_MdNormal` no chão plano (pulo, rampa, movimento parado, rolar, limites, `SpeedToPos`, `Sonic_AnglePos` só no modo de piso, `Sonic_SlopeRepel`), `Sonic_Animate` com os roteiros comuns, `Sonic_Loops`, `Sonic_LoadGfx` e `ReactToItem` sem objetos. O resto devolve `NaoImplementado` e é da Etapa 9. A física completa (parede, teto, ar, andar) continua fora.
+- **D7.33. `a0` em `LoadTilesFromStart`.** Num chunk vazio o `DrawBlock` lê as flags de `(a0)`. Na entrada de `LoadTilesFromStart`, `a0` é o fim da última linha copiada do layout de fundo (`LevelLayoutLoad2`), e o núcleo calcula esse valor. No fundo da GHZ, cada linha recarrega `a0` com o endereço da tabela de blocos de rolagem.
+- **D7.34. Objetos da partida descobertos pela rodada.** Os objetos da lista da fase (`ObjPos`) são criados de verdade. Cada ID sem código devolve `ObjetoNaoImplementado(id)`, e a rodada diz qual falta. Só se implementa o que a primeira tela da GHZ1 pede.
+- **FixBugs = 0.** `FindNearestTile` devolve `$FFFFFF00` num chunk vazio e o original lê a RAM ali; o núcleo reproduz.

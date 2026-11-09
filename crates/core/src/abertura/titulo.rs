@@ -61,6 +61,11 @@ pub fn gm_title_preparo_a(m: &mut Memoria) -> Result<(), ErroAbertura> {
 /// `PaletteFadeIn` (começo): pinta de preto a paleta ativa e pede o primeiro VBlank do fade.
 pub fn palette_fade_in_inicio(m: &mut Memoria) {
     ww(m, V_PFADE_START, 0x003F);
+    palette_fade_in_alt(m);
+}
+
+/// `PalFadeIn_Alt`: começo do aparecimento com a posição e o tamanho já em `v_pfade_start`.
+pub fn palette_fade_in_alt(m: &mut Memoria) {
     let inicio = u32::from(rb(m, V_PFADE_START));
     let n = u32::from(rb(m, V_PFADE_START.wrapping_add(1)));
     let mut a0 = V_PALETTE.wrapping_add(inicio);
@@ -109,7 +114,7 @@ pub fn parte_b1(m: &mut Memoria) -> Result<(), ErroAbertura> {
     // Blocos 16x16 (EniDec, tile inicial 0) e blocos 256x256 (KosDec) da GHZ.
     rotinas::eni_dec(m, BLK16_GHZ, V_16X16, 0).map_err(rot)?;
     rotinas::kos_dec(m, BLK256_GHZ, V_256X256).map_err(rot)?;
-    cenario::level_layout_load(m)
+    cenario::level_layout_load(m).map(|_| ())
 }
 
 /// Parte C do título (linhas 1996 a 2070 de `GM_Title`): limpa a tela, desenha o fundo da GHZ,

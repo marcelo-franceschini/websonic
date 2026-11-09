@@ -18,8 +18,10 @@ pub mod boot;
 pub mod cenario;
 pub mod desenho;
 pub mod fase;
+pub mod fisica;
 pub mod hud;
 pub mod objetos;
+pub mod objpos;
 pub mod paleta;
 pub mod plc;
 pub mod ram;
@@ -69,10 +71,14 @@ pub enum Marca {
     GmLevel,
     /// `Level_TtlCardLoop`: começo do laço dos cartões de título da fase.
     LevelTtlCardLoop,
+    /// `Level_Delay`: a carga da fase acabou; começam os quatro VBlanks de espera.
+    LevelDelay,
+    /// `Level_StartGame`: o aparecimento acabou; fim da sequência antes da fase.
+    LevelStartGame,
 }
 
 /// Rótulo e endereço de cada marca (metadado de `refs/rotulos.txt`, conferido por teste).
-pub const MARCAS: [(Marca, &str, u32); 17] = [
+pub const MARCAS: [(Marca, &str, u32); 19] = [
     (Marca::GameProgram, "GameProgram", 0x300),
     (Marca::ChecksumOk, "CheckSumOk", 0x33E),
     (Marca::VdpSetupGame, "VDPSetupGame", 0x1222),
@@ -90,6 +96,8 @@ pub const MARCAS: [(Marca, &str, u32); 17] = [
     (Marca::GotoDemo, "GotoDemo", 0x33A4),
     (Marca::GmLevel, "GM_Level", 0x379E),
     (Marca::LevelTtlCardLoop, "Level_TtlCardLoop", 0x3912),
+    (Marca::LevelDelay, "Level_Delay", 0x3A8C),
+    (Marca::LevelStartGame, "Level_StartGame", 0x3AD8),
 ];
 
 type Passo = fn(&mut Memoria) -> Result<(), ErroAbertura>;
@@ -128,6 +136,8 @@ pub enum ErroAbertura {
     Rotina(crate::rotinas::ErroRotina),
     /// O trecho pedido não existe nesta versão do núcleo.
     NaoImplementado(&'static str),
+    /// O ID de um objeto que a fase pediu e que o núcleo ainda não tem.
+    ObjetoNaoImplementado(u8),
 }
 
 impl From<ErroAcesso> for ErroAbertura {
@@ -177,7 +187,15 @@ enum Fase {
     PreparoCartoes,
     /// `Level_TtlCardLoop`: os cartões entram e a fila de arte da zona anda, um quadro por VBlank.
     Cartoes,
-    /// O resto da fase ainda não existe nesta versão do núcleo.
+    /// Carga final da fase (sem espera) até a marca `Level_Delay`.
+    PreparoFinal,
+    /// `Level_DelayLoop`: faltam tantos VBlanks da fase.
+    Atraso(u8),
+    /// `PalFadeIn_Alt`: aparecimento das linhas 2 a 4 da paleta, faltam tantos VBlanks.
+    FadeIn(u8),
+    /// Espera a marca `Level_StartGame`.
+    PreparoFim,
+    /// A fase em andamento ainda não existe nesta versão do núcleo.
     Parado,
 }
 
@@ -304,7 +322,11 @@ impl Abertura {
             ) => Espera::VBlank,
             Modo::Fase(Fase::Entrada) => Espera::Marca(Marca::GmLevel),
             Modo::Fase(Fase::PreparoCartoes) => Espera::Marca(Marca::LevelTtlCardLoop),
-            Modo::Fase(Fase::FadeOut(_) | Fase::Cartoes) => Espera::VBlank,
+            Modo::Fase(Fase::PreparoFinal) => Espera::Marca(Marca::LevelDelay),
+            Modo::Fase(Fase::PreparoFim) => Espera::Marca(Marca::LevelStartGame),
+            Modo::Fase(Fase::FadeOut(_) | Fase::Cartoes | Fase::Atraso(_) | Fase::FadeIn(_)) => {
+                Espera::VBlank
+            }
             Modo::Fase(Fase::Parado) => Espera::Nenhuma,
         }
     }
@@ -326,7 +348,7 @@ impl Abertura {
                         | Titulo::Laco
                         | Titulo::PreDemo
                 )
-                | Modo::Fase(Fase::FadeOut(_) | Fase::Cartoes)
+                | Modo::Fase(Fase::FadeOut(_) | Fase::Cartoes | Fase::Atraso(_) | Fase::FadeIn(_))
         )
     }
 
@@ -439,6 +461,15 @@ impl Abertura {
                 fase::gm_level_inicio(&mut self.mem);
                 self.pedir_espera();
                 self.modo = Modo::Fase(Fase::FadeOut(22));
+            }
+            (Modo::Fase(Fase::PreparoFinal), Marca::LevelDelay) => {
+                fase::preparo_final(&mut self.mem)?;
+                self.pedir_vblank(vblank::ROTINA_NIVEL);
+                self.modo = Modo::Fase(Fase::Atraso(4));
+            }
+            (Modo::Fase(Fase::PreparoFim), Marca::LevelStartGame) => {
+                fase::level_start_game(&mut self.mem)?;
+                self.modo = Modo::Fase(Fase::Parado);
             }
             (Modo::Fase(Fase::PreparoCartoes), Marca::LevelTtlCardLoop) => {
                 // O preparo dos cartões roda de uma vez (D7.10); os VBlanks no meio dele chegam
@@ -621,10 +652,37 @@ impl Abertura {
                 vblank::tratar(&mut self.mem)?;
                 match fase::laco_dos_cartoes(&mut self.mem)? {
                     fase::DepoisDosCartoes::Continua => self.pedir_vblank(vblank::ROTINA_CARTOES),
-                    fase::DepoisDosCartoes::Fim => self.modo = Modo::Fase(Fase::Parado),
+                    fase::DepoisDosCartoes::Fim => self.modo = Modo::Fase(Fase::PreparoFinal),
                 }
             }
-            Fase::Entrada | Fase::PreparoCartoes | Fase::Parado => self.ignorar(),
+            Fase::Atraso(n) => {
+                self.vblanks_tratados = self.vblanks_tratados.saturating_add(1);
+                vblank::tratar(&mut self.mem)?;
+                let restam = n.saturating_sub(1);
+                if restam > 0 {
+                    self.pedir_vblank(vblank::ROTINA_NIVEL);
+                    self.modo = Modo::Fase(Fase::Atraso(restam));
+                } else {
+                    // `move.w #$202F,(v_pfade_start).w` e `PalFadeIn_Alt`.
+                    ww(&mut self.mem, ram::V_PFADE_START, 0x202F);
+                    titulo::palette_fade_in_alt(&mut self.mem);
+                    self.pedir_espera();
+                    self.modo = Modo::Fase(Fase::FadeIn(22));
+                }
+            }
+            Fase::FadeIn(n) => {
+                let restam = self.vblank_fade_in(n)?;
+                self.modo = Modo::Fase(if restam > 0 {
+                    Fase::FadeIn(restam)
+                } else {
+                    Fase::PreparoFim
+                });
+            }
+            Fase::Entrada
+            | Fase::PreparoCartoes
+            | Fase::PreparoFinal
+            | Fase::PreparoFim
+            | Fase::Parado => self.ignorar(),
         }
         Ok(())
     }

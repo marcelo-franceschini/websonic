@@ -173,12 +173,25 @@ fn construir_tabela(m: &mut Memoria, mut a0: u32) -> Result<u32, ErroAbertura> {
 
 /// `ProcessPLC_9Tiles`: se há arte em curso, descomprime até 9 tiles neste VBlank.
 pub fn process_plc_9(m: &mut Memoria) {
+    process_plc_n(m, 9);
+}
+
+/// `ProcessPLC_3Tiles`: como a de 9 tiles, mas 3 por VBlank (a fase deixa tempo para o resto).
+pub fn process_plc_3(m: &mut Memoria) {
+    process_plc_n(m, 3);
+}
+
+fn process_plc_n(m: &mut Memoria, tiles: u16) {
     if rw(m, V_PLC_PATTERNSLEFT) == 0 {
         return;
     }
-    ww(m, V_PLC_FRAMEPATTERNSLEFT, 9);
+    ww(m, V_PLC_FRAMEPATTERNSLEFT, tiles);
     let destino = rw(m, V_PLC_BUFFER_DEST);
-    ww(m, V_PLC_BUFFER_DEST, destino.wrapping_add(9 * 32));
+    ww(
+        m,
+        V_PLC_BUFFER_DEST,
+        destino.wrapping_add(tiles.wrapping_mul(32)),
+    );
     processar(m, u32::from(destino));
 }
 

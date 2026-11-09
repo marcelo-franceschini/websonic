@@ -17,6 +17,8 @@ pub const ROTINA_PALETTE_FADE: u8 = 0x12;
 pub const ROTINA_TITULO: u8 = 0x04;
 /// Índice de `VBlank_TitleCards` (cartões de título da fase; também `VBlank_Ending`).
 pub const ROTINA_CARTOES: u8 = 0x0C;
+/// Índice de `VBlank_Levels` (a fase e a demo).
+pub const ROTINA_NIVEL: u8 = 0x08;
 pub const ROTINA_SEGA_PCM: u8 = 0x14;
 
 /// Macros `writeCRAM` e `writeVRAM`: DMA do 68000 para a VDP. `cram` escolhe o tipo de destino.
@@ -97,7 +99,7 @@ fn copiar_longas(m: &mut Memoria, origem: u32, destino: u32, longas: u32) {
 /// dos sprites e a arte do Sonic quando ela mudou. Depois copia as posições da tela e as flags de
 /// rolagem para os `_dup`, desenha as faixas novas, anima os tiles, atualiza o HUD e anda a fila
 /// de arte.
-fn vblank_cartoes(m: &mut Memoria) -> Result<(), ErroAbertura> {
+fn vblank_cartoes(m: &mut Memoria, nivel: bool) -> Result<(), ErroAbertura> {
     ww(m, Z80_BUSREQ, 0x100);
     esperar_z80(m)?;
     read_joypads(m);
@@ -125,7 +127,13 @@ fn vblank_cartoes(m: &mut Memoria) -> Result<(), ErroAbertura> {
     super::desenho::load_tiles_as_you_move(m, V_JPADHOLD1.wrapping_add(4))?;
     super::animacao::animate_level_gfx(m)?;
     super::hud::hud_update(m)?;
-    super::plc::process_plc_9(m);
+    if nivel {
+        // `VBlank_Levels` anda só 3 tiles da fila e conta o temporizador genérico.
+        super::plc::process_plc_3(m);
+        temporizador_generico(m);
+    } else {
+        super::plc::process_plc_9(m);
+    }
     Ok(())
 }
 
@@ -162,7 +170,8 @@ pub fn tratar(m: &mut Memoria) -> Result<(), ErroAbertura> {
                 super::plc::process_plc_9(m);
                 temporizador_generico(m);
             }
-            ROTINA_CARTOES => vblank_cartoes(m)?,
+            ROTINA_CARTOES => vblank_cartoes(m, false)?,
+            ROTINA_NIVEL => vblank_cartoes(m, true)?,
             ROTINA_PALETTE_FADE => {
                 standard_transfers(m)?;
                 let h = rw(m, V_HBLANK_HREG);

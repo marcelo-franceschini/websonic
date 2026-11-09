@@ -215,14 +215,33 @@ fn laco_dos_cartoes_acaba_com_o_act_no_alvo_e_a_fila_vazia() {
 }
 
 #[test]
-fn hud_sem_flags_nao_escreve_e_com_flag_para() {
+fn hud_sem_flags_nao_escreve_nada() {
     let mut m = Memoria::nova(rom_com(&[]));
     hud::hud_update(&mut m).unwrap();
     assert!(vdp(&mut m).is_empty());
+}
+
+#[test]
+fn hud_com_pontos_escreve_so_os_digitos_sem_zeros_a_esquerda() {
+    let mut m = Memoria::nova(rom_com(&[]));
     pb(&mut m, F_SCORECOUNT, 1);
+    pl(&mut m, V_SCORE, 1234);
+    hud::hud_update(&mut m).unwrap();
+    assert_eq!(lb(&m, F_SCORECOUNT), 0, "a flag foi limpa");
+    let e = vdp(&mut m);
+    // Quatro dígitos, cada um com o comando (2 palavras) e 16 longas (32 palavras).
+    assert_eq!(e.len(), 4 * 34);
+    // O primeiro dígito cai duas posições à direita (os dois zeros pulados): +$800000.
+    assert_eq!(&e[..2], &[(true, 0x5D00), (true, 0x0003)]);
+}
+
+#[test]
+fn hud_no_modo_de_depuracao_para() {
+    let mut m = Memoria::nova(rom_com(&[]));
+    pw(&mut m, F_DEBUGMODE, 1);
     assert_eq!(
         hud::hud_update(&mut m),
-        Err(ErroAbertura::NaoImplementado("números do HUD"))
+        Err(ErroAbertura::NaoImplementado("HUD do modo de depuração"))
     );
 }
 

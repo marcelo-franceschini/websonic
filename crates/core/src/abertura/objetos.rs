@@ -69,8 +69,40 @@ fn rodar_objeto(m: &mut Memoria, a0: u32, id: u8) -> Result<(), ErroAbertura> {
         ID_TITLE_SONIC => titulo_sonic(m, a0),
         ID_PSBTM => psbtm(m, a0),
         ID_TITLE_CARD => cartao_de_titulo(m, a0),
-        _ => Err(ErroAbertura::NaoImplementado("objeto")),
+        ID_SONIC => super::fisica::sonic_player(m, a0),
+        ID_HUD => hud_objeto(m, a0),
+        outro => Err(ErroAbertura::ObjetoNaoImplementado(outro)),
     }
+}
+
+/// Objeto `HUD` (`21`): o painel de pontos, tempo e anéis. Pisca o quadro dos anéis ou do tempo.
+fn hud_objeto(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
+    if rb(m, a0.wrapping_add(OB_ROUTINE)) == 0 {
+        // `HUD_Main`.
+        wb(m, a0.wrapping_add(OB_ROUTINE), 2);
+        ww(m, a0.wrapping_add(OB_X), 0x80 + 0x10);
+        ww(m, a0.wrapping_add(OB_SCREENY), 0x80 + 0x88);
+        wl(m, a0.wrapping_add(OB_MAP), MAP_HUD);
+        ww(m, a0.wrapping_add(OB_GFX), ARTTILE_HUD);
+        wb(m, a0.wrapping_add(OB_RENDER), 0);
+        wb(m, a0.wrapping_add(OB_PRIORITY), 0);
+    }
+    // `HUD_Flash` (FixBugs = 0): com anéis o painel fica amarelo; sem anéis, pisca o dos anéis.
+    if rw(m, V_RINGS) != 0 {
+        wb(m, a0.wrapping_add(OB_FRAME), 0);
+        display_sprite(m, a0);
+        return Ok(());
+    }
+    let mut quadro = 0u8;
+    if rb(m, V_FRAMEBYTE) & 8 == 0 {
+        quadro = quadro.wrapping_add(1);
+    }
+    if rb(m, V_TIMEMIN) == 9 {
+        quadro = quadro.wrapping_add(2);
+    }
+    wb(m, a0.wrapping_add(OB_FRAME), quadro);
+    display_sprite(m, a0);
+    Ok(())
 }
 
 /// Palavra com sinal (`bge` e `bmi` comparam assim).

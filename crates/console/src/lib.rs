@@ -36,6 +36,9 @@ fn quadros_de_espera(m: Marca) -> u32 {
         // Arte dos cartões e limpeza da RAM: estimado pela rodada de 970 quadros (as
         // interrupções voltam uns 7 quadros depois do fim do desvanecimento).
         Marca::LevelTtlCardLoop => 7,
+        // Estimativa até a rodada com a ROM medir os dois trechos da carga final.
+        Marca::LevelDelay => 2,
+        Marca::LevelStartGame => 0,
     }
 }
 

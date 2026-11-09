@@ -1,0 +1,166 @@
+//! Carga dos objetos da fase (`_inc/ObjPosLoad.asm`): a janela de objetos ao redor da câmera, a
+//! lista de lembrados e a criação de cada objeto no primeiro espaço livre. Só a partida da fase
+//! (câmera parada à direita do último ponto) e o movimento para a direita existem aqui; a janela
+//! andando para a esquerda devolve `NaoImplementado`.
+
+use super::boot::{rom_b, rom_w};
+use super::ram::*;
+use super::{ErroAbertura, rb, rl, rw, wb, wl, ww};
+use crate::memoria::Memoria;
+
+/// Bytes de uma entrada da lista de objetos: X, Y com os giros, ID com o bit de lembrar e subtipo.
+const ENTRADA: u32 = 6;
+
+/// `ext.l` de uma palavra (`adda.w`).
+fn ext_l(w: u16) -> u32 {
+    u32::from_be_bytes(i32::from(i16::from_be_bytes(w.to_be_bytes())).to_be_bytes())
+}
+
+fn com_sinal(w: u16) -> i16 {
+    i16::from_be_bytes(w.to_be_bytes())
+}
+
+/// `ObjPosLoad`: despacha pela rotina guardada em `v_opl_routine`.
+pub fn obj_pos_load(m: &mut Memoria) -> Result<(), ErroAbertura> {
+    match rb(m, V_OPL_ROUTINE) {
+        0 => {
+            opl_main(m);
+            opl_next(m)
+        }
+        2 => opl_next(m),
+        _ => Err(ErroAbertura::NaoImplementado("rotina do ObjPosLoad")),
+    }
+}
+
+/// `OPL_Main`: acha as listas da fase, zera a lista de lembrados e posiciona a janela.
+fn opl_main(m: &mut Memoria) {
+    let r = rb(m, V_OPL_ROUTINE).wrapping_add(2);
+    wb(m, V_OPL_ROUTINE, r);
+    // `lsl.b #6` age só no byte baixo (o ato); `lsr.w #4` junta com a zona: zona * 16 + ato * 4.
+    let za = rw(m, V_ZONE_ACT);
+    let baixo = (za & 0xFF).wrapping_shl(6) & 0xFF;
+    let d0 = ((za & 0xFF00) | baixo) >> 4;
+    let indice = OBJPOS_INDEX.wrapping_add(u32::from(d0));
+    let lista = OBJPOS_INDEX.wrapping_add(ext_l(rom_w(m, indice)));
+    wl(m, V_OPL_DATA, lista);
+    wl(m, V_OPL_DATA.wrapping_add(4), lista);
+    let secundaria = OBJPOS_INDEX.wrapping_add(ext_l(rom_w(m, indice.wrapping_add(2))));
+    wl(m, V_OPL_DATA.wrapping_add(8), secundaria);
+    wl(m, V_OPL_DATA.wrapping_add(12), secundaria);
+    // A lista de lembrados começa com o contador em 1 e limpa $17C bytes (o original conta
+    // palavras num laço de longas, FixBugs = 0).
+    ww(m, V_OBJSTATE, 0x0101);
+    let mut a2 = V_OBJSTATE.wrapping_add(2);
+    let palavras = (V_OBJSTATE_END.wrapping_sub(V_OBJSTATE).wrapping_sub(2)) / 2;
+    for _ in 0..palavras {
+        wl(m, a2, 0);
+        a2 = a2.wrapping_add(4);
+    }
+    let a2 = V_OBJSTATE;
+    let mut d6 = rw(m, V_SCREENPOSX).saturating_sub(128) & 0xFF80;
+    let mut a0 = rl(m, V_OPL_DATA);
+    // `.loop_find_right_init`: pula os objetos antes da borda direita da janela inicial.
+    while d6 > rw(m, a0) {
+        if rb(m, a0.wrapping_add(4)) & 0x80 != 0 {
+            let n = rb(m, a2).wrapping_add(1);
+            wb(m, a2, n);
+        }
+        a0 = a0.wrapping_add(ENTRADA);
+    }
+    wl(m, V_OPL_DATA, a0);
+    let mut a0 = rl(m, V_OPL_DATA.wrapping_add(4));
+    if let Some(esquerda) = d6.checked_sub(128) {
+        d6 = esquerda;
+        while d6 > rw(m, a0) {
+            if rb(m, a0.wrapping_add(4)) & 0x80 != 0 {
+                let n = rb(m, a2.wrapping_add(1)).wrapping_add(1);
+                wb(m, a2.wrapping_add(1), n);
+            }
+            a0 = a0.wrapping_add(ENTRADA);
+        }
+    }
+    wl(m, V_OPL_DATA.wrapping_add(4), a0);
+    ww(m, V_OPL_SCREEN, 0xFFFF);
+}
+
+/// `OPL_Next`: se a câmera andou meio bloco de objetos, cria os que entram na janela.
+fn opl_next(m: &mut Memoria) -> Result<(), ErroAbertura> {
+    let a2 = V_OBJSTATE;
+    let mut d6 = rw(m, V_SCREENPOSX) & 0xFF80;
+    let anterior = rw(m, V_OPL_SCREEN);
+    if d6 == anterior {
+        return Ok(());
+    }
+    if com_sinal(d6.wrapping_sub(anterior)) < 0 {
+        return Err(ErroAbertura::NaoImplementado(
+            "janela de objetos para a esquerda",
+        ));
+    }
+    ww(m, V_OPL_SCREEN, d6);
+    let mut a0 = rl(m, V_OPL_DATA);
+    d6 = d6.wrapping_add(320 + 320);
+    let mut d2 = 0u8;
+    // `.loop_find_right`: cria os objetos até a borda direita da janela.
+    while d6 > rw(m, a0) {
+        if rb(m, a0.wrapping_add(4)) & 0x80 != 0 {
+            d2 = rb(m, a2);
+            wb(m, a2, d2.wrapping_add(1));
+        }
+        let (criou, proximo) = opl_spawn_obj(m, a0, a2, d2)?;
+        a0 = proximo;
+        if !criou {
+            break;
+        }
+    }
+    wl(m, V_OPL_DATA, a0);
+    let mut a0 = rl(m, V_OPL_DATA.wrapping_add(4));
+    if let Some(esquerda) = d6.checked_sub(320 + 320 + 128) {
+        while esquerda > rw(m, a0) {
+            if rb(m, a0.wrapping_add(4)) & 0x80 != 0 {
+                let n = rb(m, a2.wrapping_add(1)).wrapping_add(1);
+                wb(m, a2.wrapping_add(1), n);
+            }
+            a0 = a0.wrapping_add(ENTRADA);
+        }
+    }
+    wl(m, V_OPL_DATA.wrapping_add(4), a0);
+    Ok(())
+}
+
+/// `OPL_SpawnObj`: cria o objeto da entrada `a0` (ou pula, se já foi destruído). Devolve se deu
+/// certo (`Z`) e o `a0` seguinte.
+fn opl_spawn_obj(m: &mut Memoria, a0: u32, a2: u32, d2: u8) -> Result<(bool, u32), ErroAbertura> {
+    if rb(m, a0.wrapping_add(4)) & 0x80 != 0 {
+        // `bset #7,2(a2,d2.w)`: marca como carregado e vê se já estava marcado.
+        let marca = a2.wrapping_add(2).wrapping_add(u32::from(d2));
+        let antes = rb(m, marca);
+        wb(m, marca, antes | 0x80);
+        if antes & 0x80 != 0 {
+            return Ok((true, a0.wrapping_add(ENTRADA)));
+        }
+    }
+    // `FindFreeObj`: o primeiro espaço de objeto livre.
+    let mut a1 = V_LVLOBJSPACE;
+    while a1 < V_LVLOBJEND && rb(m, a1.wrapping_add(OB_ID)) != 0 {
+        a1 = a1.wrapping_add(OBJECT_SIZE);
+    }
+    if a1 >= V_LVLOBJEND {
+        return Ok((false, a0));
+    }
+    let x = rw(m, a0);
+    ww(m, a1.wrapping_add(OB_X), x);
+    let yw = rw(m, a0.wrapping_add(2));
+    ww(m, a1.wrapping_add(OB_Y), yw & 0xFFF);
+    let giros = u8::try_from(yw.rotate_left(2) & 3).unwrap_or(0);
+    wb(m, a1.wrapping_add(OB_RENDER), giros);
+    wb(m, a1.wrapping_add(OB_STATUS), giros);
+    let mut id = rom_b(m, a0.wrapping_add(4));
+    if id & 0x80 != 0 {
+        id &= 0x7F;
+        wb(m, a1.wrapping_add(OB_RESPAWNNO), d2);
+    }
+    wb(m, a1.wrapping_add(OB_ID), id);
+    let sub = rom_b(m, a0.wrapping_add(5));
+    wb(m, a1.wrapping_add(OB_SUBTYPE), sub);
+    Ok((true, a0.wrapping_add(ENTRADA)))
+}

@@ -2,12 +2,12 @@
 //! cartões de título e o laço dos cartões (`Level_TtlCardLoop`). A carga do resto da fase entra
 //! nas fatias seguintes.
 
-use super::boot::rom_b;
+use super::boot::{rom_b, rom_l};
 use super::objetos::{build_sprites, execute_objects};
 use super::ram::*;
-use super::sega::{clear_screen, pal_load};
+use super::sega::{clear_screen, pal_load, pal_load_para};
 use super::titulo::{loc_vram, zerar};
-use super::{ErroAbertura, plc, rb, rl, rw, titulo, wb, wl, ww};
+use super::{ErroAbertura, cenario, desenho, hud, objpos, plc, rb, rl, rw, titulo, wb, wl, ww};
 use crate::memoria::Memoria;
 use crate::rotinas;
 
@@ -105,4 +105,123 @@ pub fn laco_dos_cartoes(m: &mut Memoria) -> Result<DepoisDosCartoes, ErroAbertur
         return Ok(DepoisDosCartoes::Continua);
     }
     Ok(DepoisDosCartoes::Fim)
+}
+
+/// `LevelDataLoad`: os blocos 16x16 (Enigma), os chunks 256x256 (Kosinski), o layout, a paleta do
+/// cabeçalho no buffer do desvanecimento e a segunda lista de arte. Devolve o `a0` que sobra, que
+/// `LoadTilesFromStart` ainda usa num chunk vazio. Só as zonas com a paleta comum.
+fn level_data_load(m: &mut Memoria) -> Result<u32, ErroAbertura> {
+    let zona = rb(m, V_ZONE);
+    let cabecalho = LEVEL_HEADERS.wrapping_add(u32::from(zona).wrapping_mul(0x10));
+    let blocos = rom_l(m, cabecalho.wrapping_add(4)) & 0x00FF_FFFF;
+    rotinas::eni_dec(m, blocos, V_16X16, 0).map_err(ErroAbertura::Rotina)?;
+    let chunks = rom_l(m, cabecalho.wrapping_add(8)) & 0x00FF_FFFF;
+    rotinas::kos_dec(m, chunks, V_256X256).map_err(ErroAbertura::Rotina)?;
+    let a0 = cenario::level_layout_load(m)?;
+    let zona_e_ato = rw(m, V_ZONE_ACT);
+    if zona_e_ato == ID_LZ_ACT4 || zona_e_ato == ID_SBZ_ACT2 || zona_e_ato == ID_FZ {
+        return Err(ErroAbertura::NaoImplementado("paleta especial da fase"));
+    }
+    let paleta = rom_b(m, cabecalho.wrapping_add(15));
+    pal_load_para(m, u32::from(paleta), 0x80);
+    let plc2 = rom_b(m, cabecalho.wrapping_add(4));
+    if plc2 != 0 {
+        plc::add_plc(m, u16::from(plc2))?;
+    }
+    Ok(a0)
+}
+
+/// `ColIndexLoad`: o ponteiro do índice de colisão da zona.
+fn col_index_load(m: &mut Memoria) {
+    let zona = u32::from(rb(m, V_ZONE));
+    let ponteiro = rom_l(m, COLPOINTERS.wrapping_add(zona.wrapping_mul(4)));
+    wl(m, V_COLLINDEX, ponteiro);
+}
+
+/// `OscillateNumInit`: os valores iniciais da tabela de números que oscilam.
+fn oscillate_num_init(m: &mut Memoria) {
+    const BASE: [u16; 33] = [
+        0x007C, 0x80, 0, 0x80, 0, 0x80, 0, 0x80, 0, 0x80, 0, 0x80, 0, 0x80, 0, 0x80, 0, 0x80, 0,
+        0x50F0, 0x11E, 0x2080, 0xB4, 0x3080, 0x10E, 0x5080, 0x1C2, 0x7080, 0x276, 0x80, 0, 0x80, 0,
+    ];
+    let mut a1 = V_OSCILLATE;
+    for w in BASE {
+        ww(m, a1, w);
+        a1 = a1.wrapping_add(2);
+    }
+}
+
+/// De `Level_SkipTtlCard` até `Level_Delay`: a arte do HUD, a paleta, os limites e a rolagem, os
+/// blocos e o layout, o desenho inicial do cenário, a colisão, o Sonic, o HUD e os objetos da
+/// partida, as variáveis de uma partida nova e o temporizador da demo. Roda de uma vez na marca
+/// `Level_Delay` (D7.10); as interrupções que chegam no meio são quadros de lag (D7.25).
+pub fn preparo_final(m: &mut Memoria) -> Result<(), ErroAbertura> {
+    if rw(m, F_DEMO) & 0x8000 != 0 {
+        return Err(ErroAbertura::NaoImplementado("demo do final"));
+    }
+    hud::hud_base(m);
+    pal_load_para(m, PALID_SONIC, 0x80);
+    cenario::level_size_load(m)?;
+    cenario::deform_layers(m)?;
+    let flags = rb(m, V_FG_SCROLL_FLAGS) | 4;
+    wb(m, V_FG_SCROLL_FLAGS, flags);
+    let a0 = level_data_load(m)?;
+    desenho::load_tiles_from_start(m, a0)?;
+    col_index_load(m);
+    if rb(m, V_ZONE) == ID_LZ {
+        return Err(ErroAbertura::NaoImplementado("água da LZ"));
+    }
+    wb(m, V_PLAYER.wrapping_add(OB_ID), ID_SONIC);
+    wb(m, V_HUD.wrapping_add(OB_ID), ID_HUD);
+    if rb(m, F_DEBUGCHEAT) != 0 && rb(m, V_JPADHOLD1) & 0x40 != 0 {
+        wb(m, F_DEBUGMODE, 1);
+    }
+    ww(m, V_JPADHOLD2, 0);
+    ww(m, V_JPADHOLD1, 0);
+    objpos::obj_pos_load(m)?;
+    execute_objects(m)?;
+    build_sprites(m)?;
+    if rb(m, V_LASTLAMP_FASE) == 0 {
+        ww(m, V_RINGS, 0);
+        wl(m, V_TIME, 0);
+        wb(m, V_LIFECOUNT, 0);
+    }
+    for v in [F_TIMEOVER, V_SHIELD, V_INVINC, V_SHOES, V_UNUSED1] {
+        wb(m, v, 0);
+    }
+    for v in [V_DEBUGUSE, F_RESTART, V_FRAMECOUNT] {
+        ww(m, v, 0);
+    }
+    oscillate_num_init(m);
+    for v in [F_SCORECOUNT, F_RINGCOUNT, F_TIMECOUNT] {
+        wb(m, v, 1);
+    }
+    ww(m, V_BTNPUSHTIME1, 0);
+    // O primeiro par de bytes da gravação da demo da zona: a duração do primeiro botão.
+    let zona = u32::from(rb(m, V_ZONE));
+    let demo = rom_l(m, DEMO_DATA_PTR.wrapping_add(zona.wrapping_mul(4)));
+    let duracao = rom_b(m, demo.wrapping_add(1)).wrapping_sub(1);
+    wb(m, V_BTNPUSHTIME2, duracao);
+    ww(m, V_GENERICTIMER, 1800);
+    Ok(())
+}
+
+/// `Level_StartGame`: os cartões começam a sair, e o bit 7 do modo se apaga (fim da sequência
+/// antes da fase).
+pub fn level_start_game(m: &mut Memoria) -> Result<(), ErroAbertura> {
+    if rw(m, F_DEMO) & 0x8000 != 0 {
+        return Err(ErroAbertura::NaoImplementado("demo do final"));
+    }
+    for (a, soma) in [
+        (V_TITLECARD, 2u8),
+        (0xFF_D0C0, 4),
+        (V_TTLCARDACT, 4),
+        (0xFF_D140, 4),
+    ] {
+        let r = rb(m, a.wrapping_add(OB_ROUTINE)).wrapping_add(soma);
+        wb(m, a.wrapping_add(OB_ROUTINE), r);
+    }
+    let modo = rb(m, V_GAMEMODE) & 0x7F;
+    wb(m, V_GAMEMODE, modo);
+    Ok(())
 }

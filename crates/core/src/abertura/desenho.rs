@@ -334,12 +334,74 @@ pub fn load_tiles_as_you_move_bg_only(m: &mut Memoria, a0: u32) -> Result<(), Er
 /// `a3` é a posição do fundo (`v_bgscreenposx`), `a4` o layout de fundo e `d2` a base do plano
 /// (`$6000` para o fundo do título).
 pub fn draw_chunks(m: &mut Memoria, a3: u32, a4: u32, d2: u16) {
+    draw_chunks_com_a0(m, ENDERECO_A0_INICIAL, a3, a4, d2);
+}
+
+/// `DrawChunks` com o `a0` que o chamador tem na entrada. Devolve o `a0` que sobra.
+fn draw_chunks_com_a0(m: &mut Memoria, a0: u32, a3: u32, a4: u32, d2: u16) -> u32 {
     let p = Plano { a3, a4, d2 };
     let mut d4: u16 = ACIMA;
-    let mut a0 = ENDERECO_A0_INICIAL;
+    let mut a0 = a0;
     for _ in 0..BLOCOS_NA_ALTURA {
         let comando = calc_vram_pos(m, d4, 0, a3);
         a0 = draw_blocks_lr(m, a0, comando, (d4, 0), BLOCOS_NO_PLANO, SomaX::Sim, p);
         d4 = d4.wrapping_add(16);
     }
+    a0
+}
+
+/// Endereços dos X do fundo pelo índice da tabela de blocos (`DrawBG_XPos_Ptrs`).
+const XPOS_DO_FUNDO: [u32; 4] = [
+    V_BGSCREENPOSX,
+    V_BGSCREENPOSX,
+    V_BG2SCREENPOSX,
+    V_BG3SCREENPOSX,
+];
+
+/// `DrawBG_RowForBGIndex`: uma linha do fundo, com a posição X do bloco de rolagem da linha.
+/// `a0` é o endereço da tabela de blocos de rolagem, e `y` a linha da tela.
+fn draw_bg_row_for_bg_index(m: &mut Memoria, a0: u32, d0: u16, y: u16, p: Plano) -> u32 {
+    let indice = rb(m, a0.wrapping_add(u32::from(d0 >> 4)));
+    let a3 = XPOS_DO_FUNDO
+        .get(usize::from(indice >> 1))
+        .copied()
+        .unwrap_or(V_BGSCREENPOSX);
+    let p = Plano { a3, ..p };
+    if indice == 0 {
+        let cmd = calc_vram_pos_2(m, y, 0, a3);
+        draw_blocks_lr(m, a0, cmd, (y, 0), BLOCOS_NO_PLANO, SomaX::Nao, p)
+    } else {
+        let cmd = calc_vram_pos(m, y, A_ESQUERDA, a3);
+        draw_blocks_lr(
+            m,
+            a0,
+            cmd,
+            (y, A_ESQUERDA),
+            BLOCOS_NA_LARGURA,
+            SomaX::Sim,
+            p,
+        )
+    }
+}
+
+/// `LoadTilesFromStart`: desenha a frente e o fundo inteiros antes do aparecimento da fase. `a0` é
+/// o valor que o registrador tem na entrada. Só o fundo da GHZ existe (e o do final, que o reusa).
+pub fn load_tiles_from_start(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
+    draw_chunks_com_a0(m, a0, V_SCREENPOSX, V_LVLLAYOUT_FG, 0x4000);
+    let zona = rb(m, V_ZONE);
+    if zona != 0 && zona != 6 {
+        return Err(ErroAbertura::NaoImplementado("fundo inicial de outra zona"));
+    }
+    let fundo = Plano {
+        a3: V_BGSCREENPOSX,
+        a4: V_LVLLAYOUT_BG,
+        d2: 0x6000,
+    };
+    let mut y: u16 = 0;
+    for _ in 0..BLOCOS_NA_ALTURA {
+        let d0 = rw(m, V_BGSCREENPOSY).wrapping_add(y) & 0xF0;
+        draw_bg_row_for_bg_index(m, BG_SCROLLBLOCKMAP_GHZ, d0, y, fundo);
+        y = y.wrapping_add(16);
+    }
+    Ok(())
 }

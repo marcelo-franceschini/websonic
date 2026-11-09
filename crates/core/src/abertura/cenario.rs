@@ -564,7 +564,9 @@ fn bloco_de_fundo(m: &mut Memoria, posicao: u32, bloco_x: u32, flags: u32, d4: i
 
 /// `LevelLayoutLoad` (sem FixBugs): limpa $800 bytes do layout (um a mais que o tamanho real,
 /// como no original) e carrega o layout de frente e o de fundo da fase.
-pub fn level_layout_load(m: &mut Memoria) -> Result<(), ErroAbertura> {
+/// Devolve o `a0` que sobra no fim da carga do layout de fundo (o fim da última linha copiada),
+/// que `LoadTilesFromStart` ainda usa num chunk vazio.
+pub fn level_layout_load(m: &mut Memoria) -> Result<u32, ErroAbertura> {
     let mut a = V_LVLLAYOUT;
     for _ in 0..0x200 {
         wl(m, a, 0);
@@ -579,7 +581,7 @@ fn level_layout_load2(
     m: &mut Memoria,
     destino: u32,
     deslocamento: u32,
-) -> Result<(), ErroAbertura> {
+) -> Result<u32, ErroAbertura> {
     let (zona, ato) = zona_e_ato(m);
     // Tabela `Level_Index`: quatro atos por zona, seis bytes por ato (palavras de frente e de
     // fundo). Índice = zona * 24 + ato * 6 + deslocamento (0 para a frente, 2 para o fundo).
@@ -593,8 +595,9 @@ fn level_layout_load2(
     let altura = u32::from(rom_b(m, a1.wrapping_add(1)));
     a1 = a1.wrapping_add(2);
     let mut inicio_linha = destino;
+    let mut a0 = destino;
     for _ in 0..=altura {
-        let mut a0 = inicio_linha;
+        a0 = inicio_linha;
         for _ in 0..=largura {
             let b = rom_b(m, a1);
             wb(m, a0, b);
@@ -603,5 +606,5 @@ fn level_layout_load2(
         }
         inicio_linha = inicio_linha.wrapping_add(LAYOUT_ROW);
     }
-    Ok(())
+    Ok(a0)
 }
