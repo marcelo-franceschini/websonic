@@ -15,9 +15,20 @@ obtido=$(sha1sum "$rom" | cut -d' ' -f1)
 echo "=== OFICINA DO ORACULO ==="
 sh oracle/scripts/prepara.sh | tail -1
 
+# Soma as linhas "test result" de todos os binarios de teste (as ultimas linhas do cargo sao
+# so as dos doctests, com zero testes). Se o cargo falhar, diz o codigo de saida.
+resumir_testes() {
+    saida=$("$@" 2>&1)
+    codigo=$?
+    printf '%s\n' "$saida" | awk '/test result:/ { ok += $4; falhou += $6 }
+        END { printf "testes: %d passaram, %d falharam\n", ok, falhou }'
+    [ "$codigo" -eq 0 ] || echo "testes: o cargo saiu com o codigo $codigo"
+}
+
 echo "=== TESTES DA ABERTURA (sinteticos) ==="
-cargo test -q -p sonic1-core -p sonic1-teste-som 2>&1 | tail -3
-(cd diferencial-abertura && CARGO_TARGET_DIR="$ext/trabalho/oracle/alvo-abertura" cargo test -q --release 2>&1 | tail -3)
+resumir_testes cargo test -q -p sonic1-core -p sonic1-teste-som
+(cd diferencial-abertura && export CARGO_TARGET_DIR="$ext/trabalho/oracle/alvo-abertura" &&
+    resumir_testes cargo test -q --release)
 
 echo "=== COMPARACAO ($quadros quadros) ==="
 (cd diferencial-abertura && CARGO_TARGET_DIR="$ext/trabalho/oracle/alvo-abertura" \

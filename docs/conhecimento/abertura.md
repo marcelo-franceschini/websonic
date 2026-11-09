@@ -208,4 +208,14 @@ Riscos (**BACKLOG**):
 
 Achados:
 
-- VBlank de lag tratado como passo do aparecimento: **BLOQUEIA**, corrigido (D7.25). A próxima rodada prova.
+- VBlank de lag tratado como passo do aparecimento: **BLOQUEIA**, corrigido (D7.25). Provado na rodada seguinte.
+
+## Prova da fatia 2 com a ROM (Marcelo, 09/11/2026, 530 quadros, `sh scripts/etapa7-bloco2.sh ROM 530`)
+
+- Rodada de 12,7 segundos, com pico de 435 MB.
+- Marcas: `PaletteFadeIn` nos quadros 371 e 504, `Tit_MainLoop` no 526 (e em cada quadro do laço do título), `WaitForVBlank` 221 vezes, do quadro 61 ao 529.
+- Esperas de VBlank: 218 do núcleo, todas iguais às do oráculo (`diverge=0`, `z80_diverge=0`). O oráculo tem 221: as 3 a mais são do laço do título, que é a fatia 3.
+- `posicao_z80_divergencias=0`. RAM do 68000 e do Z80 com `diverge=0` fora dos trechos atômicos. Nenhum aviso do núcleo.
+- Interrupções: 223 do oráculo, 219 tratadas pelo núcleo (1 de lag, a do segundo VBlank do aparecimento) e 4 ignoradas (quadros 527 a 530, `Parado`).
+- Escritas: PSG 23 e YM do 68000 482 nos dois lados. As escritas conferem por prefixo. As contagens finais diferem só nos VBlanks do título (527 a 529), que o núcleo ainda ignora: vídeo 41225 contra 41125, YM pelo Z80 61498 contra 58498 (o Z80 do núcleo só anda quando o 68000 o toca) e BUSREQ 912 contra 895. Por isso o veredito é `DIVERGE`, como na prova da fatia 1. Não há divergência no prefixo.
+- A fatia 2 (parte C até `Tit_MainLoop`) está provada. A próxima é a fatia 3: o laço do título até `GotoDemo`.
