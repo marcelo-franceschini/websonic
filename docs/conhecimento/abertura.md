@@ -281,3 +281,12 @@ Escrita, sem prova com a ROM ainda. Rodada pendente: `sh scripts/etapa7-bloco2.s
 - **D7.33. `a0` em `LoadTilesFromStart`.** Num chunk vazio o `DrawBlock` lê as flags de `(a0)`. Na entrada de `LoadTilesFromStart`, `a0` é o fim da última linha copiada do layout de fundo (`LevelLayoutLoad2`), e o núcleo calcula esse valor. No fundo da GHZ, cada linha recarrega `a0` com o endereço da tabela de blocos de rolagem.
 - **D7.34. Objetos da partida descobertos pela rodada.** Os objetos da lista da fase (`ObjPos`) são criados de verdade. Cada ID sem código devolve `ObjetoNaoImplementado(id)`, e a rodada diz qual falta. Só se implementa o que a primeira tela da GHZ1 pede.
 - **FixBugs = 0.** `FindNearestTile` devolve `$FFFFFF00` num chunk vazio e o original lê a RAM ali; o núcleo reproduz.
+
+## Prova da fase da demo, fatia 2 (Marcelo, 09/11/2026, 1170 quadros): `Level_StartGame` alcançado
+
+- Marcas: `Level_Delay` no quadro 1140 e `Level_StartGame` no 1166, o fim da Etapa 7 pelo plano. O núcleo chegou lá sem erro (`Fase(Parado)` a partir do 1167).
+- Esperas de VBlank: 822 do núcleo, todas iguais às do oráculo (`diverge=0`, `z80_diverge=0`). O oráculo tem 826: as 4 a mais são dos quadros 1167 a 1170, depois do fim. `posicao_z80_divergencias=0`. Nenhum aviso. RAM do 68000 e do Z80 com `diverge=0` fora dos trechos atômicos.
+- Quadros de lag do núcleo: 30 (a carga da fase leva cerca de 26 quadros de VBlank sem a espera, e o núcleo os trata como lag, como o oráculo).
+- Escritas conferem por prefixo. As contagens finais diferem só pelos 4 quadros depois do fim (vídeo 96554 contra 96964, PSG 531 contra 543, YM do 68000 2944 contra 3004). O veredito `DIVERGE` vem só dessas contagens.
+- Objetos criados na partida da GHZ1: Sonic, HUD, anéis (`25`) e monitores (`26`). Nenhum outro ID faltou.
+- **Zero divergência do quadro 0 a `Level_StartGame` (1166)** na RAM, nas esperas, no Z80 e na ordem das escritas. Falta a comparação da imagem, da VRAM, da CRAM e da VSRAM por quadro (7.7), o navegador e o fechamento.
