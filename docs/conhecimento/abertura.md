@@ -109,3 +109,9 @@ Medida em ciclos do 68000 (mclk do oráculo dividido por 7), do início ao fim d
 - Escrito: `abertura/objetos.rs` (`ExecuteObjects`, `DisplaySprite`, `BuildSprites` com as quatro orientações, objeto `CreditsText`) e `abertura/titulo.rs` (`GM_Title` até `PaletteFadeIn`, `FadeIn_FromBlack`). Máquina de estados do título: entrada, primeiro desvanecimento (22 VBlanks), carga (`PreparoA`, até a marca `PaletteFadeIn`), aparecimento (22 VBlanks). O resto do título (`Parado`) ainda não existe.
 - Provas sintéticas: `crates/teste-som/tests/objetos.rs` compara `BuildSprites` com um modelo direto nas quatro orientações (peças, ligações, tiles e flips), a ordem por prioridade e a ausência de pânico com mapas e filas aleatórios.
 - Armadilha achada no teste: `adda.w` estende o sinal da palavra; um deslocamento de mapa positivo não pode virar endereço de RAM alta.
+
+## Título, parte A, prova com a ROM real (Marcelo, 09/11/2026, 420 quadros)
+
+- Esperas de VBlank: 173 do oráculo, 173 do núcleo, **173 iguais, 0 divergem**, RAM do Z80 igual em todas. Interrupções de nível 6: 174 contra 174. Posição do Z80: 0 divergências. Escritas do Z80 no YM2612 (54000), do PSG (12) e do YM pelo 68000 (128) iguais em contagem. Marcas: `GM_Title` 328, segundo `DACDriverLoad` 350, `PaletteFadeIn` 371.
+- A única divergência: sequência de BUSREQ e RESET do Z80, índice 618. O segundo `DACDriverLoad` solta o RESET do Z80 quando ele já está solto. O oráculo registra essa escrita; o comparador descartava as que não mudam o estado. Era erro do comparador (a regra "só mudanças" foi deduzida do boot, onde nenhuma escrita repete o estado). Corrigido: agora compara toda escrita.
+- Vídeo: 13414 do núcleo contra 21358 do oráculo, sem divergência de conteúdo no prefixo. A diferença é o resto do título (arte do emblema e do Sonic grande, fundo da Green Hill), parte B, que ainda não existe.

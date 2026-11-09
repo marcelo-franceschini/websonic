@@ -231,8 +231,6 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
     let mut esperadas: [Vec<Escrita>; 5] = Default::default();
     let mut obtidas: [Vec<Escrita>; 5] = Default::default();
     let mut verificadas = [0usize; 5];
-    // Estado inicial do console: BUSREQ solto e Z80 em RESET.
-    let mut z80_estado = [0u32, 1u32];
     let mut descarte = Vec::new();
     oracle_trace::drain_tempo(&mut descarte);
     let mut ultimo_pc = u32::MAX;
@@ -501,13 +499,9 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
         }
         for s in &nucleo.mem.tirar_saidas() {
             if let Some(e) = escrita_do_nucleo(s) {
-                // O oráculo só registra mudanças no BUSREQ e no RESET do Z80.
+                // O oráculo registra toda escrita no BUSREQ e no RESET do Z80, mesmo as que não
+                // mudam o estado (visto no segundo `DACDriverLoad`, que solta um RESET já solto).
                 if e.0 == 4 {
-                    let estado = &mut z80_estado[usize::try_from(e.1).unwrap_or(0).min(1)];
-                    if *estado == e.2 {
-                        continue;
-                    }
-                    *estado = e.2;
                     rel.z80_nucleo.push((e.1, e.2));
                 }
                 obtidas[usize::from(e.0)].push(e);
