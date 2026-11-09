@@ -66,8 +66,160 @@ fn rodar_objeto(m: &mut Memoria, a0: u32, id: u8) -> Result<(), ErroAbertura> {
             credits_text(m, a0);
             Ok(())
         }
+        ID_TITLE_SONIC => titulo_sonic(m, a0),
+        ID_PSBTM => psbtm(m, a0),
         _ => Err(ErroAbertura::NaoImplementado("objeto")),
     }
+}
+
+/// `AnimateSprite` (`_incObj/sub AnimateSprite.asm`): avança o roteiro de animação do objeto
+/// `a0`. `roteiro` é o endereço do roteiro na ROM. Só os códigos de fim `$FF` (recomeça) e `$FE`
+/// (volta alguns quadros) existem nesta versão; os outros devolvem `NaoImplementado`.
+fn animate_sprite(m: &mut Memoria, a0: u32, roteiro: u32) -> Result<(), ErroAbertura> {
+    let animacao = rb(m, a0.wrapping_add(OB_ANIM));
+    if animacao != rb(m, a0.wrapping_add(OB_PREV_ANI)) {
+        wb(m, a0.wrapping_add(OB_PREV_ANI), animacao);
+        wb(m, a0.wrapping_add(OB_ANI_FRAME), 0);
+        wb(m, a0.wrapping_add(OB_TIME_FRAME), 0);
+    }
+    let tempo = rb(m, a0.wrapping_add(OB_TIME_FRAME)).wrapping_sub(1);
+    wb(m, a0.wrapping_add(OB_TIME_FRAME), tempo);
+    // `bpl Anim_Wait`: ainda há tempo neste quadro.
+    if tempo & 0x80 == 0 {
+        return Ok(());
+    }
+    // `Anim_LoadNextFrame`: o deslocamento do roteiro vem da tabela de palavras no início.
+    // `add.w d0,d0` e `adda.w (a1,d0.w),a1`: a palavra da entrada é somada ao próprio `a1`.
+    let entrada = roteiro.wrapping_add(u32::from(animacao).wrapping_mul(2));
+    let roteiro = roteiro.wrapping_add(ext(rom_w(m, entrada)));
+    wb(m, a0.wrapping_add(OB_TIME_FRAME), rom_byte(m, roteiro));
+    let indice = u32::from(rb(m, a0.wrapping_add(OB_ANI_FRAME)));
+    let codigo = rom_byte(m, roteiro.wrapping_add(1).wrapping_add(indice));
+    if codigo & 0x80 == 0 {
+        return animacao_quadro(m, a0, codigo);
+    }
+    match codigo {
+        // `Anim_End_FF`: volta ao começo do roteiro.
+        0xFF => {
+            wb(m, a0.wrapping_add(OB_ANI_FRAME), 0);
+            let primeiro = rom_byte(m, roteiro.wrapping_add(1));
+            animacao_quadro(m, a0, primeiro)
+        }
+        // `Anim_End_FE`: volta um número de quadros dado pelo byte seguinte.
+        0xFE => {
+            let voltar = rom_byte(m, roteiro.wrapping_add(indice).wrapping_add(2));
+            let novo = rb(m, a0.wrapping_add(OB_ANI_FRAME)).wrapping_sub(voltar);
+            wb(m, a0.wrapping_add(OB_ANI_FRAME), novo);
+            let indice_novo = indice.wrapping_sub(u32::from(voltar)) & 0xFF;
+            let quadro = rom_byte(m, roteiro.wrapping_add(indice_novo).wrapping_add(1));
+            animacao_quadro(m, a0, quadro)
+        }
+        _ => Err(ErroAbertura::NaoImplementado("flag de animação")),
+    }
+}
+
+/// `Anim_SetFrameAndFlipFlags`: grava o quadro e os espelhamentos do roteiro (bits 5 e 6 do
+/// código, girados para 0 e 1), e avança o índice do roteiro.
+fn animacao_quadro(m: &mut Memoria, a0: u32, codigo: u8) -> Result<(), ErroAbertura> {
+    wb(m, a0.wrapping_add(OB_FRAME), codigo & 0x1F);
+    let status = rb(m, a0.wrapping_add(OB_STATUS));
+    let espelho = (codigo.rotate_left(3) ^ status) & 0x03;
+    let render = rb(m, a0.wrapping_add(OB_RENDER)) & !0x03;
+    wb(m, a0.wrapping_add(OB_RENDER), render | espelho);
+    let indice = rb(m, a0.wrapping_add(OB_ANI_FRAME)).wrapping_add(1);
+    wb(m, a0.wrapping_add(OB_ANI_FRAME), indice);
+    Ok(())
+}
+
+/// Objeto `TitleSonic` (`0E`, rótulo `TitleSonic`): o Sonic grande que sobe e acena.
+fn titulo_sonic(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
+    match rb(m, a0.wrapping_add(OB_ROUTINE)) {
+        // `TSon_Main`: posição, mapa e arte; depois cai em `TSon_Delay`.
+        0 => {
+            wb(m, a0.wrapping_add(OB_ROUTINE), 2);
+            ww(m, a0.wrapping_add(OB_X), 0x80 + 0x70);
+            ww(m, a0.wrapping_add(OB_SCREENY), 0x80 + 0x5E);
+            wl(m, a0.wrapping_add(OB_MAP), MAP_TSON);
+            ww(m, a0.wrapping_add(OB_GFX), 0x300 | 0x2000);
+            wb(m, a0.wrapping_add(OB_PRIORITY), 1);
+            wb(m, a0.wrapping_add(OB_DELAY_ANI), 30 - 1);
+            animate_sprite(m, a0, ANI_TSON)?;
+            tson_delay(m, a0)
+        }
+        2 => tson_delay(m, a0),
+        4 => tson_move(m, a0),
+        6 => {
+            animate_sprite(m, a0, ANI_TSON)?;
+            display_sprite(m, a0);
+            Ok(())
+        }
+        _ => Err(ErroAbertura::NaoImplementado("rotina do TitleSonic")),
+    }
+}
+
+/// `TSon_Delay`: espera meio segundo, depois passa a subir.
+fn tson_delay(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
+    let espera = rb(m, a0.wrapping_add(OB_DELAY_ANI)).wrapping_sub(1);
+    wb(m, a0.wrapping_add(OB_DELAY_ANI), espera);
+    if espera & 0x80 == 0 {
+        return Ok(());
+    }
+    let rotina = rb(m, a0.wrapping_add(OB_ROUTINE)).wrapping_add(2);
+    wb(m, a0.wrapping_add(OB_ROUTINE), rotina);
+    display_sprite(m, a0);
+    Ok(())
+}
+
+/// `TSon_Move`: sobe Sonic oito pixels por quadro até a posição final.
+fn tson_move(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
+    let y = rw(m, a0.wrapping_add(OB_SCREENY)).wrapping_sub(8);
+    ww(m, a0.wrapping_add(OB_SCREENY), y);
+    if y == 0x80 + 0x16 {
+        let rotina = rb(m, a0.wrapping_add(OB_ROUTINE)).wrapping_add(2);
+        wb(m, a0.wrapping_add(OB_ROUTINE), rotina);
+    }
+    display_sprite(m, a0);
+    Ok(())
+}
+
+/// Objeto `PSBTM` (`0F`): "PRESS START BUTTON", o "TM" e os sprites que escondem o torso.
+/// O quadro carregado decide a variante (`PSB_Main`).
+fn psbtm(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
+    match rb(m, a0.wrapping_add(OB_ROUTINE)) {
+        0 => psb_main(m, a0)?,
+        2 => psb_prs_start(m, a0)?,
+        4 => {}
+        _ => return Err(ErroAbertura::NaoImplementado("rotina do PSBTM")),
+    }
+    display_sprite(m, a0);
+    Ok(())
+}
+
+/// `PSB_Main`: escolhe a variante pelo quadro e pela posição.
+fn psb_main(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
+    wb(m, a0.wrapping_add(OB_ROUTINE), 2);
+    ww(m, a0.wrapping_add(OB_X), 0x80 + 0x50);
+    ww(m, a0.wrapping_add(OB_SCREENY), 0x80 + 0xB0);
+    wl(m, a0.wrapping_add(OB_MAP), MAP_PSB);
+    ww(m, a0.wrapping_add(OB_GFX), 0x200);
+    let quadro = rb(m, a0.wrapping_add(OB_FRAME));
+    if quadro < 2 {
+        return psb_prs_start(m, a0);
+    }
+    // Não é "PRESS START": é "TM" (quadro 3) ou os sprites que escondem o torso (quadro 2).
+    wb(m, a0.wrapping_add(OB_ROUTINE), 4);
+    if quadro != 3 {
+        return Ok(());
+    }
+    ww(m, a0.wrapping_add(OB_GFX), 0x510 | 0x2000);
+    ww(m, a0.wrapping_add(OB_X), 0x80 + 0xF0);
+    ww(m, a0.wrapping_add(OB_SCREENY), 0x80 + 0x78);
+    Ok(())
+}
+
+/// `PSB_PrsStart`: a palavra "PRESS START" pisca.
+fn psb_prs_start(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
+    animate_sprite(m, a0, ANI_PSBTM)
 }
 
 /// Objeto `CreditsText` (`8A`): "SONIC TEAM PRESENTS" e os créditos.

@@ -13,6 +13,8 @@ use crate::som::driver::Driver;
 /// Índice de `v_vblank_routine` (já mascarado com `$3E`).
 pub const ROTINA_SEGA: u8 = 0x02;
 pub const ROTINA_PALETTE_FADE: u8 = 0x12;
+/// Índice de `VBlank_Title` (quadro da tela do título).
+pub const ROTINA_TITULO: u8 = 0x04;
 pub const ROTINA_SEGA_PCM: u8 = 0x14;
 
 /// Macros `writeCRAM` e `writeVRAM`: DMA do 68000 para a VDP. `cram` escolhe o tipo de destino.
@@ -110,7 +112,8 @@ pub fn tratar(m: &mut Memoria) -> Result<(), ErroAbertura> {
                 standard_transfers(m)?;
                 let h = rw(m, V_HBLANK_HREG);
                 ww(m, VDP_CONTROLE, h);
-                // `ProcessPLC_9Tiles` sem fila de arte não faz nada visível (só lê a RAM).
+                // `ProcessPLC_9Tiles`: até 9 tiles da fila de arte, se houver arte em curso.
+                super::plc::process_plc_9(m);
             }
             _ => return Err(ErroAbertura::NaoImplementado("rotina de VBlank")),
         }

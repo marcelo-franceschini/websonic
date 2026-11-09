@@ -2,6 +2,7 @@
 
 use super::boot::rom_w;
 use super::cenario;
+use super::desenho;
 use super::objetos::{build_sprites, execute_objects};
 use super::ram::*;
 use super::sega::{clear_screen, copy_tilemap, pal_load_para};
@@ -108,6 +109,46 @@ pub fn parte_b1(m: &mut Memoria) -> Result<(), ErroAbertura> {
     rotinas::eni_dec(m, BLK16_GHZ, V_16X16, 0).map_err(rot)?;
     rotinas::kos_dec(m, BLK256_GHZ, V_256X256).map_err(rot)?;
     cenario::level_layout_load(m)
+}
+
+/// Parte C do título (linhas 1996 a 2070 de `GM_Title`): limpa a tela, desenha o fundo da GHZ,
+/// carrega o emblema, a arte da GHZ e a paleta, toca a música, cria os objetos do título,
+/// enfileira a arte de `plcid_Main` e liga a tela. Termina na chamada de `PaletteFadeIn`.
+pub fn parte_c(m: &mut Memoria) -> Result<(), ErroAbertura> {
+    clear_screen(m)?;
+    // `DrawChunks` com a posição do fundo, o layout de fundo e a base $6000 do plano de fundo.
+    desenho::draw_chunks(m, V_BGSCREENPOSX, V_LVLLAYOUT_BG, 0x6000);
+    // Emblema: EniDec para o buffer, depois a cópia para o plano A em (34, 22), a partir de $206.
+    rotinas::eni_dec(m, ENI_TITLE, V_RAM_START, 0).map_err(rot)?;
+    copy_tilemap(m, V_RAM_START, 0xC000 + 0x206, 34, 22);
+    wl(m, VDP_CONTROLE, loc_vram(0));
+    rotinas::nem_dec(m, NEM_GHZ_1ST).map_err(rot)?;
+    pal_load_para(m, PALID_TITLE, 0x80);
+    // `QueueSound2`: a música do título vai para a fila do driver.
+    wb(m, V_SOUNDQUEUE1, BGM_TITLE);
+    wb(m, F_DEBUGMODE, 0);
+    ww(m, V_GENERICTIMER, 376);
+    // `clearRAM v_sonicteam,v_sonicteam+object_size/2`: só metade do objeto (FixBugs = 0).
+    zerar(m, V_SONICTEAM, V_SONICTEAM.wrapping_add(0x20));
+    wb(m, V_TITLESONIC, ID_TITLE_SONIC);
+    wb(m, V_PRESSSTART, ID_PSBTM);
+    // REV01: o "TM" só entra com o bit 7 de `v_megadrive` ligado (`bpl .isjap`).
+    if rb(m, V_MEGADRIVE) & 0x80 != 0 {
+        wb(m, V_TITLETM, ID_PSBTM);
+        wb(m, V_TITLETM.wrapping_add(OB_FRAME), 3);
+    }
+    wb(m, V_TTLSONICHIDE, ID_PSBTM);
+    wb(m, V_TTLSONICHIDE.wrapping_add(OB_FRAME), 2);
+    execute_objects(m)?;
+    cenario::deform_layers(m)?;
+    build_sprites(m)?;
+    super::plc::new_plc(m, PLCID_MAIN);
+    ww(m, V_TITLE_DCOUNT, 0);
+    ww(m, V_TITLE_CCOUNT, 0);
+    // `enable_display`: liga o bit 6 do registrador 1 guardado.
+    let b = rw(m, V_VDP_BUFFER1);
+    ww(m, VDP_CONTROLE, (b & 0xFF00) | (b & 0xFF) | 0x40);
+    Ok(())
 }
 
 /// Começo de `PaletteFadeOut`: a paleta inteira (a partir de 0) e o pedido do primeiro VBlank do

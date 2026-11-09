@@ -195,3 +195,45 @@ pub const ARTTILE_TITLE_FOREGROUND: u16 = 0x200;
 pub const ARTTILE_TITLE_SONIC: u16 = 0x300;
 pub const ARTTILE_TITLE_TRADEMARK: u16 = 0x510;
 pub const ARTTILE_LEVEL_SELECT_FONT: u16 = 0x680;
+
+// Fila de arte (`v_plc_*`): o estado da descompressão Nemesis por quadro fica nestas variáveis.
+pub const V_PLC_BUFFER_DEST: u32 = 0xFF_F684;
+pub const V_PLC_BUFFER_ONLY_END: u32 = 0xFF_F6E0;
+pub const V_PLC_PTRNEMCODE: u32 = 0xFF_F6E0;
+pub const V_PLC_REPEATCOUNT: u32 = 0xFF_F6E4;
+pub const V_PLC_PALETTEINDEX: u32 = 0xFF_F6E8;
+pub const V_PLC_PREVIOUSROW: u32 = 0xFF_F6EC;
+pub const V_PLC_DATAWORD: u32 = 0xFF_F6F0;
+pub const V_PLC_SHIFTVALUE: u32 = 0xFF_F6F4;
+pub const V_PLC_PATTERNSLEFT: u32 = 0xFF_F6F8;
+pub const V_PLC_FRAMEPATTERNSLEFT: u32 = 0xFF_F6FA;
+/// Tamanho de uma entrada da fila (`plc_slot_size`): longa do endereço da arte e palavra da VRAM.
+pub const PLC_SLOT_SIZE: u32 = 6;
+/// Rótulo `ArtLoadCues`: lista de PLCs. O `plcid_Main` é o índice zero.
+pub const ART_LOAD_CUES: u32 = 0x1_DD86;
+pub const PLCID_MAIN: u16 = 0;
+/// Rotinas de escrita do Nemesis por quadro: o endereço delas é o que `v_plc_ptrnemcode` guarda.
+pub const NEM_PCD_WRITE_ROW_TO_VDP: u32 = 0x14FA;
+pub const NEM_PCD_WRITE_ROW_TO_VDP_XOR: u32 = 0x1504;
+pub const NEM_GHZ_1ST: u32 = 0x3_CB3C;
+pub const ENI_TITLE: u32 = 0x1_EC6C;
+pub const PALID_TITLE: u32 = 1;
+pub const BGM_TITLE: u8 = 0x8A;
+pub const F_DEBUGMODE: u32 = 0xFF_FFFA;
+pub const V_TITLE_DCOUNT: u32 = 0xFF_FFE4;
+pub const V_TITLE_CCOUNT: u32 = 0xFF_FFE6;
+
+// Objetos da tela do título (0E, 0F) e campos de animação.
+pub const ID_TITLE_SONIC: u8 = 0x0E;
+pub const ID_PSBTM: u8 = 0x0F;
+pub const OB_ANI_FRAME: u32 = 0x1B;
+pub const OB_ANIM: u32 = 0x1C;
+pub const OB_PREV_ANI: u32 = 0x1D;
+pub const OB_TIME_FRAME: u32 = 0x1E;
+pub const OB_DELAY_ANI: u32 = 0x1F;
+pub const ANI_TSON: u32 = 0xAD8E;
+pub const ANI_PSBTM: u32 = 0xAD9C;
+pub const MAP_TSON: u32 = 0xAF12;
+pub const MAP_PSB: u32 = 0xAE4E;
+/// Rótulo `Tit_MainLoop`: começo do laço do título, depois da parte C.
+pub const TIT_MAIN_LOOP: u32 = 0x315E;

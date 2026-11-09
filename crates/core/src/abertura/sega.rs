@@ -15,18 +15,9 @@ fn rotina(e: rotinas::ErroRotina) -> ErroAbertura {
 /// `QueueSound2` com o comando de parar a música; `ClearPLC`; começo de `PaletteFadeOut`.
 pub fn gm_sega_inicio(m: &mut Memoria) {
     wb(m, V_SOUNDQUEUE1, BGM_STOP);
-    clear_plc(m);
+    super::plc::clear_plc(m);
     ww(m, V_PFADE_START, 0x003F);
     wb(m, V_VBLANK_ROUTINE, super::vblank::ROTINA_PALETTE_FADE);
-}
-
-/// `ClearPLC`: zera a fila de arte.
-fn clear_plc(m: &mut Memoria) {
-    let mut a = V_PLC_BUFFER;
-    while a < V_PLC_BUFFER_END {
-        wl(m, a, 0);
-        a = a.wrapping_add(4);
-    }
 }
 
 /// `FadeOut_DecColor`: apaga um passo de um canal da cor em `a`. Devolve o endereço seguinte.

@@ -148,3 +148,24 @@ Limites conhecidos desta fatia (ver `docs/backlog.md`): a fase é a GHZ1 sem lam
 - O núcleo entrou em `Titulo(Parado)` no quadro 477, depois do desvanecimento. Dali em diante ele ignora as VBlanks (97 ignoradas, de 505 a 600). Isso é o limite da fatia, não divergência.
 - O veredito continua `DIVERGE` só na contagem final: vídeo 27146 contra 42999, PSG 12 contra 48, YM do 68000 128 contra 582, Z80 798 contra 1226. As diferenças são a parte C (`ClearScreen`, `DrawChunks`, emblema, música e objetos do título), que é a fatia 2. Não há divergência no prefixo.
 - Limite da comparação: `ram68k` com `diverge_em_trecho_atomico=533` não é comparada nesses quadros. A RAM da parte B só é provada nas esperas de VBlank, que é o que D7.13 pede.
+
+## Título, parte B, fatia 2 e parte C (7.5, 09/11/2026): fila de arte, fundo e objetos do título
+
+Escrito, sem prova com a ROM ainda. Rodada pendente: `sh scripts/etapa7-bloco2.sh ROM 530`, que deve mostrar a marca `Tit_MainLoop` no quadro 526.
+
+- **O que roda.** Da chamada de `PaletteFadeOut` (segunda vez, quadro 455 na rodada anterior) até a marca `Tit_MainLoop`: a parte C (`parte_c` em `titulo.rs`), o desvanecimento de aparecimento com 22 VBlanks e a fila de arte, e o primeiro VBlank do título, que fica pendente. Os passos ficam em `mod.rs` (`PreparoC`, `FadeInC`, `PreparoTit`).
+- **Fila de arte (`plc.rs`).** `NewPLC`, `ClearPLC`, `RunPLC`, `ProcessPLC_9Tiles` e `ProcessPLC`. A descompressão Nemesis anda uma linha de 8 pixels por vez. O estado entre os quadros fica nas variáveis `v_plc_*` da RAM, do mesmo jeito que no original, e a comparação enxerga cada uma delas.
+- **Desenho do fundo (`desenho.rs`).** `DrawChunks`, `DrawBlocks_LR_2`, `GetBlockData`, `DrawBlock` e `Calc_VRAM_Pos`, com as quatro combinações de flip.
+- **Objetos (`objetos.rs`).** `TitleSonic` (0E, rotinas 0 a 6) e `PSBTM` (0F, rotinas 0 a 4), com `AnimateSprite` para os códigos de fim `$FF` e `$FE`. Os outros códigos devolvem `NaoImplementado`.
+- **Artes e dados da ROM.** Tudo vem da ROM do usuário pelos rótulos: `ArtLoadCues`, `Eni_Title`, `Nem_GHZ_1st`, `Ani_TSon`, `Ani_PSBTM`, `Map_TSon`, `Map_PSB`. A música é `bgm_Title = $8A`, que vai para `v_soundqueue1`. A paleta é `palid_Title = 1`.
+
+Decisões desta fatia:
+
+- **D7.18. A fatia 2 termina na marca `Tit_MainLoop`.** A marca chega logo antes da primeira espera do laço do título. Assim a fatia termina numa espera, como D7.13 pede. O VBlank do título (rotina `$04`) ainda não existe, e entra na fatia 3.
+- **D7.19. Fila de arte por quadro com o estado em RAM.** O decodificador segue `NemPCD_NewRow`, `NemPCD_ProcessCompressedData` e `NemDec_BuildCodeTable` do disassembly, lendo a tabela de códigos de `v_ngfx_buffer`. Um teste sintético confere que, em dois quadros (9 e 3 tiles) e no modo XOR, as escritas na VDP são iguais às do `NemDec` completo, e que a tabela na RAM é igual.
+- **D7.20. Chunk zero e `a0` (risco).** Em `GetBlockData`, um chunk zero não atualiza `a0`, e `DrawBlock` lê as flags de `(a0)`. O original usa o que sobrou no registrador. Aqui `a0` começa em zero, dentro de `draw_chunks`. Se a comparação acusar diferença nas linhas do fundo, esta é a causa provável.
+- **D7.21. Parte alta de `d5` (risco).** O `RunPLC` guarda `d5` em `v_plc_dataword`. A parte alta desse registrador no original é o que sobrou de instruções anteriores, e aqui é zero. Se a comparação acusar diferença nessa variável, esta é a causa.
+- **D7.22. Fim da arte sem limpar a última posição.** `ProcessPLC_ShiftCue` (FixBugs = 0) não limpa a última posição da fila, como no original. Isso é o comportamento da referência, não um bug do núcleo.
+- **D7.23. Animação parcial.** `AnimateSprite` cobre os códigos `$FF` e `$FE`. Se o roteiro da tela do título usar outro código, o núcleo para com `NaoImplementado("flag de animação")` e não segue em silêncio.
+
+Provas sem a ROM: `cargo test -q -p sonic1-core -p sonic1-teste-som` (todos passam, inclusive `crates/teste-som/tests/plc.rs` com 3 testes), `cargo clippy --workspace --all-targets -- -D warnings` (sem erro), `cargo fmt` aplicado.
