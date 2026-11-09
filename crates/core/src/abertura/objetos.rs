@@ -71,8 +71,141 @@ fn rodar_objeto(m: &mut Memoria, a0: u32, id: u8) -> Result<(), ErroAbertura> {
         ID_TITLE_CARD => cartao_de_titulo(m, a0),
         ID_SONIC => super::fisica::sonic_player(m, a0),
         ID_HUD => hud_objeto(m, a0),
+        ID_RINGS => aneis(m, a0),
         outro => Err(ErroAbertura::ObjetoNaoImplementado(outro)),
     }
+}
+
+/// Deslocamento (X, Y) entre os anéis de uma fileira, por subtipo (`Ring_PosData`).
+const RING_POS_DATA: [(i8, i8); 16] = [
+    (0x10, 0),
+    (0x18, 0),
+    (0x20, 0),
+    (0, 0x10),
+    (0, 0x18),
+    (0, 0x20),
+    (0x10, 0x10),
+    (0x18, 0x18),
+    (0x20, 0x20),
+    (-0x10, 0x10),
+    (-0x18, 0x18),
+    (-0x20, 0x20),
+    (0x10, 8),
+    (0x18, 0x10),
+    (-0x10, 8),
+    (-0x18, 0x10),
+];
+/// `ring_origX` e `ring_respawnbit` (`objoff_32` e `objoff_34`).
+const RING_ORIGX: u32 = 0x32;
+const RING_RESPAWNBIT: u32 = 0x34;
+/// `col_12x12|col_item`.
+const COL_ANEL: u8 = 0x47;
+
+/// Objeto `Rings` (`25`): um grupo de anéis. A rotina 0 cria os anéis da fileira (o primeiro é o
+/// próprio objeto), e a rotina 2 mostra o quadro global e some quando sai da janela.
+fn aneis(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
+    match rb(m, a0.wrapping_add(OB_ROUTINE)) {
+        0 => ring_main(m, a0),
+        2 => {
+            ring_animate(m, a0);
+            Ok(())
+        }
+        8 => {
+            delete_object(m, a0);
+            Ok(())
+        }
+        _ => Err(ErroAbertura::NaoImplementado("anel coletado")),
+    }
+}
+
+/// `Ring_Animate` (FixBugs = 0): mostra o anel e depois confere se saiu da janela.
+fn ring_animate(m: &mut Memoria, a0: u32) {
+    let quadro = rb(m, V_ANI1_FRAME);
+    wb(m, a0.wrapping_add(OB_FRAME), quadro);
+    display_sprite(m, a0);
+    let origem = rw(m, a0.wrapping_add(RING_ORIGX));
+    if fora_da_janela(m, origem) {
+        delete_object(m, a0);
+    }
+}
+
+/// `out_of_range`: a posição X, em blocos de $80, fica a mais de `128+320+192` da câmera.
+pub fn fora_da_janela(m: &mut Memoria, x: u16) -> bool {
+    let d0 = x & 0xFF80;
+    let d1 = rw(m, V_SCREENPOSX).wrapping_sub(128) & 0xFF80;
+    d0.wrapping_sub(d1) > 128 + 320 + 192
+}
+
+/// `Ring_Main`: cria os anéis da fileira que ainda não foram coletados.
+fn ring_main(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
+    let a2 = V_OBJSTATE
+        .wrapping_add(2)
+        .wrapping_add(u32::from(rb(m, a0.wrapping_add(OB_RESPAWNNO))));
+    let mut d4 = rb(m, a2);
+    let subtipo = rb(m, a0.wrapping_add(OB_SUBTYPE));
+    let mut restam = u16::from(subtipo & 7);
+    if restam == 7 {
+        restam = 6;
+    }
+    let (dx, dy) = RING_POS_DATA
+        .get(usize::from(subtipo >> 4))
+        .copied()
+        .unwrap_or((0, 0));
+    let dx = u16::from_be_bytes(i16::from(dx).to_be_bytes());
+    let dy = u16::from_be_bytes(i16::from(dy).to_be_bytes());
+    let mut d2 = rw(m, a0.wrapping_add(OB_X));
+    let mut d3 = rw(m, a0.wrapping_add(OB_Y));
+    let mut indice = 0u8;
+    let mut a1 = a0;
+    let mut primeiro = true;
+    loop {
+        let coletado = d4 & 1 != 0;
+        d4 >>= 1;
+        if !coletado {
+            let b = rb(m, a2) & 0x7F;
+            wb(m, a2, b);
+            if !primeiro {
+                a1 = V_LVLOBJSPACE;
+                while a1 < V_LVLOBJEND && rb(m, a1.wrapping_add(OB_ID)) != 0 {
+                    a1 = a1.wrapping_add(OBJECT_SIZE);
+                }
+                if a1 >= V_LVLOBJEND {
+                    break;
+                }
+            }
+            wb(m, a1.wrapping_add(OB_ID), ID_RINGS);
+            let r = rb(m, a1.wrapping_add(OB_ROUTINE)).wrapping_add(2);
+            wb(m, a1.wrapping_add(OB_ROUTINE), r);
+            ww(m, a1.wrapping_add(OB_X), d2);
+            let origem = rw(m, a0.wrapping_add(OB_X));
+            ww(m, a1.wrapping_add(RING_ORIGX), origem);
+            ww(m, a1.wrapping_add(OB_Y), d3);
+            wl(m, a1.wrapping_add(OB_MAP), MAP_RING);
+            ww(m, a1.wrapping_add(OB_GFX), ARTTILE_RING | 0x2000);
+            wb(m, a1.wrapping_add(OB_RENDER), 4);
+            wb(m, a1.wrapping_add(OB_PRIORITY), 2);
+            wb(m, a1.wrapping_add(OB_COLTYPE), COL_ANEL);
+            wb(m, a1.wrapping_add(OB_ACTWID), 16 / 2);
+            let n = rb(m, a0.wrapping_add(OB_RESPAWNNO));
+            wb(m, a1.wrapping_add(OB_RESPAWNNO), n);
+            wb(m, a1.wrapping_add(RING_RESPAWNBIT), indice);
+        }
+        primeiro = false;
+        indice = indice.wrapping_add(1);
+        d2 = d2.wrapping_add(dx);
+        d3 = d3.wrapping_add(dy);
+        if restam == 0 {
+            break;
+        }
+        restam = restam.wrapping_sub(1);
+    }
+    // O primeiro anel já coletado: este objeto não vira anel e some.
+    if rb(m, a2) & 1 != 0 {
+        delete_object(m, a0);
+        return Ok(());
+    }
+    ring_animate(m, a0);
+    Ok(())
 }
 
 /// Objeto `HUD` (`21`): o painel de pontos, tempo e anéis. Pisca o quadro dos anéis ou do tempo.
