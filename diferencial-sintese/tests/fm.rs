@@ -436,3 +436,263 @@ fn diag_taxas_op() {
         println!("op{o} d1r{d1r} bloco{bloco}: {r:?}");
     } } }
 }
+
+/// Calibracao da regra de gravacao por classe de registrador.
+struct Cenario { classe: usize, base: Vec<(u8, u8)>, alvo: u8, valor: u8 }
+
+fn cenarios() -> Vec<Cenario> {
+    // Escritas comuns (por canal; os enderecos sao somados ao canal depois).
+    let comum = |tl0: u8, ar: u8, d1r: u8, d2r: u8, slrr: u8, fb_algo: u8| -> Vec<(u8, u8)> {
+        let mut v = vec![(0xB0, fb_algo), (0xB4, 0xC0)];
+        for o in 0..4u8 {
+            let ativo = o == 0;
+            v.push((0x30 + 4 * o, 0x01));
+            v.push((0x40 + 4 * o, if ativo { tl0 } else { 0x7F }));
+            v.push((0x50 + 4 * o, ar));
+            v.push((0x60 + 4 * o, d1r));
+            v.push((0x70 + 4 * o, d2r));
+            v.push((0x80 + 4 * o, slrr));
+        }
+        v.push((0xA4, 0x22));
+        v.push((0xA0, 0x69));
+        v
+    };
+    vec![
+        Cenario { classe: 0, base: comum(0, 0x1F, 0, 0, 0x0F, 7), alvo: 0x30, valor: 0x03 },
+        Cenario { classe: 1, base: comum(0, 0x1F, 0, 0, 0x0F, 7), alvo: 0x40, valor: 0x28 },
+        Cenario { classe: 2, base: comum(0, 0x0A, 0, 0, 0x0F, 7), alvo: 0x50, valor: 0x15 },
+        Cenario { classe: 3, base: comum(0, 0x1F, 0x0A, 0, 0xF0, 7), alvo: 0x60, valor: 0x14 },
+        Cenario { classe: 4, base: comum(0, 0x1F, 0, 0x0A, 0x00, 7), alvo: 0x70, valor: 0x14 },
+        Cenario { classe: 5, base: comum(0, 0x1F, 0x0A, 0, 0xF0, 7), alvo: 0x80, valor: 0x20 },
+        Cenario { classe: 6, base: comum(0, 0x1F, 0, 0, 0x0F, 7), alvo: 0xA0, valor: 0xC0 },
+        Cenario { classe: 7, base: comum(0, 0x1F, 0, 0, 0x0F, 7), alvo: 0xA4, valor: 0x1A },
+        Cenario { classe: 8, base: comum(0, 0x1F, 0, 0, 0x0F, 7), alvo: 0xB0, valor: 0x2F },
+        Cenario { classe: 9, base: comum(0, 0x1F, 0, 0, 0x0F, 7), alvo: 0xB4, valor: 0x80 },
+        Cenario { classe: 12, base: { let mut b = comum(0x7F, 0x1F, 0, 0, 0x0F, 7); b.extend([(0x2B, 0x80), (0x2A, 0x20)]); b }, alvo: 0x2A, valor: 0xE0 },
+        Cenario { classe: 13, base: { let mut b = comum(0x7F, 0x1F, 0, 0, 0x0F, 7); b.extend([(0x2A, 0xE0), (0x2B, 0x00)]); b }, alvo: 0x2B, valor: 0x80 },
+    ]
+}
+
+/// Roda uma cena em um chip qualquer (via fechamentos) e devolve o fluxo do pino.
+fn fluxo_cena<F: FnMut() -> (i16, i16), W: FnMut(u32, u8)>(c: &Cenario, ch: u8, j: usize, mut ciclo: F, mut escreve: W) -> Vec<(i16, i16)> {
+    let (parte, off) = if ch < 3 { (0u32, ch) } else { (2, ch - 3) };
+    for &(a, d) in &c.base { escreve(parte, if a < 0x30 { a } else { a + off }); for _ in 0..4 { ciclo(); } escreve(parte + 1, d); for _ in 0..48 { ciclo(); } }
+    escreve(0, 0x28); for _ in 0..4 { ciclo(); } escreve(1, 0xF0 | if ch < 3 { ch } else { ch + 1 }); 
+    for _ in 0..24 * 60 { ciclo(); }
+    // Alinha a 24 ciclos pelo contador de chamadas: a cena inteira conta chamadas em `ciclo`.
+    escreve(parte, if c.alvo < 0x30 { c.alvo } else { c.alvo + off });
+    for _ in 0..48 { ciclo(); }
+    for _ in 0..j { ciclo(); }
+    escreve(parte + 1, c.valor);
+    (0..24 * 50).map(|_| ciclo()).collect()
+}
+
+#[test]
+#[ignore]
+fn diag_calibra_classes() {
+    let cs = cenarios();
+    let so: Vec<usize> = std::env::var("CLASSES").unwrap_or_default().split(',').filter_map(|x| x.parse().ok()).collect();
+    for c in &cs {
+        if !so.is_empty() && !so.contains(&c.classe) { continue; }
+        let mut refs: Vec<(u8, usize, Vec<(i16, i16)>)> = Vec::new();
+        for &ch in &[0u8, 2] { for j in 0..24usize {
+            let mut r = RefOpn2::novo();
+            let rp = std::cell::RefCell::new(&mut r);
+            let f = fluxo_cena(c, ch, j, || rp.borrow_mut().ciclo(), |p, v| rp.borrow_mut().escreve(p, v));
+            refs.push((ch, j, f));
+        } }
+        let mut boas = Vec::new();
+        for dp in 0..1u32 { for fase in 0..25u64 { for atraso in 0..40u64 {
+            let mut ok = true;
+            for (ch, j, ref_f) in &refs {
+                let mut a = Fm::novo();
+
+                let _ = (dp, fase, atraso);
+                let ap = std::cell::RefCell::new(&mut a);
+                let f = fluxo_cena(c, *ch, *j, || ap.borrow_mut().ciclo(), |p, v| ap.borrow_mut().escreve(p, v));
+                if &f != ref_f { ok = false; break; }
+            }
+            if ok { boas.push((dp, fase, atraso)); }
+        } } }
+        println!("classe {} ({:02X}): combinacoes boas {:?}", c.classe, c.alvo, &boas[..boas.len().min(8)]);
+    }
+}
+
+#[test]
+#[ignore]
+fn diag_pan() {
+    let cs = cenarios();
+    let c = &cs[10];
+    for j in [0usize, 6, 12, 18] {
+        let mut r = RefOpn2::novo();
+        let rp = std::cell::RefCell::new(&mut r);
+        let fr = fluxo_cena(c, 0, j, || rp.borrow_mut().ciclo(), |p, v| rp.borrow_mut().escreve(p, v));
+        let mut a = Fm::novo();
+        let ap = std::cell::RefCell::new(&mut a);
+        let fa = fluxo_cena(c, 0, j, || ap.borrow_mut().ciclo(), |p, v| ap.borrow_mut().escreve(p, v));
+        let d = fr.iter().zip(fa.iter()).position(|(x, y)| x != y);
+        println!("j{j}: primeira diferenca {:?} ref {:?} nucleo {:?}", d, d.map(|k| fr[k]), d.map(|k| fa[k]));
+        if let Some(k) = d { println!("  ref {:?}\n  mine {:?}", &fr[k.saturating_sub(2)..k + 6], &fa[k.saturating_sub(2)..k + 6]); }
+    }
+}
+
+/// Escritas aleatorias em instantes aleatorios, so nos registradores que o jogo usa, mais o DAC.
+fn dinamico(g: &mut Rng, n: usize) -> Vec<(usize, u32, u8)> {
+    // (ciclos de espera antes, porta, valor)
+    let mut e: Vec<(usize, u32, u8)> = Vec::new();
+    let mut w = |e: &mut Vec<(usize, u32, u8)>, gap: usize, parte: u32, a: u8, d: u8| { e.push((gap, parte, a)); e.push((4 + gap % 3, parte + 1, d)); };
+    // configuracao inicial
+    for ch in 0..6u8 {
+        let (p, off) = if ch < 3 { (0u32, ch) } else { (2, ch - 3) };
+        w(&mut e, 10, p, 0xB0 + off, (g.ate(8) as u8) | ((g.ate(4) as u8) << 3));
+        w(&mut e, 10, p, 0xB4 + off, 0xC0);
+        for o in 0..4u8 {
+            w(&mut e, 10, p, 0x30 + off + 4 * o, ((g.ate(8) as u8) << 4) | g.ate(16) as u8);
+            w(&mut e, 10, p, 0x40 + off + 4 * o, g.ate(60) as u8);
+            w(&mut e, 10, p, 0x50 + off + 4 * o, ((g.ate(4) as u8) << 6) | (10 + g.ate(22) as u8));
+            w(&mut e, 10, p, 0x60 + off + 4 * o, g.ate(20) as u8);
+            w(&mut e, 10, p, 0x70 + off + 4 * o, g.ate(20) as u8);
+            w(&mut e, 10, p, 0x80 + off + 4 * o, ((g.ate(16) as u8) << 4) | g.ate(16) as u8);
+        }
+        w(&mut e, 10, p, 0xA4 + off, ((g.ate(8) as u8) << 3) | g.ate(8) as u8);
+        w(&mut e, 10, p, 0xA0 + off, g.ate(256) as u8);
+    }
+    for _ in 0..n {
+        let gap = 1 + g.ate(300) as usize;
+        let ch = g.ate(6) as u8;
+        let (p, off) = if ch < 3 { (0u32, ch) } else { (2, ch - 3) };
+        match g.ate(8) {
+            0 => { let k = if ch < 3 { ch } else { ch + 1 }; w(&mut e, gap, 0, 0x28, ((g.ate(16) as u8) << 4) | k); }
+            1 => w(&mut e, gap, p, 0x40 + off + 4 * g.ate(4) as u8, g.ate(70) as u8),
+            2 => { w(&mut e, gap, p, 0xA4 + off, ((g.ate(8) as u8) << 3) | g.ate(8) as u8); w(&mut e, 20, p, 0xA0 + off, g.ate(256) as u8); }
+            3 => w(&mut e, gap, p, 0xB4 + off, ((g.ate(2) as u8) << 7) | ((g.ate(2) as u8) << 6)),
+            4 => w(&mut e, gap, p, 0x30 + off + 4 * g.ate(4) as u8, ((g.ate(8) as u8) << 4) | g.ate(16) as u8),
+            5 => w(&mut e, gap, p, 0xB0 + off, (g.ate(8) as u8) | ((g.ate(4) as u8) << 3)),
+            6 => w(&mut e, gap, 0, 0x2A, g.ate(256) as u8),
+            _ => w(&mut e, gap, 0, 0x2B, (g.ate(2) as u8) << 7),
+        }
+    }
+    e
+}
+
+fn compara_dinamico(e: &[(usize, u32, u8)], cauda: usize) -> Result<(), String> {
+    let mut a = Fm::novo();
+    let mut r = RefOpn2::novo();
+    let mut c = 0usize;
+    for &(gap, p, v) in e {
+        for _ in 0..gap {
+            let (x, y) = (a.ciclo(), r.ciclo());
+            c += 1;
+            if x != y { return Err(format!("ciclo {c} (amostra {}, pos {}): nucleo {x:?} ref {y:?}", c / 24, c % 24)); }
+        }
+        a.escreve(p, v); r.escreve(p, v);
+    }
+    for _ in 0..cauda {
+        let (x, y) = (a.ciclo(), r.ciclo());
+        c += 1;
+        if x != y { return Err(format!("ciclo {c} (amostra {}, pos {}): nucleo {x:?} ref {y:?}", c / 24, c % 24)); }
+    }
+    Ok(())
+}
+
+#[test]
+fn dinamico_aleatorio() {
+    let mut falhas = Vec::new();
+    for s in 1..=25u64 {
+        let mut g = Rng(s.wrapping_mul(0x9E3779B97F4A7C15) | 1);
+        let e = dinamico(&mut g, 150);
+        if let Err(m) = compara_dinamico(&e, 24 * 100) { falhas.push(format!("semente {s}: {m}")); }
+    }
+    assert!(falhas.is_empty(), "{} falhas:\n{}", falhas.len(), falhas.join("\n"));
+}
+
+
+#[test]
+#[ignore]
+fn diag_dinamico() {
+    for s in 1..=25u64 {
+        let mut g = Rng(s.wrapping_mul(0x9E3779B97F4A7C15) | 1);
+        let e = dinamico(&mut g, 150);
+        let mut a = Fm::novo();
+        let mut r = RefOpn2::novo();
+        let mut c = 0usize;
+        'fim: for (k, &(gap, p, v)) in e.iter().enumerate() {
+            for _ in 0..gap {
+                a.ciclo(); r.ciclo(); c += 1;
+                if c % 24 == 7 {
+                    let (fa, fr) = (a.diag_saida_op(), r.estado(3));
+                    let (ca, cr) = (a.diag_saida_canal(), r.estado(4));
+                    let (ea, er) = (a.diag_eg(), r.estado(1));
+                    let ult = &e[k.saturating_sub(5)..k];
+                    for i in 0..24 { if i32::from(ea[i]) != er[i] { println!("s{s} amostra {}: EG slot {i} ref {} nucleo {} | {:02X?}", c / 24, er[i], ea[i], ult); break 'fim; } }
+                    for i in 0..24 { if fa[i] != fr[i] { println!("s{s} amostra {}: fm_out slot {i} ref {} nucleo {} | {:02X?}", c / 24, fr[i], fa[i], ult); break 'fim; } }
+                    for i in 0..6 { if ca[i] != cr[i] && i != 5 { println!("s{s} amostra {}: ch_out {i} ref {} nucleo {} | {:02X?}", c / 24, cr[i], ca[i], ult); break 'fim; } }
+                }
+            }
+            a.escreve(p, v); r.escreve(p, v);
+        }
+    }
+}
+
+#[test]
+#[ignore]
+fn diag_kon_serie() {
+    let s = 2u64; let slot = 9usize; let canal_alvo = 3usize;
+    let mut g = Rng(s.wrapping_mul(0x9E3779B97F4A7C15) | 1);
+    let e = dinamico(&mut g, 150);
+    let mut a = Fm::novo();
+    let mut r = RefOpn2::novo();
+    let mut c = 0usize;
+    let mut ultimo_eg = (0i32, 0i32);
+    for &(gap, p, v) in &e {
+        for _ in 0..gap {
+            a.ciclo(); r.ciclo(); c += 1;
+            if c % 24 == 7 && c / 24 >= 90 && c / 24 <= 130 {
+                let cur = (r.estado(1)[slot], i32::from(a.diag_eg()[slot]));
+                if cur != ultimo_eg { println!("amostra {} (ciclo {c}): slot{slot} ref {} nucleo {}", c / 24, cur.0, cur.1); ultimo_eg = cur; }
+            }
+        }
+        if p == 1 && false { }
+        a.escreve(p, v); r.escreve(p, v);
+        if p == 1 && e.iter().any(|_| true) { }
+    }
+    let _ = canal_alvo;
+}
+
+#[test]
+#[ignore]
+fn diag_kon_escritas() {
+    let mut g = Rng(2u64.wrapping_mul(0x9E3779B97F4A7C15) | 1);
+    let e = dinamico(&mut g, 150);
+    let mut c = 0usize; let mut ult_addr = 0u8;
+    for &(gap, p, v) in &e {
+        c += gap;
+        if p == 0 { ult_addr = v; }
+        if p == 1 && ult_addr == 0x28 && c / 24 >= 60 && c / 24 <= 130 { println!("kon em ciclo {c} (amostra {}, fase {}): valor {v:02X}", c / 24, c % 24); }
+    }
+}
+
+/// Serie de uma camada em torno de uma amostra, para uma semente do teste dinamico.
+fn serie(s: u64, de: usize, ate: usize, f: &dyn Fn(&Fm, &RefOpn2) -> String) {
+    let mut g = Rng(s.wrapping_mul(0x9E3779B97F4A7C15) | 1);
+    let e = dinamico(&mut g, 150);
+    let mut a = Fm::novo();
+    let mut r = RefOpn2::novo();
+    let mut c = 0usize;
+    let mut ult = 0u8;
+    for &(gap, p, v) in &e {
+        for _ in 0..gap {
+            a.ciclo(); r.ciclo(); c += 1;
+            if c % 24 == 7 && c / 24 >= de && c / 24 <= ate { println!("amostra {}: {}", c / 24, f(&a, &r)); }
+        }
+        if c / 24 + 3 >= de && c / 24 <= ate { if p & 1 == 0 { ult = v; } else { println!("  escrita ciclo {c} (pos {}): reg {ult:02X} = {v:02X} porta {p}", c % 24); } }
+        a.escreve(p, v); r.escreve(p, v);
+    }
+}
+
+#[test]
+#[ignore]
+fn diag_serie_a() {
+    serie(11, 558, 568, &|a, r| format!("ch_out0 ref {} nucleo {} | fm_out ref {:?} nucleo {:?}", r.estado(4)[0], a.diag_saida_canal()[0],
+        [r.estado(3)[0], r.estado(3)[6], r.estado(3)[12], r.estado(3)[18]], [a.diag_saida_op()[0], a.diag_saida_op()[6], a.diag_saida_op()[12], a.diag_saida_op()[18]]));
+}

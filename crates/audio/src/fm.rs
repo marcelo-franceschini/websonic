@@ -2,15 +2,18 @@
 //!
 //! Estrutura (manual do YM2608 e pesquisa pública sobre o YM2612): 6 canais de 4 operadores,
 //! 24 "slots" processados um por ciclo, 24 ciclos por amostra. Cada slot passa pelo gerador de
-//! fase, pelo envelope e pelo operador (log-seno mais exponencial). O ritmo exato de cada
-//! estágio foi medido por experimento contra o Nuked-OPN2 (`sintese.md`, D8.2).
+//! fase, pelo envelope e pelo operador (log-seno mais exponencial). O ritmo de cada estágio e do
+//! barramento foi medido por experimento contra o chip de referência (`sintese.md`, D8.2), com as
+//! sondas de `diferencial-sintese/examples/`. Nenhum código de emulador foi copiado.
+//!
+//! Slot `i` = operador (ordem de endereço: S1, S3, S2, S4) vezes 6, mais o canal.
 
 use crate::tabelas::{DETUNE, EG_INC_ALTO, EG_INC_BAIXO, EXP, LOGSIN};
 
 /// Ciclos internos por amostra.
 pub const CICLOS_POR_AMOSTRA: u32 = 24;
 
-/// Parâmetros de um operador (registradores `$30` a `$9F`).
+/// Parâmetros de um operador (registradores `$30` a `$8F`).
 #[derive(Clone, Copy, Default, Debug)]
 struct Operador {
     dt: u8,
@@ -18,16 +21,14 @@ struct Operador {
     tl: u8,
     ks: u8,
     ar: u8,
-    am: bool,
     d1r: u8,
     d2r: u8,
     sl: u8,
     rr: u8,
-    ssg: u8,
 }
 
 /// Parâmetros de um canal.
-#[derive(Clone, Copy, Default, Debug)]
+#[derive(Clone, Copy, Debug)]
 struct Canal {
     fnum: u16,
     bloco: u8,
@@ -35,45 +36,68 @@ struct Canal {
     realimentacao: u8,
     esquerda: bool,
     direita: bool,
-    ams: u8,
-    pms: u8,
+}
+
+impl Canal {
+    /// Depois do reset os dois lados do panning estão ligados (medido).
+    const PADRAO: Self = Self { fnum: 0, bloco: 0, algoritmo: 0, realimentacao: 0, esquerda: true, direita: true };
+}
+
+/// Fases do envelope de um slot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Eg {
+    Ataque,
+    Decai1,
+    Decai2,
+    Libera,
 }
 
 #[derive(Clone, Debug)]
 pub struct Fm {
     ciclo: u32,
-    endereco: [u8; 2],
+    tempo: u64,
+    // Barramento: trava de endereço, dado de FM pendente e escritas de modo esperando um ciclo.
+    parte: usize,
+    endereco: u8,
+    dado_fm: Option<u8>,
+    fila_modo: Vec<(u64, u8, u8)>,
+    reg_a4: u8,
+    // Registradores gravados.
     op: [[Operador; 4]; 6],
     canal: [Canal; 6],
-    // Estado por slot (indice = grupo * 6 + canal).
-    fase: [u32; 24],
-    nivel: [u16; 24],
-    saida_op: [i32; 24],
-    // Realimentacao do operador 1 (duas saidas anteriores) por canal.
-    fb: [[i32; 3]; 6],
-    saida_canal: [i32; 6],
-    pino: (i16, i16),
-    // Tempo absoluto em ciclos e escritas esperando para valer (atraso do barramento).
-    tempo: u64,
-    fila: Vec<(u64, usize, u8, u8)>,
-    // Tecla pedida por slot e zeragem de fase pedida pelo envelope.
+    // Cópia que cada slot faz dos seus parâmetros antes de ser processado.
+    c_op: [Operador; 24],
+    c_fnum: [u16; 24],
+    c_bloco: [u8; 24],
+    c_algo: [u8; 24],
+    c_fb: [u8; 24],
+    // Tecla: histórico curto do registrador $28 (tempo, canal, bits) e estado por slot.
+    tecla_hist: Vec<(u64, usize, u8)>,
     tecla_pedida: [bool; 24],
-    // Teclas escritas e ainda nao vistas pelo envelope: (tempo da escrita, canal, bits, aplicado por grupo).
-    kon_fila: Vec<(u64, usize, u8, [bool; 4])>,
-    zera_fase: [bool; 24],
     tecla_ligada: [bool; 24],
+    // Fase e envelope por slot.
+    fase: [u32; 24],
+    zera_fase: [bool; 24],
+    nivel: [u16; 24],
     eg_saida: [u16; 24],
     eg_estado: [Eg; 24],
     eg_visto: [u16; 24],
     eg_timer: u16,
-    // Saida do grupo 0 da amostra anterior, para o latch do canal.
-    g0_anterior: [i32; 6],
-    pino_valor: [i32; 6],
+    // Operadores e canais.
+    saida_op: [i32; 24],
     op_anterior: [i32; 24],
+    // Se a saída do slot entra na soma do canal, decidido quando o slot é processado.
+    portador: [bool; 24],
+    portador_ant: [bool; 24],
+    realim: [[i32; 2]; 6],
+    saida_canal: [i32; 6],
+    pino_valor: [i32; 6],
+    pino_lr: [(i32, i32); 6],
+    dac_ligado: bool,
+    dac_valor: i32,
+    /// Variante de experimento da calibração (bits). Zero é o modelo adotado.
+    pub variante: u32,
 }
-
-/// Ordem dos grupos de slots no pipeline para o operador de endereço `o` (0 a 3).
-const GRUPO_DO_OP: [usize; 4] = [0, 1, 2, 3];
 
 impl Default for Fm {
     fn default() -> Self {
@@ -81,127 +105,153 @@ impl Default for Fm {
     }
 }
 
+/// Ciclo em que o valor de cada canal aparece no pino (medido).
+const CICLO_PINO: [u32; 6] = [15, 3, 23, 11, 19, 7];
+
 impl Fm {
     pub fn novo() -> Self {
         Self {
             ciclo: 0,
-            endereco: [0; 2],
-            op: [[Operador::default(); 4]; 6],
-            canal: [Canal::default(); 6],
-            fase: [0; 24],
-            nivel: [1023; 24],
-            saida_op: [0; 24],
-            fb: [[0; 3]; 6],
-            saida_canal: [0; 6],
-            pino: (3, 3),
             tempo: 0,
-            fila: Vec::new(),
+            parte: 0,
+            endereco: 0,
+            dado_fm: None,
+            fila_modo: Vec::new(),
+            reg_a4: 0,
+            op: [[Operador::default(); 4]; 6],
+            canal: [Canal::PADRAO; 6],
+            c_op: [Operador::default(); 24],
+            c_fnum: [0; 24],
+            c_bloco: [0; 24],
+            c_algo: [0; 24],
+            c_fb: [0; 24],
+            tecla_hist: Vec::new(),
             tecla_pedida: [false; 24],
-            kon_fila: Vec::new(),
-            zera_fase: [false; 24],
             tecla_ligada: [false; 24],
+            fase: [0; 24],
+            zera_fase: [false; 24],
+            nivel: [1023; 24],
             eg_saida: [1023; 24],
             eg_estado: [Eg::Libera; 24],
             eg_visto: [0; 24],
             eg_timer: 0,
-            g0_anterior: [0; 6],
-            pino_valor: [0; 6],
+            saida_op: [0; 24],
             op_anterior: [0; 24],
+            portador: [false; 24],
+            portador_ant: [false; 24],
+            realim: [[0; 2]; 6],
+            saida_canal: [0; 6],
+            pino_valor: [0; 6],
+            pino_lr: [(0, 0); 6],
+            dac_ligado: false,
+            dac_valor: 0,
+            variante: 0,
         }
     }
 
     /// Escreve numa porta do chip (0 e 2 = endereço, 1 e 3 = dado).
+    ///
+    /// Medido: uma escrita de endereço cancela na hora o dado de FM que ainda não foi gravado.
+    /// Registradores abaixo de `$30` valem um ciclo depois; a tecla (`$28`) é gravada na hora e
+    /// chega a cada slot com atraso próprio.
     pub fn escreve(&mut self, porta: u32, valor: u8) {
-        let parte = usize::from(porta & 2 != 0);
         if porta & 1 == 0 {
-            self.endereco[parte] = valor;
-        } else {
-            let a = self.endereco[parte];
-            if a == 0x28 {
-                let c = usize::from(valor & 3);
-                if c != 3 {
-                    let canal = if valor & 4 != 0 { c.wrapping_add(3) } else { c };
-                    self.kon_fila.push((self.tempo, canal, valor >> 4, [false; 4]));
-                }
-            } else {
-                self.fila.push((self.tempo, parte, a, valor));
+            self.parte = usize::from(porta & 2 != 0);
+            self.endereco = valor;
+            self.dado_fm = None;
+        } else if self.endereco >= 0x30 {
+            self.dado_fm = Some(valor);
+        } else if self.endereco == 0x28 {
+            let c = usize::from(valor & 3);
+            if c != 3 {
+                let canal = if valor & 4 != 0 { c.wrapping_add(3) } else { c };
+                self.tecla_hist.push((self.tempo, canal, valor >> 4));
             }
+        } else {
+            self.fila_modo.push((self.tempo.wrapping_add(1), self.endereco, valor));
         }
     }
 
-    fn registrador(&mut self, parte: usize, a: u8, d: u8) {
-        let sub = usize::from(a & 3);
-        if sub == 3 && a >= 0x30 {
+    /// Grava o dado de FM pendente quando o ciclo do seu registrador passa. Medido: registradores
+    /// de operador a cada 12 ciclos, de canal a cada 6 (`examples/sonda11.rs`).
+    fn captura(&mut self, c: u32) {
+        let Some(d) = self.dado_fm else { return };
+        let a = self.endereco;
+        let sub = u32::from(a & 3);
+        if sub == 3 {
             return;
         }
-        let ch = sub.wrapping_add(parte.wrapping_mul(3));
+        let ch = usize::from(a & 3).wrapping_add(self.parte.wrapping_mul(3));
         let o = usize::from((a >> 2) & 3);
-        match a {
-            0x30..=0x3F => {
-                self.op[ch][o].dt = (d >> 4) & 7;
-                self.op[ch][o].mul = d & 15;
+        if a < 0xA0 {
+            let slot = u32::from((a >> 2) & 3).wrapping_mul(6).wrapping_add(sub).wrapping_add(if self.parte == 1 { 3 } else { 0 });
+            if c % 12 != slot.wrapping_add(11) % 12 {
+                return;
             }
-            0x40..=0x4F => self.op[ch][o].tl = d & 0x7F,
-            0x50..=0x5F => {
-                self.op[ch][o].ks = d >> 6;
-                self.op[ch][o].ar = d & 31;
+            let p = &mut self.op[ch][o];
+            match a >> 4 {
+                3 => {
+                    p.dt = (d >> 4) & 7;
+                    p.mul = d & 15;
+                }
+                4 => p.tl = d & 0x7F,
+                5 => {
+                    p.ks = d >> 6;
+                    p.ar = d & 31;
+                }
+                6 => p.d1r = d & 31,
+                7 => p.d2r = d & 31,
+                8 => {
+                    p.sl = d >> 4;
+                    p.rr = d & 15;
+                }
+                _ => {}
             }
-            0x60..=0x6F => {
-                self.op[ch][o].am = d & 0x80 != 0;
-                self.op[ch][o].d1r = d & 31;
+        } else {
+            let chu = u32::try_from(ch).unwrap_or(0);
+            if c % 6 != chu.wrapping_add(5) % 6 {
+                return;
             }
-            0x70..=0x7F => self.op[ch][o].d2r = d & 31,
-            0x80..=0x8F => {
-                self.op[ch][o].sl = d >> 4;
-                self.op[ch][o].rr = d & 15;
+            match a & 0xFC {
+                // O byte alto da frequência fica numa trava e só vale quando o byte baixo chega.
+                0xA0 => {
+                    self.canal[ch].fnum = (u16::from(self.reg_a4 & 7) << 8) | u16::from(d);
+                    self.canal[ch].bloco = (self.reg_a4 >> 3) & 7;
+                }
+                0xA4 => self.reg_a4 = d,
+                0xB0 => {
+                    self.canal[ch].algoritmo = d & 7;
+                    self.canal[ch].realimentacao = (d >> 3) & 7;
+                }
+                0xB4 => {
+                    self.canal[ch].esquerda = d & 0x80 != 0;
+                    self.canal[ch].direita = d & 0x40 != 0;
+                }
+                _ => {}
             }
-            0x90..=0x9F => self.op[ch][o].ssg = d & 15,
-            0xA0..=0xA2 => self.canal[ch].fnum = (self.canal[ch].fnum & 0x700) | u16::from(d),
-            0xA4..=0xA6 => {
-                self.canal[ch].fnum = (self.canal[ch].fnum & 0xFF) | (u16::from(d & 7) << 8);
-                self.canal[ch].bloco = (d >> 3) & 7;
-            }
-            0xB0..=0xB2 => {
-                self.canal[ch].algoritmo = d & 7;
-                self.canal[ch].realimentacao = (d >> 3) & 7;
-            }
-            0xB4..=0xB6 => {
-                self.canal[ch].esquerda = d & 0x80 != 0;
-                self.canal[ch].direita = d & 0x40 != 0;
-                self.canal[ch].ams = (d >> 4) & 3;
-                self.canal[ch].pms = d & 7;
-            }
-            _ => {}
         }
     }
 
-    /// Liga ou desliga os operadores de um canal (bits 4 a 7: S1, S2, S3, S4).
-    fn tecla(&mut self, canal: usize, bits: u8) {
-        // Mapa do bit do registrador $28 para o endereço do operador: S1=0, S2=2, S3=1, S4=3.
-        for (bit, o) in [(0usize, 0usize), (1, 2), (2, 1), (3, 3)] {
-            let i = GRUPO_DO_OP[o].wrapping_mul(6).wrapping_add(canal);
-            let ligado = (bits >> bit) & 1 != 0;
-            self.tecla_pedida[i] = ligado;
-        }
-    }
-
-    /// Incremento de fase do slot de um canal e operador (sem LFO, sem detune ainda).
-    fn incremento(&self, ch: usize, o: usize) -> u32 {
-        let c = &self.canal[ch];
-        let base = (u32::from(c.fnum) << c.bloco) >> 1;
-        let f = u32::from(c.fnum);
+    /// Código de tecla (5 bits) a partir do bloco e dos bits altos do F-number (manual do YM2608).
+    fn kcode(fnum: u16, bloco: u8) -> u32 {
+        let f = u32::from(fnum);
         let n4 = (f >> 10) & 1;
         let n3 = if n4 == 1 { u32::from(f & 0x380 != 0) } else { u32::from(f & 0x380 == 0x380) };
-        let kcode = (u32::from(c.bloco) << 2) | (n4 << 1) | n3;
-        let dt = self.op[ch][o].dt;
-        let desl = u32::from(DETUNE[usize::from(dt & 3)][kcode as usize]);
-        let base = if dt & 4 != 0 { base.wrapping_sub(desl) } else { base.wrapping_add(desl) } & 0x1_FFFF;
-        let mul = u32::from(self.op[ch][o].mul);
+        (u32::from(bloco) << 2) | (n4 << 1) | n3
+    }
+
+    /// Incremento de fase do slot (frequência, detune e multiplicador).
+    fn incremento(&self, i: usize) -> u32 {
+        let (fnum, bloco, p) = (self.c_fnum[i], self.c_bloco[i], &self.c_op[i]);
+        let base = (u32::from(fnum) << bloco) >> 1;
+        let desl = u32::from(DETUNE[usize::from(p.dt & 3)][Self::kcode(fnum, bloco) as usize]);
+        let base = if p.dt & 4 != 0 { base.wrapping_sub(desl) } else { base.wrapping_add(desl) } & 0x1_FFFF;
+        let mul = u32::from(p.mul);
         let r = if mul == 0 { base >> 1 } else { base.wrapping_mul(mul) };
         r & 0xF_FFFF
     }
 
-    /// Saída do operador para uma fase de 10 bits e uma atenuação.
+    /// Saída do operador para uma fase de 10 bits e uma atenuação de 10 bits.
     fn operador(fase10: u32, atenuacao: u32) -> i32 {
         let mut idx = fase10 & 0xFF;
         if fase10 & 0x100 != 0 {
@@ -217,34 +267,51 @@ impl Fm {
 
     /// Um ciclo interno. Devolve o valor do pino (esquerda, direita).
     pub fn ciclo(&mut self) -> (i16, i16) {
-        // Escritas cujo atraso acabou valem agora, na ordem em que chegaram.
         let agora = self.tempo;
+        let c = self.ciclo;
+        // Escritas de modo cujo ciclo de espera acabou.
         let mut k = 0;
-        while k < self.fila.len() {
-            let (w, p, a, _) = self.fila[k];
-            if Self::pronto(w, p, a, agora) {
-                let (_, p, a, d) = self.fila.remove(k);
-                self.registrador(p, a, d);
+        while k < self.fila_modo.len() {
+            if self.fila_modo[k].0 <= agora {
+                let (_, a, d) = self.fila_modo.remove(k);
+                match a {
+                    0x2A => self.dac_valor = i32::from(d).wrapping_sub(128).wrapping_mul(2),
+                    0x2B => self.dac_ligado = d & 0x80 != 0,
+                    _ => {}
+                }
             } else {
                 k = k.wrapping_add(1);
             }
         }
+        // O slot decide se é portador com o algoritmo de antes da gravação deste ciclo (medido:
+        // `examples/sonda12.rs`).
+        let algo_antes = [0usize, 1, 2, 3, 4, 5].map(|k| self.canal[k].algoritmo);
+        self.captura(c);
         self.tempo = agora.wrapping_add(1);
-        // O contador do envelope anda uma vez a cada 3 amostras, no ciclo 1 (medido).
-        if agora >= 97 && agora.wrapping_sub(97) % 72 == 0 {
+        // O contador do envelope anda uma vez a cada 3 amostras (medido: o valor que os slots usam muda no ciclo 98, depois do slot 23).
+        if agora >= 98 && agora.wrapping_sub(98).is_multiple_of(72) {
             self.eg_timer = self.eg_timer.wrapping_add(1) & 0xFFF;
         }
-        let c = self.ciclo;
-        // Estagio do envelope: o slot cujo ciclo de envelope e este.
+        // Cópias: cada slot lê seus parâmetros 12 ciclos antes de ser processado, e o algoritmo
+        // e a realimentação 17 ciclos antes (medido pela calibração das classes).
+        let ia = usize::try_from(c.wrapping_add(12) % 24).unwrap_or(0);
+        self.c_algo[ia] = self.canal[ia % 6].algoritmo;
+        self.c_fb[ia] = self.canal[ia % 6].realimentacao;
+        let ip = usize::try_from(c.wrapping_add(7) % 24).unwrap_or(0);
+        self.c_op[ip] = self.op[ip % 6][ip / 6];
+        self.c_fnum[ip] = self.canal[ip % 6].fnum;
+        self.c_bloco[ip] = self.canal[ip % 6].bloco;
+
+        // Estágio do envelope do slot `ie`.
         let ie = usize::try_from(c.wrapping_add(22) % 24).unwrap_or(0);
         self.passo_envelope(ie);
-        self.aplica_teclas(ie);
+        self.aplica_tecla(ie, agora);
         if self.tecla_pedida[ie] != self.tecla_ligada[ie] {
             self.tecla_ligada[ie] = self.tecla_pedida[ie];
             if self.tecla_ligada[ie] {
                 self.eg_estado[ie] = Eg::Ataque;
                 self.zera_fase[ie] = true;
-                // Taxa de ataque 62 ou 63 leva o nivel a zero na hora.
+                // Taxa de ataque 62 ou 63 leva o nível a zero na hora.
                 if self.taxa_atual(ie) >= 62 {
                     self.nivel[ie] = 0;
                     self.eg_estado[ie] = Eg::Decai1;
@@ -253,99 +320,111 @@ impl Fm {
                 self.eg_estado[ie] = Eg::Libera;
             }
         }
-        // Slot processado neste ciclo: indice i = (ciclo - 5) mod 24.
+
+        // Operador do slot `i`.
         let i = usize::try_from(c.wrapping_add(19) % 24).unwrap_or(0);
-        let (g, ch) = (i / 6, i % 6);
-        let o = GRUPO_DO_OP.iter().position(|&x| x == g).unwrap_or(0);
-        // Entrada de modulação segundo o algoritmo.
-        let m = self.modulacao(ch, o);
-        let eg = u32::from(self.op[ch][o].tl).wrapping_mul(8).wrapping_add(u32::from(self.eg_saida[i])).min(1023);
+        let ch = i % 6;
+        let m = self.modulacao(i);
+        let eg = u32::from(self.c_op[i].tl).wrapping_mul(8).wrapping_add(u32::from(self.eg_saida[i])).min(1023);
         let fase10 = (self.fase[i] >> 10).wrapping_add(u32::try_from((m >> 1) & 0x3FF).unwrap_or(0)) & 0x3FF;
         self.op_anterior[i] = self.saida_op[i];
-        if g == 0 {
-            self.g0_anterior[ch] = self.saida_op[i];
-        }
+        self.portador_ant[i] = self.portador[i];
+        // Portadores de cada algoritmo (diagramas do manual do YM2608), na ordem S1, S3, S2, S4.
+        self.portador[i] = matches!((algo_antes[ch], i / 6), (_, 3) | (7, _) | (4, 2) | (5 | 6, 1 | 2));
         self.saida_op[i] = Self::operador(fase10, eg);
         self.eg_saida[i] = self.nivel[i];
-        // A fase so avanca depois de a saida usar o valor antigo.
+        // A fase só avança depois de a saída usar o valor antigo.
         if self.zera_fase[i] {
             self.zera_fase[i] = false;
             self.fase[i] = 0;
         } else {
-            self.fase[i] = self.fase[i].wrapping_add(self.incremento(ch, o)) & 0xF_FFFF;
+            self.fase[i] = self.fase[i].wrapping_add(self.incremento(i)) & 0xF_FFFF;
         }
-        if o == 0 {
-            self.fb[ch] = [self.saida_op[i], self.fb[ch][0], self.fb[ch][1]];
+        if i < 6 {
+            self.realim[ch] = [self.saida_op[i], self.realim[ch][0]];
         }
-        // Canal: latch um ciclo depois do slot do grupo 0.
-        let c6 = usize::try_from(c.wrapping_add(18) % 24).unwrap_or(99); // canal cujo latch ocorre neste ciclo, se < 6
+
+        // Canal: soma um ciclo depois do slot do primeiro operador.
+        let c6 = usize::try_from(c.wrapping_add(18) % 24).unwrap_or(99);
         if c6 < 6 {
             self.saida_canal[c6] = self.soma_canal(c6);
         }
-        // Pino: canal k aparece em um ciclo proprio.
-        const CICLO_PINO: [u32; 6] = [15, 3, 23, 11, 19, 7];
+
+        // Pino: cada canal aparece num ciclo próprio; fora deles, o repouso.
         let mut pino = (3i16, 3i16);
         for (k, &cp) in CICLO_PINO.iter().enumerate() {
-            // O valor do canal e copiado tres ciclos antes de aparecer no pino (medido).
+            // O valor do canal e o panning são copiados três ciclos antes de aparecer (medido).
             if cp.wrapping_add(21) % 24 == c {
-                self.pino_valor[k] = self.saida_canal[k];
+                let v = self.saida_canal[k];
+                self.pino_valor[k] = v;
+                self.pino_lr[k] = self.com_panning(k, v);
             }
+            // O DAC não passa por essa cópia: o pino lê o valor ao vivo.
+            let dac_vivo = k == 5 && self.dac_ligado;
             let falta = cp.wrapping_add(24).wrapping_sub(c) % 24;
-            if falta >= 1 && falta <= 3 {
-                // Nos tres ciclos antes do valor, o pino mostra o sinal do canal (-3 ou +3).
-                let v = self.pino_valor[k];
-                let s = |lado: bool| if lado && v < 0 { -3 } else { 3 };
-                pino = (s(self.canal[k].esquerda), s(self.canal[k].direita));
+            if (1..=3).contains(&falta) {
+                // Nos três ciclos antes do valor, o pino mostra só o sinal do canal.
+                let v = if dac_vivo { self.dac_valor } else { self.pino_valor[k] };
+                let s = if v < 0 { -3 } else { 3 };
+                pino = (s, s);
             }
             if cp == c {
-                let v = self.pino_valor[k];
-                let l = if self.canal[k].esquerda { v } else { 0 };
-                let r = if self.canal[k].direita { v } else { 0 };
+                let (l, r) = if dac_vivo { self.com_panning(k, self.dac_valor) } else { self.pino_lr[k] };
                 pino = (Self::escada(l), Self::escada(r));
             }
         }
-        self.pino = pino;
         self.ciclo = c.wrapping_add(1) % 24;
         pino
     }
 
-    /// Modulação que entra no operador `o` do canal `ch`.
-    fn modulacao(&self, ch: usize, o: usize) -> i32 {
-        // Um operador so enxerga a saida de outro da mesma amostra se ela foi calculada pelo menos
-        // 12 ciclos antes (medido: 6 ciclos nao bastam). Senao ele ve o valor da amostra anterior.
-        let consumidor = GRUPO_DO_OP[o];
-        let s = |op_addr: usize| {
-            let produtor = GRUPO_DO_OP[op_addr];
-            let i = produtor.wrapping_mul(6).wrapping_add(ch);
-            if produtor < consumidor && consumidor.wrapping_sub(produtor) < 2 { self.op_anterior[i] } else { self.saida_op[i] }
+    /// Canal desligado de um lado deixa passar só o sinal (-1 ou 0).
+    fn com_panning(&self, k: usize, v: i32) -> (i32, i32) {
+        (if self.canal[k].esquerda { v } else { v >> 31 }, if self.canal[k].direita { v } else { v >> 31 })
+    }
+
+    /// Modulação que entra no slot `i`, segundo o algoritmo (diagramas do manual do YM2608).
+    fn modulacao(&self, i: usize) -> i32 {
+        let (g, ch) = (i / 6, i % 6);
+        // Um operador só enxerga a saída do operador imediatamente anterior na ordem dos slots
+        // com uma amostra de atraso (medido: 6 ciclos não bastam, 12 bastam).
+        let s = |produtor: usize| {
+            let j = produtor.wrapping_mul(6).wrapping_add(ch);
+            if produtor < g && g.wrapping_sub(produtor) < 2 { self.op_anterior[j] } else { self.saida_op[j] }
         };
         let (s1, s3, s2) = (s(0), s(1), s(2));
-        let a = self.canal[ch].algoritmo;
-        match o {
+        let a = self.c_algo[i];
+        match g {
             0 => {
-                let fb = self.canal[ch].realimentacao;
-                if fb == 0 { 0 } else {
-                    (self.fb[ch][0].wrapping_add(self.fb[ch][1])) >> 9_u32.wrapping_sub(u32::from(fb))
-                }
+                let fb = self.c_fb[i];
+                if fb == 0 { 0 } else { (self.realim[ch][0].wrapping_add(self.realim[ch][1])) >> 9_u32.wrapping_sub(u32::from(fb)) }
             }
-            2 => match a { 0 | 3..=6 => s1, _ => 0 },
-            1 => match a { 0 | 2 => s2, 1 => s1.wrapping_add(s2), 5 => s1, _ => 0 },
-            _ => match a { 0 | 1 | 4 => s3, 2 => s1.wrapping_add(s3), 3 => s2.wrapping_add(s3), 5 => s1, _ => 0 },
+            2 => match a {
+                0 | 3..=6 => s1,
+                _ => 0,
+            },
+            1 => match a {
+                0 | 2 => s2,
+                1 => s1.wrapping_add(s2),
+                5 => s1,
+                _ => 0,
+            },
+            _ => match a {
+                0 | 1 | 4 => s3,
+                2 => s1.wrapping_add(s3),
+                3 => s2.wrapping_add(s3),
+                5 => s1,
+                _ => 0,
+            },
         }
     }
 
-    /// Soma das saídas portadoras segundo o algoritmo, limitada a 14 bits e reduzida a 9.
+    /// Soma dos operadores portadores, com saturação em 9 bits a cada parcela (medido).
     fn soma_canal(&self, ch: usize) -> i32 {
-        let s = |op_addr: usize| self.saida_op[GRUPO_DO_OP[op_addr].wrapping_mul(6).wrapping_add(ch)];
-        let (s1, s3, s2, s4) = (self.g0_anterior[ch], s(1), s(2), s(3));
-        // Operadores portadores de cada algoritmo, na ordem em que o chip os soma (S1, S3, S2, S4).
-        let portadores: [bool; 4] = match self.canal[ch].algoritmo {
-            0..=3 => [false, false, false, true],
-            4 => [false, false, true, true],
-            5 | 6 => [false, true, true, true],
-            _ => [true, true, true, true],
-        };
-        // O acumulador satura em 9 bits a cada soma.
+        let s = |g: usize| self.saida_op[g.wrapping_mul(6).wrapping_add(ch)];
+        // O primeiro operador entra com o valor da amostra anterior.
+        let (s1, s3, s2, s4) = (self.op_anterior[ch], s(1), s(2), s(3));
+        let pt = |g: usize| self.portador[g.wrapping_mul(6).wrapping_add(ch)];
+        let portadores = [self.portador_ant[ch], pt(1), pt(2), pt(3)];
         let mut acc: i32 = 0;
         for (p, v) in portadores.iter().zip([s1, s3, s2, s4]) {
             if *p {
@@ -360,80 +439,32 @@ impl Fm {
         let r = v.wrapping_mul(3).wrapping_add(if v >= 0 { 3 } else { 0 });
         i16::try_from(r).unwrap_or(0)
     }
-}
 
-/// Uma escrita so vale quando passaram `atraso` ciclos e o ciclo coincide com o ponto onde o
-/// registrador e gravado (medido por varredura, ver sintese.md): tecla no ciclo 8, operador e canal
-/// no ciclo do proprio slot.
-impl Fm {
-    fn pronto(w: u64, parte: usize, a: u8, agora: u64) -> bool {
-        let (fase, atraso, desloc) = match a {
-            0x28 => (8u64, 12u64, 0u64),
-            0x30..=0x9F => {
-                let ch = usize::from(a & 3).wrapping_add(parte.wrapping_mul(3));
-                let o = usize::from((a >> 2) & 3);
-                (0, 13, u64::try_from(GRUPO_DO_OP[o].wrapping_mul(6).wrapping_add(ch)).unwrap_or(0))
-            }
-            0xA0..=0xB6 => (0, 7, u64::from(a & 3).wrapping_add(u64::try_from(parte.wrapping_mul(3)).unwrap_or(0))),
-            _ => (0, 0, 0),
-        };
-        agora >= w.wrapping_add(atraso) && agora.wrapping_add(48).wrapping_sub(fase).wrapping_sub(desloc) % 24 == 0
-    }
-}
-
-/// Acesso de diagnostico ao estado interno (para o comparador em camadas; nao altera nada).
-impl Fm {
-    pub fn diag_fase(&self) -> [u32; 24] { self.fase }
-    pub fn diag_saida_op(&self) -> [i32; 24] { self.saida_op }
-    pub fn diag_saida_canal(&self) -> [i32; 6] { self.saida_canal }
-    pub fn diag_eg(&self) -> [u16; 24] { self.nivel }
-}
-
-impl Fm {
-    /// A tecla escrita chega a cada slot do canal depois de `3 + 6 * g` ciclos, onde `g` e o grupo
-    /// do slot (o grupo 0 conta como 4, isto e, 27 ciclos). Medido por varredura da fase da escrita
-    /// (`diferencial-sintese/examples/sonda7.rs`).
-    fn aplica_teclas(&mut self, slot: usize) {
+    /// A tecla chega a cada slot com atraso de `3 + 6 * g` ciclos (o primeiro operador conta
+    /// como 4). O slot vê o registrador `$28` como estava nesse instante passado; se o canal do
+    /// registrador é o seu, copia o bit (`examples/sonda7.rs` e `sonda10.rs`).
+    fn aplica_tecla(&mut self, slot: usize, agora: u64) {
         let (g, ch) = (slot / 6, slot % 6);
         let atraso = 3u64.wrapping_add(6u64.wrapping_mul(if g == 0 { 4 } else { u64::try_from(g).unwrap_or(0) }));
-        // Bit do registrador $28 de cada grupo: S1 (g0), S3 (g1), S2 (g2), S4 (g3).
+        // Bit do registrador de cada operador na ordem dos slots: S1, S3, S2, S4.
         let bit = [0usize, 2, 1, 3][g];
-        let agora = self.tempo.wrapping_sub(1);
-        for k in 0..self.kon_fila.len() {
-            let (w, c, bits, ap) = self.kon_fila[k];
-            if c == ch && !ap[g] && agora >= w.wrapping_add(atraso) {
-                self.tecla_pedida[slot] = (bits >> bit) & 1 != 0;
-                self.kon_fila[k].3[g] = true;
+        if let Some(&(_, _, bits)) = self.tecla_hist.iter().rev().find(|e| e.1 == ch && e.0.wrapping_add(atraso) <= agora) {
+            self.tecla_pedida[slot] = (bits >> bit) & 1 != 0;
+        }
+        // Guarda só o que ainda pode ser visto: as escritas recentes e a última antiga.
+        if self.tecla_hist.len() > 1 {
+            let limite = agora.saturating_sub(64);
+            let antigas = self.tecla_hist.iter().filter(|e| e.0 < limite).count();
+            if antigas > 1 {
+                self.tecla_hist.drain(0..antigas.wrapping_sub(1));
             }
         }
-        self.kon_fila.retain(|e| !e.3.iter().all(|&x| x));
-    }
-}
-
-/// Fases do envelope de um slot.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Eg {
-    Ataque,
-    Decai1,
-    Decai2,
-    Libera,
-}
-
-impl Fm {
-    /// Codigo de tecla (5 bits) do canal, a partir do bloco e dos bits altos do F-number.
-    fn kcode(&self, ch: usize) -> u32 {
-        let c = &self.canal[ch];
-        let f = u32::from(c.fnum);
-        let n4 = (f >> 10) & 1;
-        let n3 = if n4 == 1 { u32::from(f & 0x380 != 0) } else { u32::from(f & 0x380 == 0x380) };
-        (u32::from(c.bloco) << 2) | (n4 << 1) | n3
     }
 
-    /// Taxa efetiva (0 a 63) da fase atual do slot.
+    /// Taxa efetiva (0 a 63) da fase atual do envelope do slot.
     fn taxa_atual(&self, i: usize) -> u32 {
-        let (g, ch) = (i / 6, i % 6);
-        let o = GRUPO_DO_OP.iter().position(|&x| x == g).unwrap_or(0);
-        let p = &self.op[ch][o];
+        let ch = i % 6;
+        let p = &self.op[ch][i / 6];
         let r5 = match self.eg_estado[i] {
             Eg::Ataque => u32::from(p.ar),
             Eg::Decai1 => u32::from(p.d1r),
@@ -443,13 +474,14 @@ impl Fm {
         if r5 == 0 {
             return 0;
         }
-        let ksv = self.kcode(ch) >> 3_u32.wrapping_sub(u32::from(p.ks));
+        let ksv = Self::kcode(self.canal[ch].fnum, self.canal[ch].bloco) >> 3_u32.wrapping_sub(u32::from(p.ks));
         r5.wrapping_mul(2).wrapping_add(ksv).min(63)
     }
 
-    /// Passo do envelope do slot: so age quando o contador mudou desde o ultimo passo do slot.
+    /// Passo do envelope: só age quando o contador mudou desde o último passo do slot.
+    /// Tabelas de incremento do manual do YM2608; posição dentro do ciclo de 8 passos medida.
     fn passo_envelope(&mut self, i: usize) {
-        // Os 16 ultimos niveis (1008 a 1022) viram silencio total na amostra seguinte (medido).
+        // Os 16 últimos níveis viram silêncio total no passo seguinte (medido).
         if self.nivel[i] >= 1008 {
             self.nivel[i] = 1023;
         }
@@ -457,18 +489,14 @@ impl Fm {
             return;
         }
         self.eg_visto[i] = self.eg_timer;
-        // A fase e decidida com o nivel do passo anterior, antes de escolher a taxa.
-        {
-            let (g, ch) = (i / 6, i % 6);
-            let o = GRUPO_DO_OP.iter().position(|&x| x == g).unwrap_or(0);
-            let sl = u32::from(self.op[ch][o].sl);
-            let limite = if sl == 15 { 0x3E0 } else { sl << 5 };
-            if self.eg_estado[i] == Eg::Ataque && self.nivel[i] == 0 {
-                self.eg_estado[i] = Eg::Decai1;
-            }
-            if self.eg_estado[i] == Eg::Decai1 && u32::from(self.nivel[i]) >= limite {
-                self.eg_estado[i] = Eg::Decai2;
-            }
+        // A fase do envelope é decidida com o nível do passo anterior, antes de escolher a taxa.
+        let sl = u32::from(self.op[i % 6][i / 6].sl);
+        let limite = if sl == 15 { 0x3E0 } else { sl << 5 };
+        if self.eg_estado[i] == Eg::Ataque && self.nivel[i] == 0 {
+            self.eg_estado[i] = Eg::Decai1;
+        }
+        if self.eg_estado[i] == Eg::Decai1 && u32::from(self.nivel[i]) >= limite {
+            self.eg_estado[i] = Eg::Decai2;
         }
         let taxa = self.taxa_atual(i);
         if taxa == 0 {
@@ -476,7 +504,8 @@ impl Fm {
         }
         let timer = u32::from(self.eg_timer);
         let inc = if taxa >= 48 {
-            u32::from(EG_INC_ALTO[taxa.wrapping_sub(48) as usize][(timer.wrapping_sub(if taxa & 3 == 3 { 3 } else { 1 }) & 7) as usize])
+            let pos = timer.wrapping_sub(if taxa & 3 == 3 { 3 } else { 1 }) & 7;
+            u32::from(EG_INC_ALTO[taxa.wrapping_sub(48) as usize][pos as usize])
         } else {
             let sh = 11_u32.wrapping_sub(taxa >> 2);
             if timer & ((1u32 << sh).wrapping_sub(1)) != 0 {
@@ -486,15 +515,27 @@ impl Fm {
         };
         let nivel = i32::from(self.nivel[i]);
         let inc_i = i32::try_from(inc).unwrap_or(0);
-        match self.eg_estado[i] {
-            Eg::Ataque => {
-                let novo = nivel.wrapping_add((nivel.wrapping_neg().wrapping_sub(1).wrapping_mul(inc_i)) >> 4);
-                self.nivel[i] = u16::try_from(novo.clamp(0, 1023)).unwrap_or(0);
-            }
-            Eg::Decai1 | Eg::Decai2 | Eg::Libera => {
-                let novo = nivel.wrapping_add(inc_i).min(1023);
-                self.nivel[i] = u16::try_from(novo).unwrap_or(1023);
-            }
-        }
+        let novo = if self.eg_estado[i] == Eg::Ataque {
+            // Ataque: curva exponencial, o passo é proporcional ao que falta.
+            nivel.wrapping_add((nivel.wrapping_neg().wrapping_sub(1).wrapping_mul(inc_i)) >> 4)
+        } else {
+            nivel.wrapping_add(inc_i)
+        };
+        self.nivel[i] = u16::try_from(novo.clamp(0, 1023)).unwrap_or(1023);
     }
+
+    // Acesso de diagnóstico ao estado interno (para o comparador em camadas).
+    pub fn diag_fase(&self) -> [u32; 24] {
+        self.fase
+    }
+    pub fn diag_saida_op(&self) -> [i32; 24] {
+        self.saida_op
+    }
+    pub fn diag_saida_canal(&self) -> [i32; 6] {
+        self.saida_canal
+    }
+    pub fn diag_eg(&self) -> [u16; 24] {
+        self.nivel
+    }
+
 }
