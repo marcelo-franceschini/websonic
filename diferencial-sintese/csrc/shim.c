@@ -39,6 +39,10 @@ int ref_opn2_estado(void *p, int camada, int *out) {
     case 5: for (i = 0; i < 24; i++) out[i] = c->pg_inc[i]; break;
     case 6: for (i = 0; i < 24; i++) out[i] = c->eg_state[i]; break;
     case 7: for (i = 0; i < 24; i++) out[i] = c->fm_mod[i]; break;
+    case 9: for (i = 0; i < 24; i++) out[i] = c->pg_reset[i]; break;
+    case 10: for (i = 0; i < 24; i++) out[i] = c->mode_kon[i]; break;
+    case 11: for (i = 0; i < 24; i++) out[i] = c->eg_kon_latch[i]; break;
+    case 12: out[0] = c->fnum[0]; out[1] = c->pg_fnum; out[2] = c->block[0]; out[3] = c->pg_block; break;
     default: n = 8;
         out[0] = c->cycles; out[1] = c->channel; out[2] = c->mol; out[3] = c->mor;
         out[4] = c->eg_timer; out[5] = c->lfo_cnt; out[6] = c->eg_cycle; out[7] = c->ch_acc[0]; break;

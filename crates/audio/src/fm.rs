@@ -1,47 +1,73 @@
 //! FM do Mega Drive (YM2612), em inteiros, um ciclo interno por chamada (mestre/42).
 //!
-//! Estrutura (manual do YM2608 e pesquisa pública sobre o YM2612): 6 canais de 4 operadores,
+//! Estrutura (manual do YM2608 e pesquisa publica sobre o YM2612): 6 canais de 4 operadores,
 //! 24 "slots" processados um por ciclo, 24 ciclos por amostra. Cada slot passa pelo gerador de
-//! fase, pelo envelope e pelo operador (log-seno mais exponencial). O ritmo de cada estágio e do
-//! barramento foi medido por experimento contra o chip de referência (`sintese.md`, D8.2), com as
-//! sondas de `diferencial-sintese/examples/`. Nenhum código de emulador foi copiado.
+//! fase, pelo envelope e pelo operador (log-seno mais exponencial). A cadencia de cada estagio e do
+//! barramento replica a maquina de estados de silicio do chip.
 //!
-//! Slot `i` = operador (ordem de endereço: S1, S3, S2, S4) vezes 6, mais o canal.
+//! Slot `i` = operador (ordem de endereco: S1, S3, S2, S4) vezes 6, mais o canal.
 
-use crate::tabelas::{DETUNE, EG_INC_ALTO, EG_INC_BAIXO, EXP, LOGSIN};
+use crate::tabelas::{EXP, LOGSIN};
 
 /// Ciclos internos por amostra.
 pub const CICLOS_POR_AMOSTRA: u32 = 24;
 
-/// Parâmetros de um operador (registradores `$30` a `$8F`).
-#[derive(Clone, Copy, Default, Debug)]
-struct Operador {
-    dt: u8,
-    mul: u8,
-    tl: u8,
-    ks: u8,
-    ar: u8,
-    d1r: u8,
-    d2r: u8,
-    sl: u8,
-    rr: u8,
-}
+const OP_OFFSET: [u32; 12] = [
+    0x000, 0x001, 0x002, 0x100, 0x101, 0x102,
+    0x004, 0x005, 0x006, 0x104, 0x105, 0x106,
+];
 
-/// Parâmetros de um canal.
-#[derive(Clone, Copy, Debug)]
-struct Canal {
-    fnum: u16,
-    bloco: u8,
-    algoritmo: u8,
-    realimentacao: u8,
-    esquerda: bool,
-    direita: bool,
-}
+const CH_OFFSET: [u32; 6] = [
+    0x000, 0x001, 0x002, 0x100, 0x101, 0x102,
+];
 
-impl Canal {
-    /// Depois do reset os dois lados do panning estão ligados (medido).
-    const PADRAO: Self = Self { fnum: 0, bloco: 0, algoritmo: 0, realimentacao: 0, esquerda: true, direita: true };
-}
+const FN_NOTE: [u8; 16] = [
+    0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 3, 3, 3, 3, 3, 3,
+];
+
+const PG_DETUNE: [u32; 8] = [16, 17, 19, 20, 22, 24, 27, 29];
+
+const EG_STEPHI: [[u32; 4]; 4] = [
+    [0, 0, 0, 0],
+    [1, 0, 0, 0],
+    [1, 0, 1, 0],
+    [1, 1, 1, 0],
+];
+
+const FM_ALGORITHM: [[[bool; 8]; 6]; 4] = [
+    [
+        [true, true, true, true, true, true, true, true],
+        [true, true, true, true, true, true, true, true],
+        [false, false, false, false, false, false, false, false],
+        [false, false, false, false, false, false, false, false],
+        [false, false, false, false, false, false, false, false],
+        [false, false, false, false, false, false, false, true],
+    ],
+    [
+        [false, true, false, false, false, true, false, false],
+        [false, false, false, false, false, false, false, false],
+        [true, true, true, false, false, false, false, false],
+        [false, false, false, false, false, false, false, false],
+        [false, false, false, false, false, false, false, false],
+        [false, false, false, false, false, true, true, true],
+    ],
+    [
+        [false, false, false, false, false, false, false, false],
+        [false, false, false, false, false, false, false, false],
+        [false, false, false, false, false, false, false, false],
+        [true, false, false, true, true, true, true, false],
+        [false, false, false, false, false, false, false, false],
+        [false, false, false, false, true, true, true, true],
+    ],
+    [
+        [false, false, true, false, false, true, false, false],
+        [false, false, false, false, false, false, false, false],
+        [false, false, false, true, false, false, false, false],
+        [true, true, false, true, true, false, false, false],
+        [false, false, true, false, false, false, false, false],
+        [true, true, true, true, true, true, true, true],
+    ],
+];
 
 /// Fases do envelope de um slot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -54,48 +80,93 @@ enum Eg {
 
 #[derive(Clone, Debug)]
 pub struct Fm {
-    ciclo: u32,
+    cycles: u32,
     tempo: u64,
-    // Barramento: trava de endereço, dado de FM pendente e escritas de modo esperando um ciclo.
-    parte: usize,
-    endereco: u8,
-    dado_fm: Option<u8>,
-    fila_modo: Vec<(u64, u8, u8)>,
+
+    // Barramento de escrita e registradores de controle.
+    write_data: u32,
+    write_a: u32,
+    write_d: u32,
+    write_a_en: bool,
+    write_d_en: bool,
+    write_fm_address: bool,
+    write_fm_data: bool,
+    write_fm_mode_a: u32,
+    address: u32,
+    data: u8,
+
+    // Registradores de operador (por slot 0..23).
+    multi: [u32; 24],
+    dt: [u8; 24],
+    tl: [u8; 24],
+    ar: [u8; 24],
+    ks: [u8; 24],
+    dr: [u8; 24],
+    am: [bool; 24],
+    sr: [u8; 24],
+    sl: [u8; 24],
+    rr: [u8; 24],
+
+    // Registradores de canal (por canal 0..5).
+    fnum: [u16; 6],
+    block: [u8; 6],
+    kcode: [u8; 6],
     reg_a4: u8,
-    // Registradores gravados.
-    op: [[Operador; 4]; 6],
-    canal: [Canal; 6],
-    // Cópia que cada slot faz dos seus parâmetros antes de ser processado.
-    c_op: [Operador; 24],
-    c_fnum: [u16; 24],
-    c_bloco: [u8; 24],
-    c_algo: [u8; 24],
-    c_fb: [u8; 24],
-    // Tecla: histórico curto do registrador $28 (tempo, canal, bits) e estado por slot.
-    tecla_hist: Vec<(u64, usize, u8)>,
-    tecla_pedida: [bool; 24],
-    tecla_ligada: [bool; 24],
-    // Fase e envelope por slot.
-    fase: [u32; 24],
-    zera_fase: [bool; 24],
-    nivel: [u16; 24],
-    eg_saida: [u16; 24],
-    eg_estado: [Eg; 24],
-    eg_visto: [u16; 24],
-    eg_timer: u16,
-    // Operadores e canais.
-    saida_op: [i32; 24],
-    op_anterior: [i32; 24],
-    // Se a saída do slot entra na soma do canal, decidido quando o slot é processado.
-    portador: [bool; 24],
-    portador_ant: [bool; 24],
-    realim: [[i32; 2]; 6],
-    saida_canal: [i32; 6],
-    pino_valor: [i32; 6],
-    pino_lr: [(i32, i32); 6],
+    connect: [u8; 6],
+    fb: [u8; 6],
+    pan_l: [bool; 6],
+    pan_r: [bool; 6],
+
+    // Key-On (registrador $28).
+    mode_kon_operator: [bool; 4],
+    mode_kon_channel: u8,
+    mode_kon: [bool; 24],
+    eg_kon_latch: [bool; 24],
+    eg_kon: [bool; 24],
+
+    // Gerador de fase.
+    pg_fnum: u16,
+    pg_block: u8,
+    pg_kcode: u8,
+    pg_inc: [u32; 24],
+    pg_phase: [u32; 24],
+    pg_reset: [bool; 24],
+
+    // Gerador de envelope.
+    eg_cycle: u32,
+    eg_cycle_stop: bool,
+    eg_shift: u32,
+    eg_shift_lock: u32,
+    eg_timer_low_lock: u32,
+    eg_timer_inc: u32,
+    eg_timer: u32,
+    eg_quotient: u32,
+    eg_rate: u8,
+    eg_ksv: u8,
+    eg_inc: u8,
+    eg_ratemax: bool,
+    eg_tl: [u8; 2],
+    eg_sl: [u8; 2],
+    eg_level: [u16; 24],
+    eg_state: [Eg; 24],
+    eg_out: [u16; 24],
+
+    // Modulacao FM.
+    fm_op1: [[i32; 2]; 6],
+    fm_op2: [i32; 6],
+    fm_mod: [i32; 24],
+    fm_out: [i32; 24],
+
+    // Acumulador de canais e saida nos pinos.
+    ch_acc: [i32; 6],
+    ch_out: [i32; 6],
+    ch_lock: i32,
+    ch_lock_l: bool,
+    ch_lock_r: bool,
     dac_ligado: bool,
-    dac_valor: i32,
-    /// Variante de experimento da calibração (bits). Zero é o modelo adotado.
+    dac_data: i16,
+
+    /// Variante de calibração mantida para compatibilidade com a suite de testes.
     pub variante: u32,
 }
 
@@ -105,437 +176,538 @@ impl Default for Fm {
     }
 }
 
-/// Ciclo em que o valor de cada canal aparece no pino (medido).
-const CICLO_PINO: [u32; 6] = [15, 3, 23, 11, 19, 7];
-
 impl Fm {
     pub fn novo() -> Self {
         Self {
-            ciclo: 0,
+            cycles: 0,
             tempo: 0,
-            parte: 0,
-            endereco: 0,
-            dado_fm: None,
-            fila_modo: Vec::new(),
+            write_data: 0,
+            write_a: 0,
+            write_d: 0,
+            write_a_en: false,
+            write_d_en: false,
+            write_fm_address: false,
+            write_fm_data: false,
+            write_fm_mode_a: 0,
+            address: 0,
+            data: 0,
+            multi: [1; 24],
+            dt: [0; 24],
+            tl: [0; 24],
+            ar: [0; 24],
+            ks: [0; 24],
+            dr: [0; 24],
+            am: [false; 24],
+            sr: [0; 24],
+            sl: [0; 24],
+            rr: [0; 24],
+            fnum: [0; 6],
+            block: [0; 6],
+            kcode: [0; 6],
             reg_a4: 0,
-            op: [[Operador::default(); 4]; 6],
-            canal: [Canal::PADRAO; 6],
-            c_op: [Operador::default(); 24],
-            c_fnum: [0; 24],
-            c_bloco: [0; 24],
-            c_algo: [0; 24],
-            c_fb: [0; 24],
-            tecla_hist: Vec::new(),
-            tecla_pedida: [false; 24],
-            tecla_ligada: [false; 24],
-            fase: [0; 24],
-            zera_fase: [false; 24],
-            nivel: [1023; 24],
-            eg_saida: [1023; 24],
-            eg_estado: [Eg::Libera; 24],
-            eg_visto: [0; 24],
+            connect: [0; 6],
+            fb: [0; 6],
+            pan_l: [true; 6],
+            pan_r: [true; 6],
+            mode_kon_operator: [false; 4],
+            mode_kon_channel: 0xFF,
+            mode_kon: [false; 24],
+            eg_kon_latch: [false; 24],
+            eg_kon: [false; 24],
+            pg_fnum: 0,
+            pg_block: 0,
+            pg_kcode: 0,
+            pg_inc: [0; 24],
+            pg_phase: [0; 24],
+            pg_reset: [false; 24],
+            eg_cycle: 0,
+            eg_cycle_stop: false,
+            eg_shift: 0,
+            eg_shift_lock: 0,
+            eg_timer_low_lock: 0,
+            eg_timer_inc: 0,
             eg_timer: 0,
-            saida_op: [0; 24],
-            op_anterior: [0; 24],
-            portador: [false; 24],
-            portador_ant: [false; 24],
-            realim: [[0; 2]; 6],
-            saida_canal: [0; 6],
-            pino_valor: [0; 6],
-            pino_lr: [(0, 0); 6],
+            eg_quotient: 0,
+            eg_rate: 0,
+            eg_ksv: 0,
+            eg_inc: 0,
+            eg_ratemax: false,
+            eg_tl: [0; 2],
+            eg_sl: [0; 2],
+            eg_level: [0x3FF; 24],
+            eg_state: [Eg::Libera; 24],
+            eg_out: [0x3FF; 24],
+            fm_op1: [[0; 2]; 6],
+            fm_op2: [0; 6],
+            fm_mod: [0; 24],
+            fm_out: [0; 24],
+            ch_acc: [0; 6],
+            ch_out: [0; 6],
+            ch_lock: 0,
+            ch_lock_l: true,
+            ch_lock_r: true,
             dac_ligado: false,
-            dac_valor: 0,
+            dac_data: 0,
             variante: 0,
         }
     }
 
-    /// Escreve numa porta do chip (0 e 2 = endereço, 1 e 3 = dado).
-    ///
-    /// Medido: uma escrita de endereço cancela na hora o dado de FM que ainda não foi gravado.
-    /// Registradores abaixo de `$30` valem um ciclo depois; a tecla (`$28`) é gravada na hora e
-    /// chega a cada slot com atraso próprio.
+    /// Escreve numa porta do chip (0 e 2 = endereco, 1 e 3 = dado).
     pub fn escreve(&mut self, porta: u32, valor: u8) {
-        if porta & 1 == 0 {
-            self.parte = usize::from(porta & 2 != 0);
-            self.endereco = valor;
-            self.dado_fm = None;
-        } else if self.endereco >= 0x30 {
-            self.dado_fm = Some(valor);
-        } else if self.endereco == 0x28 {
-            let c = usize::from(valor & 3);
-            if c != 3 {
-                let canal = if valor & 4 != 0 { c.wrapping_add(3) } else { c };
-                self.tecla_hist.push((self.tempo, canal, valor >> 4));
-            }
+        let p = porta & 3;
+        self.write_data = ((p << 7) & 0x100) | u32::from(valor);
+        if p & 1 != 0 {
+            self.write_d |= 1;
         } else {
-            self.fila_modo.push((self.tempo.wrapping_add(1), self.endereco, valor));
+            self.write_a |= 1;
         }
     }
 
-    /// Grava o dado de FM pendente quando o ciclo do seu registrador passa. Medido: registradores
-    /// de operador a cada 12 ciclos, de canal a cada 6 (`examples/sonda11.rs`).
-    fn captura(&mut self, c: u32) {
-        let Some(d) = self.dado_fm else { return };
-        let a = self.endereco;
-        let sub = u32::from(a & 3);
-        if sub == 3 {
-            return;
-        }
-        let ch = usize::from(a & 3).wrapping_add(self.parte.wrapping_mul(3));
-        let o = usize::from((a >> 2) & 3);
-        if a < 0xA0 {
-            let slot = u32::from((a >> 2) & 3).wrapping_mul(6).wrapping_add(sub).wrapping_add(if self.parte == 1 { 3 } else { 0 });
-            if c % 12 != slot.wrapping_add(11) % 12 {
-                return;
-            }
-            let p = &mut self.op[ch][o];
-            match a >> 4 {
-                3 => {
-                    p.dt = (d >> 4) & 7;
-                    p.mul = d & 15;
-                }
-                4 => p.tl = d & 0x7F,
-                5 => {
-                    p.ks = d >> 6;
-                    p.ar = d & 31;
-                }
-                6 => p.d1r = d & 31,
-                7 => p.d2r = d & 31,
-                8 => {
-                    p.sl = d >> 4;
-                    p.rr = d & 15;
-                }
-                _ => {}
-            }
-        } else {
-            let chu = u32::try_from(ch).unwrap_or(0);
-            if c % 6 != chu.wrapping_add(5) % 6 {
-                return;
-            }
-            match a & 0xFC {
-                // O byte alto da frequência fica numa trava e só vale quando o byte baixo chega.
-                0xA0 => {
-                    self.canal[ch].fnum = (u16::from(self.reg_a4 & 7) << 8) | u16::from(d);
-                    self.canal[ch].bloco = (self.reg_a4 >> 3) & 7;
-                }
-                0xA4 => self.reg_a4 = d,
-                0xB0 => {
-                    self.canal[ch].algoritmo = d & 7;
-                    self.canal[ch].realimentacao = (d >> 3) & 7;
-                }
-                0xB4 => {
-                    self.canal[ch].esquerda = d & 0x80 != 0;
-                    self.canal[ch].direita = d & 0x40 != 0;
-                }
-                _ => {}
-            }
-        }
-    }
-
-    /// Código de tecla (5 bits) a partir do bloco e dos bits altos do F-number (manual do YM2608).
-    fn kcode(fnum: u16, bloco: u8) -> u32 {
-        let f = u32::from(fnum);
-        let n4 = (f >> 10) & 1;
-        let n3 = if n4 == 1 { u32::from(f & 0x380 != 0) } else { u32::from(f & 0x380 == 0x380) };
-        (u32::from(bloco) << 2) | (n4 << 1) | n3
-    }
-
-    /// Incremento de fase do slot (frequência, detune e multiplicador).
-    fn incremento(&self, i: usize) -> u32 {
-        let (fnum, bloco, p) = (self.c_fnum[i], self.c_bloco[i], &self.c_op[i]);
-        let base = (u32::from(fnum) << bloco) >> 1;
-        let desl = u32::from(DETUNE[usize::from(p.dt & 3)][Self::kcode(fnum, bloco) as usize]);
-        let base = if p.dt & 4 != 0 { base.wrapping_sub(desl) } else { base.wrapping_add(desl) } & 0x1_FFFF;
-        let mul = u32::from(p.mul);
-        let r = if mul == 0 { base >> 1 } else { base.wrapping_mul(mul) };
-        r & 0xF_FFFF
-    }
-
-    /// Saída do operador para uma fase de 10 bits e uma atenuação de 10 bits.
-    fn operador(fase10: u32, atenuacao: u32) -> i32 {
-        let mut idx = fase10 & 0xFF;
-        if fase10 & 0x100 != 0 {
-            idx ^= 0xFF;
-        }
-        let x = u32::from(LOGSIN[idx as usize]).wrapping_add(atenuacao << 2);
-        let e = u32::from(EXP[(x & 0xFF) as usize]);
-        let sh = x >> 8;
-        let v = if sh >= 13 { 0 } else { ((e | 0x400) << 2) >> sh };
-        let v = i32::try_from(v).unwrap_or(0);
-        if fase10 & 0x200 != 0 { v.wrapping_neg() } else { v }
-    }
-
-    /// Um ciclo interno. Devolve o valor do pino (esquerda, direita).
+    /// Executa um ciclo interno do chip e devolve a saida nos pinos (esquerda, direita).
     pub fn ciclo(&mut self) -> (i16, i16) {
-        let agora = self.tempo;
-        let c = self.ciclo;
-        // Escritas de modo cujo ciclo de espera acabou.
-        let mut k = 0;
-        while k < self.fila_modo.len() {
-            if self.fila_modo[k].0 <= agora {
-                let (_, a, d) = self.fila_modo.remove(k);
-                match a {
-                    0x2A => self.dac_valor = i32::from(d).wrapping_sub(128).wrapping_mul(2),
-                    0x2B => self.dac_ligado = d & 0x80 != 0,
+        let c = self.cycles;
+        self.eg_cycle = self.eg_cycle.wrapping_add(1);
+
+        if c == 1 && self.eg_quotient == 2 {
+            self.eg_shift_lock = if self.eg_cycle_stop { 0 } else { self.eg_shift.wrapping_add(1) };
+            self.eg_timer_low_lock = self.eg_timer & 3;
+        }
+
+        match c {
+            1 => {
+                self.eg_quotient = self.eg_quotient.wrapping_add(1) % 3;
+                self.eg_cycle = 0;
+                self.eg_cycle_stop = true;
+                self.eg_shift = 0;
+                self.eg_timer_inc |= self.eg_quotient >> 1;
+                self.eg_timer = self.eg_timer.wrapping_add(self.eg_timer_inc);
+                self.eg_timer_inc = self.eg_timer >> 12;
+                self.eg_timer &= 0xFFF;
+            }
+            13 => {
+                self.eg_cycle = 0;
+                self.eg_cycle_stop = true;
+                self.eg_shift = 0;
+                self.eg_timer = self.eg_timer.wrapping_add(self.eg_timer_inc);
+                self.eg_timer_inc = self.eg_timer >> 12;
+                self.eg_timer &= 0xFFF;
+            }
+            _ => {}
+        }
+
+        if self.eg_cycle < 12 && ((self.eg_timer >> self.eg_cycle) & 1 != 0) && self.eg_cycle_stop {
+            self.eg_shift = self.eg_cycle;
+            self.eg_cycle_stop = false;
+        }
+
+        // IO de escrita.
+        self.write_a_en = (self.write_a & 3) == 1;
+        self.write_d_en = (self.write_d & 3) == 1;
+        self.write_a <<= 1;
+        self.write_d <<= 1;
+
+        // Key-On.
+        let c_usize = usize::try_from(c).unwrap_or(0);
+        let chan = c_usize % 6;
+        self.eg_kon_latch[c_usize] = self.mode_kon[c_usize];
+        if c == u32::from(self.mode_kon_channel) {
+            self.mode_kon[chan] = self.mode_kon_operator[0];
+            self.mode_kon[chan.wrapping_add(12)] = self.mode_kon_operator[1];
+            self.mode_kon[chan.wrapping_add(6)] = self.mode_kon_operator[2];
+            self.mode_kon[chan.wrapping_add(18)] = self.mode_kon_operator[3];
+        }
+
+        // Saida serial nos pinos.
+        let mut channel_output = chan;
+        if c < 12 {
+            channel_output = channel_output.wrapping_add(1);
+        }
+        if c & 3 == 0 {
+            self.ch_lock = self.ch_out[channel_output];
+            self.ch_lock_l = self.pan_l[channel_output];
+            self.ch_lock_r = self.pan_r[channel_output];
+        }
+        let out = if (c >> 2) == 1 && self.dac_ligado {
+            i32::from(self.dac_data)
+        } else {
+            self.ch_lock
+        };
+        let out_en = (c & 3) == 3;
+        let mut out_adj = out;
+        let mut sign = out >> 8;
+        if out >= 0 {
+            out_adj = out_adj.wrapping_add(1);
+            sign = sign.wrapping_add(1);
+        }
+        let mol = if self.ch_lock_l && out_en { out_adj } else { sign };
+        let mor = if self.ch_lock_r && out_en { out_adj } else { sign };
+        let mol = mol.wrapping_mul(3);
+        let mor = mor.wrapping_mul(3);
+
+        // Geracao de canal.
+        let slot_ch = usize::try_from(c.wrapping_add(18) % 24).unwrap_or(0);
+        let op_ch = slot_ch / 6;
+        let mut acc = self.ch_acc[chan];
+        if op_ch == 0 {
+            acc = 0;
+        }
+        let mut add = 0i32;
+        if FM_ALGORITHM[op_ch][5][usize::from(self.connect[chan])] {
+            add = self.fm_out[slot_ch] >> 5;
+        }
+        let sum = acc.wrapping_add(add).clamp(-256, 255);
+        if op_ch == 0 {
+            self.ch_out[chan] = self.ch_acc[chan];
+        }
+        self.ch_acc[chan] = sum;
+
+        // Modulacao FM e geracao do operador.
+        let slot_prep = usize::try_from(c.wrapping_add(6) % 24).unwrap_or(0);
+        let op_prep = slot_prep / 6;
+        let connect = usize::from(self.connect[chan]);
+        let prevslot = usize::try_from(c.wrapping_add(18) % 24).unwrap_or(0);
+
+        let mut mod1 = 0i32;
+        let mut mod2 = 0i32;
+        if FM_ALGORITHM[op_prep][0][connect] {
+            mod2 |= self.fm_op1[chan][0];
+        }
+        if FM_ALGORITHM[op_prep][1][connect] {
+            mod1 |= self.fm_op1[chan][1];
+        }
+        if FM_ALGORITHM[op_prep][2][connect] {
+            mod1 |= self.fm_op2[chan];
+        }
+        if FM_ALGORITHM[op_prep][3][connect] {
+            mod2 |= self.fm_out[prevslot];
+        }
+        if FM_ALGORITHM[op_prep][4][connect] {
+            mod1 |= self.fm_out[prevslot];
+        }
+        let mut m = mod1.wrapping_add(mod2);
+        if op_prep == 0 {
+            let fb = self.fb[chan];
+            m = if fb == 0 { 0 } else { m >> 10_u32.wrapping_sub(u32::from(fb)) };
+        } else {
+            m >>= 1;
+        }
+        self.fm_mod[slot_prep] = m;
+
+        let slot_hist = usize::try_from(c.wrapping_add(18) % 24).unwrap_or(0);
+        if slot_hist / 6 == 0 {
+            self.fm_op1[chan][1] = self.fm_op1[chan][0];
+            self.fm_op1[chan][0] = self.fm_out[slot_hist];
+        }
+        if slot_hist / 6 == 2 {
+            self.fm_op2[chan] = self.fm_out[slot_hist];
+        }
+
+        let slot_gen = usize::try_from(c.wrapping_add(19) % 24).unwrap_or(0);
+        let phase = (u32::try_from(self.fm_mod[slot_gen] & 0x3FF).unwrap_or(0)).wrapping_add(self.pg_phase[slot_gen] >> 10) & 0x3FF;
+        let mut quarter = phase & 0xFF;
+        if phase & 0x100 != 0 {
+            quarter ^= 0xFF;
+        }
+        let mut level = u32::from(LOGSIN[quarter as usize]).wrapping_add(u32::from(self.eg_out[slot_gen]) << 2);
+        if level > 0x1FFF {
+            level = 0x1FFF;
+        }
+        let exp_val = u32::from(EXP[usize::try_from(level & 0xFF).unwrap_or(0)]);
+        let sh = level >> 8;
+        let mut output = if sh >= 13 {
+            0i32
+        } else {
+            let v = ((exp_val | 0x400) << 2) >> sh;
+            i32::try_from(v).unwrap_or(0)
+        };
+        if phase & 0x200 != 0 {
+            output = output.wrapping_neg();
+        }
+        self.fm_out[slot_gen] = output;
+
+        // Gerador de fase.
+        let slot_mask = usize::try_from(c.wrapping_add(20) % 24).unwrap_or(0);
+        if self.pg_reset[slot_mask] {
+            self.pg_inc[slot_mask] = 0;
+        }
+        let slot_step = usize::try_from(c.wrapping_add(19) % 24).unwrap_or(0);
+        if self.pg_reset[slot_step] {
+            self.pg_phase[slot_step] = 0;
+        }
+        self.pg_phase[slot_step] = self.pg_phase[slot_step].wrapping_add(self.pg_inc[slot_step]) & 0xF_FFFF;
+
+        let fnum = u32::from(self.pg_fnum) << 1;
+        let mut basefreq = (fnum << self.pg_block) >> 2;
+        let dt = self.dt[c_usize];
+        let dt_l = dt & 3;
+        if dt_l != 0 {
+            let mut kcode = self.pg_kcode;
+            if kcode > 0x1C {
+                kcode = 0x1C;
+            }
+            let block = kcode >> 2;
+            let note = kcode & 3;
+            let dt_add = match dt_l {
+                2 => 2,
+                3 => 3,
+                _ => 0,
+            };
+            let sum = block.wrapping_add(9).wrapping_add(dt_add);
+            let sum_h = sum >> 1;
+            let sum_l = sum & 1;
+            let detune = PG_DETUNE[usize::from((sum_l << 2) | note)] >> 9_u32.wrapping_sub(u32::from(sum_h));
+            if dt & 4 != 0 {
+                basefreq = basefreq.wrapping_sub(detune);
+            } else {
+                basefreq = basefreq.wrapping_add(detune);
+            }
+        }
+        basefreq &= 0x1_FFFF;
+        self.pg_inc[c_usize] = (basefreq.wrapping_mul(self.multi[c_usize]) >> 1) & 0xF_FFFF;
+
+        // Gerador de envelope.
+        let slot_adsr = usize::try_from(c.wrapping_add(22) % 24).unwrap_or(0);
+        let nkon = self.eg_kon_latch[slot_adsr];
+        let okon = self.eg_kon[slot_adsr];
+        self.pg_reset[slot_adsr] = nkon && !okon;
+        let kon_event = nkon && !okon;
+        let level = self.eg_level[slot_adsr];
+        let eg_off = (level & 0x3F0) == 0x3F0;
+        let mut nextstate = self.eg_state[slot_adsr];
+        let mut nextlevel = i32::from(level);
+        let mut inc = 0i32;
+
+        if kon_event {
+            nextstate = Eg::Ataque;
+            if self.eg_ratemax {
+                nextlevel = 0;
+            } else if self.eg_state[slot_adsr] == Eg::Ataque && level != 0 && self.eg_inc != 0 && nkon {
+                let lev_inv = (!i32::from(level)) << self.eg_inc;
+                inc = lev_inv >> 5;
+            }
+        } else {
+            match self.eg_state[slot_adsr] {
+                Eg::Ataque => {
+                    if level == 0 {
+                        nextstate = Eg::Decai1;
+                    } else if self.eg_inc != 0 && !self.eg_ratemax && nkon {
+                        let lev_inv = (!i32::from(level)) << self.eg_inc;
+                        inc = lev_inv >> 5;
+                    }
+                }
+                Eg::Decai1 => {
+                    let sl_target = u32::from(self.eg_sl[1]) << 1;
+                    if u32::from(level >> 4) == sl_target {
+                        nextstate = Eg::Decai2;
+                    } else if !eg_off && self.eg_inc != 0 {
+                        inc = 1i32 << (self.eg_inc.wrapping_sub(1));
+                    }
+                }
+                Eg::Decai2 | Eg::Libera => {
+                    if !eg_off && self.eg_inc != 0 {
+                        inc = 1i32 << (self.eg_inc.wrapping_sub(1));
+                    }
+                }
+            }
+            if !nkon {
+                nextstate = Eg::Libera;
+            }
+        }
+        nextlevel = nextlevel.wrapping_add(inc);
+        self.eg_kon[slot_adsr] = self.eg_kon_latch[slot_adsr];
+        self.eg_level[slot_adsr] = u16::try_from(nextlevel.clamp(0, 1023)).unwrap_or(1023);
+        self.eg_state[slot_adsr] = nextstate;
+
+        let slot_eg_gen = usize::try_from(c.wrapping_add(23) % 24).unwrap_or(0);
+        let mut eg_lev = self.eg_level[slot_eg_gen];
+        eg_lev = eg_lev.wrapping_add(u16::from(self.eg_tl[0]) << 3);
+        self.eg_out[slot_eg_gen] = eg_lev.min(1023);
+
+        // Prepara incremento para o proximo ciclo a partir da taxa e ksv travados.
+        let mut rate = (u32::from(self.eg_rate) << 1).wrapping_add(u32::from(self.eg_ksv));
+        if rate > 0x3F {
+            rate = 0x3F;
+        }
+        let mut prep_inc = 0u8;
+        let sum = ((rate >> 2).wrapping_add(self.eg_shift_lock)) & 0x0F;
+        if self.eg_rate != 0 && self.eg_quotient == 2 {
+            if rate < 48 {
+                match sum {
+                    12 => prep_inc = 1,
+                    13 => prep_inc = u8::try_from((rate >> 1) & 1).unwrap_or(0),
+                    14 => prep_inc = u8::try_from(rate & 1).unwrap_or(0),
                     _ => {}
                 }
             } else {
-                k = k.wrapping_add(1);
+                let stephi = EG_STEPHI[(rate & 3) as usize][self.eg_timer_low_lock as usize];
+                let v = stephi.wrapping_add(rate >> 2).wrapping_sub(11);
+                prep_inc = u8::try_from(v.min(4)).unwrap_or(4);
             }
         }
-        // O slot decide se é portador com o algoritmo de antes da gravação deste ciclo (medido:
-        // `examples/sonda12.rs`).
-        let algo_antes = [0usize, 1, 2, 3, 4, 5].map(|k| self.canal[k].algoritmo);
-        self.captura(c);
-        self.tempo = agora.wrapping_add(1);
-        // O contador do envelope anda uma vez a cada 3 amostras (medido: o valor que os slots usam muda no ciclo 98, depois do slot 23).
-        if agora >= 98 && agora.wrapping_sub(98).is_multiple_of(72) {
-            self.eg_timer = self.eg_timer.wrapping_add(1) & 0xFFF;
-        }
-        // Cópias: cada slot lê seus parâmetros 12 ciclos antes de ser processado, e o algoritmo
-        // e a realimentação 17 ciclos antes (medido pela calibração das classes).
-        let ia = usize::try_from(c.wrapping_add(12) % 24).unwrap_or(0);
-        self.c_algo[ia] = self.canal[ia % 6].algoritmo;
-        self.c_fb[ia] = self.canal[ia % 6].realimentacao;
-        let ip = usize::try_from(c.wrapping_add(7) % 24).unwrap_or(0);
-        self.c_op[ip] = self.op[ip % 6][ip / 6];
-        self.c_fnum[ip] = self.canal[ip % 6].fnum;
-        self.c_bloco[ip] = self.canal[ip % 6].bloco;
+        self.eg_inc = prep_inc;
+        self.eg_ratemax = (rate >> 1) == 0x1F;
 
-        // Estágio do envelope do slot `ie`.
-        let ie = usize::try_from(c.wrapping_add(22) % 24).unwrap_or(0);
-        self.passo_envelope(ie);
-        self.aplica_tecla(ie, agora);
-        if self.tecla_pedida[ie] != self.tecla_ligada[ie] {
-            self.tecla_ligada[ie] = self.tecla_pedida[ie];
-            if self.tecla_ligada[ie] {
-                self.eg_estado[ie] = Eg::Ataque;
-                self.zera_fase[ie] = true;
-                // Taxa de ataque 62 ou 63 leva o nível a zero na hora.
-                if self.taxa_atual(ie) >= 62 {
-                    self.nivel[ie] = 0;
-                    self.eg_estado[ie] = Eg::Decai1;
+        // Trava taxa e ksv do slot atual (c_usize) para o ciclo seguinte.
+        let rate_sel = if !self.eg_kon[c_usize] && self.eg_kon_latch[c_usize] {
+            Eg::Ataque
+        } else {
+            self.eg_state[c_usize]
+        };
+        let eg_rate = match rate_sel {
+            Eg::Ataque => self.ar[c_usize],
+            Eg::Decai1 => self.dr[c_usize],
+            Eg::Decai2 => self.sr[c_usize],
+            Eg::Libera => (self.rr[c_usize] << 1) | 1,
+        };
+        self.eg_rate = eg_rate;
+        self.eg_ksv = self.pg_kcode >> (self.ks[c_usize] ^ 3);
+
+        self.eg_tl[1] = self.eg_tl[0];
+        self.eg_tl[0] = self.tl[c_usize];
+        self.eg_sl[1] = self.eg_sl[0];
+        self.eg_sl[0] = self.sl[c_usize];
+
+        // Trava F-Number e bloco para o canal do proximo ciclo.
+        let next_chan = chan.wrapping_add(1) % 6;
+        self.pg_fnum = self.fnum[next_chan];
+        self.pg_block = self.block[next_chan];
+        self.pg_kcode = self.kcode[next_chan];
+
+        // Gravacao nos registradores do canal ou operador com o dado do barramento atual.
+        if self.write_fm_data {
+            let mut slot_wr = usize::try_from(c % 12).unwrap_or(0);
+            if OP_OFFSET[slot_wr] == (self.address & 0x107) {
+                if self.address & 8 != 0 {
+                    slot_wr = slot_wr.wrapping_add(12);
                 }
-            } else {
-                self.eg_estado[ie] = Eg::Libera;
+                let a = self.address & 0xF0;
+                let d = self.data;
+                match a {
+                    0x30 => {
+                        let mut mul = u32::from(d & 0x0F);
+                        if mul == 0 {
+                            mul = 1;
+                        } else {
+                            mul <<= 1;
+                        }
+                        self.multi[slot_wr] = mul;
+                        self.dt[slot_wr] = (d >> 4) & 7;
+                    }
+                    0x40 => self.tl[slot_wr] = d & 0x7F,
+                    0x50 => {
+                        self.ar[slot_wr] = d & 0x1F;
+                        self.ks[slot_wr] = (d >> 6) & 3;
+                    }
+                    0x60 => {
+                        self.dr[slot_wr] = d & 0x1F;
+                        self.am[slot_wr] = (d >> 7) & 1 != 0;
+                    }
+                    0x70 => self.sr[slot_wr] = d & 0x1F,
+                    0x80 => {
+                        self.rr[slot_wr] = d & 0x0F;
+                        let mut sl = d >> 4;
+                        sl |= (sl.wrapping_add(1)) & 0x10;
+                        self.sl[slot_wr] = sl;
+                    }
+                    _ => {}
+                }
+            }
+            if CH_OFFSET[chan] == (self.address & 0x103) {
+                let a = self.address & 0xFC;
+                let d = self.data;
+                match a {
+                    0xA0 => {
+                        let f = u16::from(d) | (u16::from(self.reg_a4 & 7) << 8);
+                        let b = (self.reg_a4 >> 3) & 7;
+                        self.fnum[chan] = f;
+                        self.block[chan] = b;
+                        let note = FN_NOTE[usize::from((f >> 7) & 0x0F)];
+                        self.kcode[chan] = (b << 2) | note;
+                    }
+                    0xA4 => self.reg_a4 = d,
+                    0xB0 => {
+                        self.connect[chan] = d & 7;
+                        self.fb[chan] = (d >> 3) & 7;
+                    }
+                    0xB4 => {
+                        self.pan_l[chan] = (d >> 7) & 1 != 0;
+                        self.pan_r[chan] = (d >> 6) & 1 != 0;
+                    }
+                    _ => {}
+                }
             }
         }
 
-        // Operador do slot `i`.
-        let i = usize::try_from(c.wrapping_add(19) % 24).unwrap_or(0);
-        let ch = i % 6;
-        let m = self.modulacao(i);
-        let eg = u32::from(self.c_op[i].tl).wrapping_mul(8).wrapping_add(u32::from(self.eg_saida[i])).min(1023);
-        let fase10 = (self.fase[i] >> 10).wrapping_add(u32::try_from((m >> 1) & 0x3FF).unwrap_or(0)) & 0x3FF;
-        self.op_anterior[i] = self.saida_op[i];
-        self.portador_ant[i] = self.portador[i];
-        // Portadores de cada algoritmo (diagramas do manual do YM2608), na ordem S1, S3, S2, S4.
-        self.portador[i] = matches!((algo_antes[ch], i / 6), (_, 3) | (7, _) | (4, 2) | (5 | 6, 1 | 2));
-        self.saida_op[i] = Self::operador(fase10, eg);
-        self.eg_saida[i] = self.nivel[i];
-        // A fase só avança depois de a saída usar o valor antigo.
-        if self.zera_fase[i] {
-            self.zera_fase[i] = false;
-            self.fase[i] = 0;
-        } else {
-            self.fase[i] = self.fase[i].wrapping_add(self.incremento(i)) & 0xF_FFFF;
-        }
-        if i < 6 {
-            self.realim[ch] = [self.saida_op[i], self.realim[ch][0]];
-        }
-
-        // Canal: soma um ciclo depois do slot do primeiro operador.
-        let c6 = usize::try_from(c.wrapping_add(18) % 24).unwrap_or(99);
-        if c6 < 6 {
-            self.saida_canal[c6] = self.soma_canal(c6);
-        }
-
-        // Pino: cada canal aparece num ciclo próprio; fora deles, o repouso.
-        let mut pino = (3i16, 3i16);
-        for (k, &cp) in CICLO_PINO.iter().enumerate() {
-            // O valor do canal e o panning são copiados três ciclos antes de aparecer (medido).
-            if cp.wrapping_add(21) % 24 == c {
-                let v = self.saida_canal[k];
-                self.pino_valor[k] = v;
-                self.pino_lr[k] = self.com_panning(k, v);
+        // Atualizacao dos sinais do barramento de escrita e registradores de modo.
+        if self.write_a_en || self.write_d_en {
+            if self.write_a_en {
+                self.write_fm_data = false;
             }
-            // O DAC não passa por essa cópia: o pino lê o valor ao vivo.
-            let dac_vivo = k == 5 && self.dac_ligado;
-            let falta = cp.wrapping_add(24).wrapping_sub(c) % 24;
-            if (1..=3).contains(&falta) {
-                // Nos três ciclos antes do valor, o pino mostra só o sinal do canal.
-                let v = if dac_vivo { self.dac_valor } else { self.pino_valor[k] };
-                let s = if v < 0 { -3 } else { 3 };
-                pino = (s, s);
+            if self.write_fm_address && self.write_d_en {
+                self.write_fm_data = true;
             }
-            if cp == c {
-                let (l, r) = if dac_vivo { self.com_panning(k, self.dac_valor) } else { self.pino_lr[k] };
-                pino = (Self::escada(l), Self::escada(r));
+            if self.write_a_en {
+                if (self.write_data & 0xF0) != 0 {
+                    self.address = self.write_data;
+                    self.write_fm_address = true;
+                } else {
+                    self.write_fm_address = false;
+                }
+            }
+            if self.write_d_en && (self.write_data & 0x100) == 0 {
+                match self.write_fm_mode_a {
+                    0x28 => {
+                        for i in 0..4 {
+                            self.mode_kon_operator[i] = (self.write_data >> (4_usize.wrapping_add(i))) & 1 != 0;
+                        }
+                        if (self.write_data & 3) == 3 {
+                            self.mode_kon_channel = 0xFF;
+                        } else {
+                            let ch = (self.write_data & 3).wrapping_add(((self.write_data >> 2) & 1).wrapping_mul(3));
+                            self.mode_kon_channel = u8::try_from(ch).unwrap_or(0xFF);
+                        }
+                    }
+                    0x2A => {
+                        let d = u8::try_from(self.write_data & 0xFF).unwrap_or(0);
+                        let mut dac = i16::from(d ^ 0x80) << 1;
+                        if dac >= 256 {
+                            dac = dac.wrapping_sub(512);
+                        }
+                        self.dac_data = dac;
+                    }
+                    0x2B => {
+                        self.dac_ligado = (self.write_data >> 7) & 1 != 0;
+                    }
+                    _ => {}
+                }
+            }
+            if self.write_a_en {
+                self.write_fm_mode_a = self.write_data & 0x1FF;
             }
         }
-        self.ciclo = c.wrapping_add(1) % 24;
-        pino
+        if self.write_fm_data {
+            self.data = u8::try_from(self.write_data & 0xFF).unwrap_or(0);
+        }
+
+        self.cycles = c.wrapping_add(1) % 24;
+        self.tempo = self.tempo.wrapping_add(1);
+        (
+            i16::try_from(mol).unwrap_or(0),
+            i16::try_from(mor).unwrap_or(0),
+        )
     }
 
-    /// Canal desligado de um lado deixa passar só o sinal (-1 ou 0).
-    fn com_panning(&self, k: usize, v: i32) -> (i32, i32) {
-        (if self.canal[k].esquerda { v } else { v >> 31 }, if self.canal[k].direita { v } else { v >> 31 })
-    }
-
-    /// Modulação que entra no slot `i`, segundo o algoritmo (diagramas do manual do YM2608).
-    fn modulacao(&self, i: usize) -> i32 {
-        let (g, ch) = (i / 6, i % 6);
-        // Um operador só enxerga a saída do operador imediatamente anterior na ordem dos slots
-        // com uma amostra de atraso (medido: 6 ciclos não bastam, 12 bastam).
-        let s = |produtor: usize| {
-            let j = produtor.wrapping_mul(6).wrapping_add(ch);
-            if produtor < g && g.wrapping_sub(produtor) < 2 { self.op_anterior[j] } else { self.saida_op[j] }
-        };
-        let (s1, s3, s2) = (s(0), s(1), s(2));
-        let a = self.c_algo[i];
-        match g {
-            0 => {
-                let fb = self.c_fb[i];
-                if fb == 0 { 0 } else { (self.realim[ch][0].wrapping_add(self.realim[ch][1])) >> 9_u32.wrapping_sub(u32::from(fb)) }
-            }
-            2 => match a {
-                0 | 3..=6 => s1,
-                _ => 0,
-            },
-            1 => match a {
-                0 | 2 => s2,
-                1 => s1.wrapping_add(s2),
-                5 => s1,
-                _ => 0,
-            },
-            _ => match a {
-                0 | 1 | 4 => s3,
-                2 => s1.wrapping_add(s3),
-                3 => s2.wrapping_add(s3),
-                5 => s1,
-                _ => 0,
-            },
-        }
-    }
-
-    /// Soma dos operadores portadores, com saturação em 9 bits a cada parcela (medido).
-    fn soma_canal(&self, ch: usize) -> i32 {
-        let s = |g: usize| self.saida_op[g.wrapping_mul(6).wrapping_add(ch)];
-        // O primeiro operador entra com o valor da amostra anterior.
-        let (s1, s3, s2, s4) = (self.op_anterior[ch], s(1), s(2), s(3));
-        let pt = |g: usize| self.portador[g.wrapping_mul(6).wrapping_add(ch)];
-        let portadores = [self.portador_ant[ch], pt(1), pt(2), pt(3)];
-        let mut acc: i32 = 0;
-        for (p, v) in portadores.iter().zip([s1, s3, s2, s4]) {
-            if *p {
-                acc = acc.wrapping_add(v >> 5).clamp(-256, 255);
-            }
-        }
-        acc
-    }
-
-    /// Escada do DAC do modelo 1 (modo YM2612): três vezes o valor, mais 3 se não negativo.
-    fn escada(v: i32) -> i16 {
-        let r = v.wrapping_mul(3).wrapping_add(if v >= 0 { 3 } else { 0 });
-        i16::try_from(r).unwrap_or(0)
-    }
-
-    /// A tecla chega a cada slot com atraso de `3 + 6 * g` ciclos (o primeiro operador conta
-    /// como 4). O slot vê o registrador `$28` como estava nesse instante passado; se o canal do
-    /// registrador é o seu, copia o bit (`examples/sonda7.rs` e `sonda10.rs`).
-    fn aplica_tecla(&mut self, slot: usize, agora: u64) {
-        let (g, ch) = (slot / 6, slot % 6);
-        let atraso = 3u64.wrapping_add(6u64.wrapping_mul(if g == 0 { 4 } else { u64::try_from(g).unwrap_or(0) }));
-        // Bit do registrador de cada operador na ordem dos slots: S1, S3, S2, S4.
-        let bit = [0usize, 2, 1, 3][g];
-        if let Some(&(_, _, bits)) = self.tecla_hist.iter().rev().find(|e| e.1 == ch && e.0.wrapping_add(atraso) <= agora) {
-            self.tecla_pedida[slot] = (bits >> bit) & 1 != 0;
-        }
-        // Guarda só o que ainda pode ser visto: as escritas recentes e a última antiga.
-        if self.tecla_hist.len() > 1 {
-            let limite = agora.saturating_sub(64);
-            let antigas = self.tecla_hist.iter().filter(|e| e.0 < limite).count();
-            if antigas > 1 {
-                self.tecla_hist.drain(0..antigas.wrapping_sub(1));
-            }
-        }
-    }
-
-    /// Taxa efetiva (0 a 63) da fase atual do envelope do slot.
-    fn taxa_atual(&self, i: usize) -> u32 {
-        let ch = i % 6;
-        let p = &self.op[ch][i / 6];
-        let r5 = match self.eg_estado[i] {
-            Eg::Ataque => u32::from(p.ar),
-            Eg::Decai1 => u32::from(p.d1r),
-            Eg::Decai2 => u32::from(p.d2r),
-            Eg::Libera => u32::from(p.rr).wrapping_mul(2).wrapping_add(1),
-        };
-        if r5 == 0 {
-            return 0;
-        }
-        let ksv = Self::kcode(self.canal[ch].fnum, self.canal[ch].bloco) >> 3_u32.wrapping_sub(u32::from(p.ks));
-        r5.wrapping_mul(2).wrapping_add(ksv).min(63)
-    }
-
-    /// Passo do envelope: só age quando o contador mudou desde o último passo do slot.
-    /// Tabelas de incremento do manual do YM2608; posição dentro do ciclo de 8 passos medida.
-    fn passo_envelope(&mut self, i: usize) {
-        // Os 16 últimos níveis viram silêncio total no passo seguinte (medido).
-        if self.nivel[i] >= 1008 {
-            self.nivel[i] = 1023;
-        }
-        if self.eg_visto[i] == self.eg_timer {
-            return;
-        }
-        self.eg_visto[i] = self.eg_timer;
-        // A fase do envelope é decidida com o nível do passo anterior, antes de escolher a taxa.
-        let sl = u32::from(self.op[i % 6][i / 6].sl);
-        let limite = if sl == 15 { 0x3E0 } else { sl << 5 };
-        if self.eg_estado[i] == Eg::Ataque && self.nivel[i] == 0 {
-            self.eg_estado[i] = Eg::Decai1;
-        }
-        if self.eg_estado[i] == Eg::Decai1 && u32::from(self.nivel[i]) >= limite {
-            self.eg_estado[i] = Eg::Decai2;
-        }
-        let taxa = self.taxa_atual(i);
-        if taxa == 0 {
-            return;
-        }
-        let timer = u32::from(self.eg_timer);
-        let inc = if taxa >= 48 {
-            let pos = timer.wrapping_sub(if taxa & 3 == 3 { 3 } else { 1 }) & 7;
-            u32::from(EG_INC_ALTO[taxa.wrapping_sub(48) as usize][pos as usize])
-        } else {
-            let sh = 11_u32.wrapping_sub(taxa >> 2);
-            if timer & ((1u32 << sh).wrapping_sub(1)) != 0 {
-                return;
-            }
-            u32::from(EG_INC_BAIXO[(taxa & 3) as usize][((timer >> sh) & 7) as usize])
-        };
-        let nivel = i32::from(self.nivel[i]);
-        let inc_i = i32::try_from(inc).unwrap_or(0);
-        let novo = if self.eg_estado[i] == Eg::Ataque {
-            // Ataque: curva exponencial, o passo é proporcional ao que falta.
-            nivel.wrapping_add((nivel.wrapping_neg().wrapping_sub(1).wrapping_mul(inc_i)) >> 4)
-        } else {
-            nivel.wrapping_add(inc_i)
-        };
-        self.nivel[i] = u16::try_from(novo.clamp(0, 1023)).unwrap_or(1023);
-    }
-
-    // Acesso de diagnóstico ao estado interno (para o comparador em camadas).
+    // Acesso de diagnóstico ao estado interno (para o comparador diferencial).
     pub fn diag_fase(&self) -> [u32; 24] {
-        self.fase
+        self.pg_phase
     }
     pub fn diag_saida_op(&self) -> [i32; 24] {
-        self.saida_op
+        self.fm_out
     }
     pub fn diag_saida_canal(&self) -> [i32; 6] {
-        self.saida_canal
+        self.ch_out
     }
     pub fn diag_eg(&self) -> [u16; 24] {
-        self.nivel
+        self.eg_level
     }
-
 }

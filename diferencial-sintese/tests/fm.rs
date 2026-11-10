@@ -10,7 +10,7 @@ fn compara(escritas: &[Escrita], amostras: usize) -> Result<(), String> {
     let mut a = Fm::novo();
     let mut r = RefOpn2::novo();
     let mut ciclo = 0usize;
-    let mut passo = |a: &mut Fm, r: &mut RefOpn2, ciclo: &mut usize| -> Result<(), String> {
+    let passo = |a: &mut Fm, r: &mut RefOpn2, ciclo: &mut usize| -> Result<(), String> {
         let x = a.ciclo();
         let y = r.ciclo();
         *ciclo += 1;
@@ -233,7 +233,7 @@ fn diag_sat() {
 #[test]
 #[ignore]
 fn diag_slot() {
-    let mut g = Rng(0);
+    let mut g = Rng(1u64.wrapping_mul(0x9E3779B97F4A7C15) | 1);
     let mut e = Vec::new();
     for s in 1..=20u64 { g = Rng(s.wrapping_mul(0x9E3779B97F4A7C15) | 1); e = aleatorio(&mut g, 1); }
     let mut a = Fm::novo();
@@ -540,7 +540,7 @@ fn diag_pan() {
 fn dinamico(g: &mut Rng, n: usize) -> Vec<(usize, u32, u8)> {
     // (ciclos de espera antes, porta, valor)
     let mut e: Vec<(usize, u32, u8)> = Vec::new();
-    let mut w = |e: &mut Vec<(usize, u32, u8)>, gap: usize, parte: u32, a: u8, d: u8| { e.push((gap, parte, a)); e.push((4 + gap % 3, parte + 1, d)); };
+    let w = |e: &mut Vec<(usize, u32, u8)>, gap: usize, parte: u32, a: u8, d: u8| { e.push((gap, parte, a)); e.push((4 + gap % 3, parte + 1, d)); };
     // configuracao inicial
     for ch in 0..6u8 {
         let (p, off) = if ch < 3 { (0u32, ch) } else { (2, ch - 3) };
@@ -695,4 +695,82 @@ fn serie(s: u64, de: usize, ate: usize, f: &dyn Fn(&Fm, &RefOpn2) -> String) {
 fn diag_serie_a() {
     serie(11, 558, 568, &|a, r| format!("ch_out0 ref {} nucleo {} | fm_out ref {:?} nucleo {:?}", r.estado(4)[0], a.diag_saida_canal()[0],
         [r.estado(3)[0], r.estado(3)[6], r.estado(3)[12], r.estado(3)[18]], [a.diag_saida_op()[0], a.diag_saida_op()[6], a.diag_saida_op()[12], a.diag_saida_op()[18]]));
+}
+
+#[test]
+#[ignore]
+fn diag_ciclo_a_ciclo() {
+    let mut g = Rng(5u64.wrapping_mul(0x9E3779B97F4A7C15) | 1);
+    let e = dinamico(&mut g, 150);
+    let mut a = Fm::novo();
+    let mut r = RefOpn2::novo();
+    let mut c = 0usize;
+    let mut prim_div = None;
+    for &(gap, p, v) in &e {
+        for _ in 0..gap {
+            let x = a.ciclo();
+            let y = r.ciclo();
+            c += 1;
+            let eg_r = r.estado(1);
+            let eg_n = a.diag_eg();
+            let mut igual_eg = true;
+            for i in 0..24 {
+                if eg_r[i] != eg_n[i] as i32 {
+                    igual_eg = false;
+                    break;
+                }
+            }
+            if !igual_eg && prim_div.is_none() {
+                prim_div = Some((c, x, y));
+                println!("EG DIVERGIU no ciclo {c} (amostra {}, pos {}):", (c-1)/24, (c-1)%24);
+                for i in 0..24 {
+                    if eg_r[i] != eg_n[i] as i32 {
+                        println!("  slot {i}: ref {} nuc {} (diff {})", eg_r[i], eg_n[i], eg_r[i] - (eg_n[i] as i32));
+                    }
+                }
+            }
+            let fm_r = r.estado(3);
+            let fm_n = a.diag_saida_op();
+            let mut igual_fm = true;
+            for i in 0..24 {
+                if fm_r[i] != fm_n[i] {
+                    igual_fm = false;
+                    break;
+                }
+            }
+            if !igual_fm && prim_div.is_none() {
+                prim_div = Some((c, x, y));
+                println!("FM_OUT DIVERGIU no ciclo {c} (amostra {}, pos {}):", (c-1)/24, (c-1)%24);
+                for i in 0..24 {
+                    if fm_r[i] != fm_n[i] {
+                        println!("  slot {i}: ref {} nuc {} (diff {})", fm_r[i], fm_n[i], fm_r[i] - fm_n[i]);
+                    }
+                }
+            }
+            let f_r = r.estado(0);
+            let f_n = a.diag_fase();
+            let mut igual_f = true;
+            for i in 0..24 {
+                if f_r[i] != f_n[i] as i32 {
+                    igual_f = false;
+                    break;
+                }
+            }
+            if !igual_f && prim_div.is_none() {
+                prim_div = Some((c, x, y));
+                println!("FASE DIVERGIU no ciclo {c} (amostra {}, pos {}):", (c-1)/24, (c-1)%24);
+                for i in 0..24 {
+                    if f_r[i] != f_n[i] as i32 {
+                        println!("  slot {i}: ref {} nuc {} (diff {})", f_r[i], f_n[i], f_r[i] - (f_n[i] as i32));
+                    }
+                }
+            }
+            if x != y && prim_div.is_none() {
+                prim_div = Some((c, x, y));
+                println!("PINO DIVERGIU no ciclo {c} (amostra {}, pos {}): nucleo {x:?} ref {y:?}", (c-1)/24, (c-1)%24);
+            }
+        }
+        a.escreve(p, v); r.escreve(p, v);
+    }
+    assert!(prim_div.is_none(), "Divergiu: {:?}", prim_div);
 }
