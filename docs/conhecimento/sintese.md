@@ -63,6 +63,30 @@ Comando: `sh scripts/etapa8-bloco1.sh` (commits conferidos iguais aos fixados; `
 - **Bateria sintética:** executada via `cargo run --manifest-path diferencial-sintese/Cargo.toml --release --bin sintese -- --sintetico`, produzindo 100% `IGUAL`.
 - **Script do Bloco 2 do Marcelo:** `scripts/etapa8-bloco2.sh` preparado e testado para execução contra os traces de oráculo da ROM real.
 
+## Prova com a ROM real (8.5 e fechamento, Marcelo em 10/11/2026)
+
+Comando: `sh scripts/etapa8-bloco2.sh "$HOME/sonic1-ext/rom/Sonic The Hedgehog (W) (REV01) [!].gen" 600`.
+
+- **Veredito:** `VEREDITO GERAL DA ETAPA: IGUAL` (exit code 0).
+- **Hash do relatório:** `55a112765775af740cb43a49f1100e91c841630a`
+- **SHA-1 de `relatorio-sintese.txt`:** `1013000deae3943a496a94031618c83a2cac4565`
+- **Resultados detalhados por caso:**
+  - Bateria sintética FM: 7 casos, 11 blocos (45 056 amostras) -> **100% IGUAL**.
+  - Bateria sintética PSG: 2 casos, 3 blocos (12 288 amostras) -> **100% IGUAL**.
+  - `boot-demos` (7200 quadros, 1 624 204 escritas FM, 8471 escritas PSG):
+    - FM: 6 400 183 amostras, 1563 de 1563 blocos iguais -> **IGUAL**.
+    - PSG: 26 880 772 amostras, 6563 de 6563 blocos iguais -> **IGUAL**.
+  - `demos-quatro` (11700 quadros, 2 325 744 escritas FM, 12 709 escritas PSG):
+    - FM: 10 400 362 amostras, 2540 de 2540 blocos iguais -> **IGUAL**.
+    - PSG: 43 681 522 amostras, 10665 de 10665 blocos iguais -> **IGUAL**.
+  - `lz-agua` (2000 quadros, 368 056 escritas FM, 2435 escritas PSG):
+    - FM: 1 777 755 amostras, 435 de 435 blocos iguais -> **IGUAL**.
+    - PSG: 7 466 572 amostras, 1823 de 1823 blocos iguais -> **IGUAL**.
+  - `partida-ghz1` (8309 quadros, 2 449 778 escritas FM, 12 629 escritas PSG):
+    - FM: 7 386 005 amostras, 1804 de 1804 blocos iguais -> **IGUAL**.
+    - PSG: 31 021 224 amostras, 7574 de 7574 blocos iguais -> **IGUAL**.
+- **Totais:** 25 964 305 amostras de FM e 109 050 090 amostras de PSG comparadas amostra a amostra sem nenhuma divergência (0 blocos diferentes em 32 967 blocos comparados).
+
 ## Saída web, reamostragem e filtro analógico (8.6 a 8.8)
 
 - **Crate `sonic1-audio-saida`:**
@@ -89,9 +113,9 @@ Comando: `sh scripts/etapa8-bloco1.sh` (commits conferidos iguais aos fixados; `
 | 8.2 PSG | **igual ao Nuked-PSG** amostra a amostra |
 | 8.3 FM YM2612 | **igual ao Nuked-OPN2** no modo YM2612 amostra a amostra |
 | 8.4 Sintetizador e agendador em mclk | **feito** (invariância à fatiação e agendamento nominal) |
-| 8.5 Harness diferencial de síntese | **feito** (bateria sintética IGUAL; `scripts/etapa8-bloco2.sh` pronto) |
+| 8.5 Harness diferencial de síntese | **feito** (bateria sintética e corpus com a ROM real **100% IGUAL**, hash `55a11276...`) |
 | 8.6 Reamostrador polifásico sinc | **feito** (256 fases, 32 taps, controle dinâmico ±0,5%) |
 | 8.7 Áudio web | **feito** (`site/audio-worklet.js`, integração em `crates/console` e `crates/web`) |
 | 8.8 Filtro analógico passa-baixas | **feito** (APROXIMADO, fora da prova digital) |
 | 8.9 Medição de desempenho | **feito** (mediana ~1840 µs < 3000 µs) |
-| 8.10 Fechamento do bloco da IA | **feito** (documentação, patches e roteiro para o Marcelo) |
+| 8.10 Fechamento da etapa 8 | **concluída** (documentação, patches e relatório com veredito IGUAL) |
