@@ -49,9 +49,18 @@ name = "sonic1-audio"
 version = "0.0.0"
 
 [[package]]
+name = "sonic1-audio-saida"
+version = "0.0.0"
+dependencies = [
+ "sonic1-audio",
+]
+
+[[package]]
 name = "sonic1-console"
 version = "0.0.0"
 dependencies = [
+ "sonic1-audio",
+ "sonic1-audio-saida",
  "sonic1-core",
  "sonic1-video",
 ]

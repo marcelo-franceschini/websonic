@@ -1,0 +1,13 @@
+[package]
+name = "sonic1-audio-saida"
+description = "Saida de audio: reamostrador polifasico, parte analogica aproximada e buffer de reproducao (Etapa 8)"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+sonic1-audio = { path = "../audio" }
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }

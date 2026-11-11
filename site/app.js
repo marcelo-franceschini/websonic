@@ -48,6 +48,29 @@ let ultimo = 0;
 let acumulado = 0;
 const PASSO = 1000 / 60; // a lógica roda sempre a 60 Hz
 
+let audioCtx = null;
+let workletNode = null;
+
+async function iniciarAudio() {
+  if (audioCtx) return;
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+    await audioCtx.audioWorklet.addModule("audio-worklet.js");
+    workletNode = new AudioWorkletNode(audioCtx, "sonic-audio-processor");
+    workletNode.connect(audioCtx.destination);
+    const retomar = () => {
+      if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+      window.removeEventListener("click", retomar);
+      window.removeEventListener("keydown", retomar);
+    };
+    window.addEventListener("click", retomar);
+    window.addEventListener("keydown", retomar);
+    if (audioCtx.state === "suspended") audioCtx.resume();
+  } catch (e) {
+    console.warn("Falha ao inicializar AudioWorklet:", e);
+  }
+}
+
 const TECLAS = {
   ArrowUp: 0x01, ArrowDown: 0x02, ArrowLeft: 0x04, ArrowRight: 0x08,
   x: 0x10, c: 0x20, z: 0x40, Enter: 0x80,
@@ -72,6 +95,13 @@ function laco(agora) {
     jogo.botoes(apertadas);
     imagem.data.set(jogo.quadro());
     ctx.putImageData(imagem, 0, 0);
+
+    const audio = jogo.audio();
+    if (workletNode && audio.length > 0) {
+      const f32 = new Float32Array(audio);
+      workletNode.port.postMessage(f32.buffer, [f32.buffer]);
+    }
+
     const erro = jogo.erro();
     if (erro) {
       const p = document.getElementById("erro-jogo");
@@ -83,13 +113,14 @@ function laco(agora) {
 }
 
 // Chamado depois de a ROM ser aceita: cria o jogo com os mesmos bytes (que não saem da máquina).
-function iniciar(bytes) {
+async function iniciar(bytes) {
   try {
     jogo = Jogo.criar(bytes);
   } catch (e) {
     jogo = null;
     return;
   }
+  await iniciarAudio();
   tela.hidden = false;
   document.getElementById("aviso").hidden = false;
   ajustarEscala();

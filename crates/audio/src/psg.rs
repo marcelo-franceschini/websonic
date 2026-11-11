@@ -129,6 +129,9 @@ impl Psg {
 
     /// Aplica a escrita pendente (ou o reset) aos registradores.
     fn atualiza_registradores(&mut self) {
+        if !self.reset_registradores && !self.escrita_aplicar {
+            return;
+        }
         let d = if self.mascara_dado { 0 } else { self.dado };
         let reset = self.reset_registradores;
         let alvo = |r: u8, s: &Self| reset || (s.escrita_aplicar && s.registrador == r);
@@ -161,7 +164,11 @@ impl Psg {
     fn serve_canal(&mut self) {
         let taxa = self.ruido_dado & 3;
         // O ruído de taxa 3 usa a saída do tom 3 como relógio.
-        let relogio_ruido = if taxa == 3 { (self.sinal >> 1) & 1 } else { self.sinal & 1 } != 0;
+        let relogio_ruido = if taxa == 3 {
+            (self.sinal >> 1) & 1
+        } else {
+            self.sinal & 1
+        } != 0;
         if self.ruido_gatilho_atraso || (self.ic_atraso & 1) != 0 {
             self.ruido = 0;
         } else if relogio_ruido && !self.ruido_estouro_anterior {
@@ -244,7 +251,28 @@ impl Psg {
 
     /// A saída empacotada em 16 bits, 4 bits por canal (canal 0 nos bits altos).
     pub fn saida_empacotada(&self) -> u16 {
-        self.saida().iter().fold(0u16, |a, &v| (a << 4) | u16::from(v))
+        let sinal = (self.sinal & 14) | u8::from(self.ruido_sinal);
+        let c0 = if (sinal & 8) != 0 {
+            self.volume[0]
+        } else {
+            MUDO
+        };
+        let c1 = if (sinal & 4) != 0 {
+            self.volume[1]
+        } else {
+            MUDO
+        };
+        let c2 = if (sinal & 2) != 0 {
+            self.volume[2]
+        } else {
+            MUDO
+        };
+        let c3 = if (sinal & 1) != 0 {
+            self.volume[3]
+        } else {
+            MUDO
+        };
+        (u16::from(c0) << 12) | (u16::from(c1) << 8) | (u16::from(c2) << 4) | u16::from(c3)
     }
 
     /// Roda 16 ciclos e devolve uma amostra.

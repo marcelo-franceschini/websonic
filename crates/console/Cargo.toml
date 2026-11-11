@@ -7,6 +7,8 @@ publish.workspace = true
 license.workspace = true
 
 [dependencies]
+sonic1-audio = { path = "../audio" }
+sonic1-audio-saida = { path = "../audio-saida" }
 sonic1-core = { path = "../core" }
 sonic1-video = { path = "../video" }
 

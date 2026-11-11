@@ -71,7 +71,7 @@ fn diag_latencia_tecla() {
     }
     let mut ant = (vec![], vec![], vec![], vec![]);
     for k in 0..8 * 24 {
-        r.ciclo(); c += 1;
+        r.ciclo();
         let cur = (r.estado(0)[..6].to_vec(), r.estado(1)[..6].to_vec(), r.estado(3)[..6].to_vec(), r.estado(4));
         if cur != ant { println!("+{k} (cyc {}): phase{:?} eg{:?} fm_out{:?} ch_out{:?}", r.estado(8)[0], cur.0, cur.1, cur.2, cur.3); ant = cur; }
     }
@@ -233,7 +233,7 @@ fn diag_sat() {
 #[test]
 #[ignore]
 fn diag_slot() {
-    let mut g = Rng(1u64.wrapping_mul(0x9E3779B97F4A7C15) | 1);
+    let mut g = Rng(1);
     let mut e = Vec::new();
     for s in 1..=20u64 { g = Rng(s.wrapping_mul(0x9E3779B97F4A7C15) | 1); e = aleatorio(&mut g, 1); }
     let mut a = Fm::novo();

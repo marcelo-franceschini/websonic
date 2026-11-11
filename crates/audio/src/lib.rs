@@ -12,7 +12,7 @@ pub mod sintetizador;
 mod tabelas;
 
 pub use sintetizador::{
-    AmostraFm, AmostraPsg, Chip, EscritaSom, Sintetizador, CICLOS_FM_POR_AMOSTRA,
-    CICLOS_PSG_POR_AMOSTRA, MCLK_POR_AMOSTRA_FM, MCLK_POR_AMOSTRA_PSG, MCLK_POR_CICLO_FM,
-    MCLK_POR_CICLO_PSG, MCLK_POR_QUADRO_NTSC,
+    AmostraFm, AmostraPsg, CICLOS_FM_POR_AMOSTRA, CICLOS_PSG_POR_AMOSTRA, Chip, EscritaSom,
+    MCLK_POR_AMOSTRA_FM, MCLK_POR_AMOSTRA_PSG, MCLK_POR_CICLO_FM, MCLK_POR_CICLO_PSG,
+    MCLK_POR_QUADRO_NTSC, Sintetizador,
 };

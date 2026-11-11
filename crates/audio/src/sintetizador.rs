@@ -212,6 +212,9 @@ impl Sintetizador {
 
         // Avanco do FM.
         let ciclos_alvo_fm = mclk_alvo / MCLK_POR_CICLO_FM;
+        let novos_fm =
+            usize::try_from(ciclos_alvo_fm.saturating_sub(self.ciclos_fm) / 24).unwrap_or(0);
+        saida_fm.reserve(novos_fm);
         while self.ciclos_fm < ciclos_alvo_fm {
             while self.pos_fm < self.fila_fm.len() {
                 let (m, p, v) = self.fila_fm[self.pos_fm];
@@ -246,6 +249,9 @@ impl Sintetizador {
 
         // Avanco do PSG.
         let ciclos_alvo_psg = mclk_alvo / MCLK_POR_CICLO_PSG;
+        let novos_psg =
+            usize::try_from(ciclos_alvo_psg.saturating_sub(self.ciclos_psg) / 16).unwrap_or(0);
+        saida_psg.reserve(novos_psg);
         while self.ciclos_psg < ciclos_alvo_psg {
             while self.pos_psg < self.fila_psg.len() {
                 let (m, v) = self.fila_psg[self.pos_psg];

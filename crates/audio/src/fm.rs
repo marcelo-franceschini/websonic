@@ -13,26 +13,16 @@ use crate::tabelas::{EXP, LOGSIN};
 pub const CICLOS_POR_AMOSTRA: u32 = 24;
 
 const OP_OFFSET: [u32; 12] = [
-    0x000, 0x001, 0x002, 0x100, 0x101, 0x102,
-    0x004, 0x005, 0x006, 0x104, 0x105, 0x106,
+    0x000, 0x001, 0x002, 0x100, 0x101, 0x102, 0x004, 0x005, 0x006, 0x104, 0x105, 0x106,
 ];
 
-const CH_OFFSET: [u32; 6] = [
-    0x000, 0x001, 0x002, 0x100, 0x101, 0x102,
-];
+const CH_OFFSET: [u32; 6] = [0x000, 0x001, 0x002, 0x100, 0x101, 0x102];
 
-const FN_NOTE: [u8; 16] = [
-    0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 3, 3, 3, 3, 3, 3,
-];
+const FN_NOTE: [u8; 16] = [0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 3, 3, 3, 3, 3, 3];
 
 const PG_DETUNE: [u32; 8] = [16, 17, 19, 20, 22, 24, 27, 29];
 
-const EG_STEPHI: [[u32; 4]; 4] = [
-    [0, 0, 0, 0],
-    [1, 0, 0, 0],
-    [1, 0, 1, 0],
-    [1, 1, 1, 0],
-];
+const EG_STEPHI: [[u32; 4]; 4] = [[0, 0, 0, 0], [1, 0, 0, 0], [1, 0, 1, 0], [1, 1, 1, 0]];
 
 const FM_ALGORITHM: [[[bool; 8]; 6]; 4] = [
     [
@@ -269,7 +259,11 @@ impl Fm {
         self.eg_cycle = self.eg_cycle.wrapping_add(1);
 
         if c == 1 && self.eg_quotient == 2 {
-            self.eg_shift_lock = if self.eg_cycle_stop { 0 } else { self.eg_shift.wrapping_add(1) };
+            self.eg_shift_lock = if self.eg_cycle_stop {
+                0
+            } else {
+                self.eg_shift.wrapping_add(1)
+            };
             self.eg_timer_low_lock = self.eg_timer & 3;
         }
 
@@ -339,8 +333,16 @@ impl Fm {
             out_adj = out_adj.wrapping_add(1);
             sign = sign.wrapping_add(1);
         }
-        let mol = if self.ch_lock_l && out_en { out_adj } else { sign };
-        let mor = if self.ch_lock_r && out_en { out_adj } else { sign };
+        let mol = if self.ch_lock_l && out_en {
+            out_adj
+        } else {
+            sign
+        };
+        let mor = if self.ch_lock_r && out_en {
+            out_adj
+        } else {
+            sign
+        };
         let mol = mol.wrapping_mul(3);
         let mor = mor.wrapping_mul(3);
 
@@ -387,7 +389,11 @@ impl Fm {
         let mut m = mod1.wrapping_add(mod2);
         if op_prep == 0 {
             let fb = self.fb[chan];
-            m = if fb == 0 { 0 } else { m >> 10_u32.wrapping_sub(u32::from(fb)) };
+            m = if fb == 0 {
+                0
+            } else {
+                m >> 10_u32.wrapping_sub(u32::from(fb))
+            };
         } else {
             m >>= 1;
         }
@@ -403,12 +409,15 @@ impl Fm {
         }
 
         let slot_gen = usize::try_from(c.wrapping_add(19) % 24).unwrap_or(0);
-        let phase = (u32::try_from(self.fm_mod[slot_gen] & 0x3FF).unwrap_or(0)).wrapping_add(self.pg_phase[slot_gen] >> 10) & 0x3FF;
+        let phase = (u32::try_from(self.fm_mod[slot_gen] & 0x3FF).unwrap_or(0))
+            .wrapping_add(self.pg_phase[slot_gen] >> 10)
+            & 0x3FF;
         let mut quarter = phase & 0xFF;
         if phase & 0x100 != 0 {
             quarter ^= 0xFF;
         }
-        let mut level = u32::from(LOGSIN[quarter as usize]).wrapping_add(u32::from(self.eg_out[slot_gen]) << 2);
+        let mut level =
+            u32::from(LOGSIN[quarter as usize]).wrapping_add(u32::from(self.eg_out[slot_gen]) << 2);
         if level > 0x1FFF {
             level = 0x1FFF;
         }
@@ -434,7 +443,8 @@ impl Fm {
         if self.pg_reset[slot_step] {
             self.pg_phase[slot_step] = 0;
         }
-        self.pg_phase[slot_step] = self.pg_phase[slot_step].wrapping_add(self.pg_inc[slot_step]) & 0xF_FFFF;
+        self.pg_phase[slot_step] =
+            self.pg_phase[slot_step].wrapping_add(self.pg_inc[slot_step]) & 0xF_FFFF;
 
         let fnum = u32::from(self.pg_fnum) << 1;
         let mut basefreq = (fnum << self.pg_block) >> 2;
@@ -455,7 +465,8 @@ impl Fm {
             let sum = block.wrapping_add(9).wrapping_add(dt_add);
             let sum_h = sum >> 1;
             let sum_l = sum & 1;
-            let detune = PG_DETUNE[usize::from((sum_l << 2) | note)] >> 9_u32.wrapping_sub(u32::from(sum_h));
+            let detune =
+                PG_DETUNE[usize::from((sum_l << 2) | note)] >> 9_u32.wrapping_sub(u32::from(sum_h));
             if dt & 4 != 0 {
                 basefreq = basefreq.wrapping_sub(detune);
             } else {
@@ -481,7 +492,11 @@ impl Fm {
             nextstate = Eg::Ataque;
             if self.eg_ratemax {
                 nextlevel = 0;
-            } else if self.eg_state[slot_adsr] == Eg::Ataque && level != 0 && self.eg_inc != 0 && nkon {
+            } else if self.eg_state[slot_adsr] == Eg::Ataque
+                && level != 0
+                && self.eg_inc != 0
+                && nkon
+            {
                 let lev_inv = (!i32::from(level)) << self.eg_inc;
                 inc = lev_inv >> 5;
             }
@@ -658,12 +673,14 @@ impl Fm {
                 match self.write_fm_mode_a {
                     0x28 => {
                         for i in 0..4 {
-                            self.mode_kon_operator[i] = (self.write_data >> (4_usize.wrapping_add(i))) & 1 != 0;
+                            self.mode_kon_operator[i] =
+                                (self.write_data >> (4_usize.wrapping_add(i))) & 1 != 0;
                         }
                         if (self.write_data & 3) == 3 {
                             self.mode_kon_channel = 0xFF;
                         } else {
-                            let ch = (self.write_data & 3).wrapping_add(((self.write_data >> 2) & 1).wrapping_mul(3));
+                            let ch = (self.write_data & 3)
+                                .wrapping_add(((self.write_data >> 2) & 1).wrapping_mul(3));
                             self.mode_kon_channel = u8::try_from(ch).unwrap_or(0xFF);
                         }
                     }

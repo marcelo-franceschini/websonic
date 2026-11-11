@@ -33,7 +33,7 @@ pub fn montar() -> Result<(), String> {
     )?;
 
     // 3. Copia a página. O .nojekyll evita que o Pages processe os arquivos.
-    for nome in ["index.html", "app.js"] {
+    for nome in ["index.html", "app.js", "audio-worklet.js"] {
         fs::copy(raiz.join("site").join(nome), dist.join(nome))
             .map_err(|e| format!("copiar site/{nome}: {e}"))?;
     }

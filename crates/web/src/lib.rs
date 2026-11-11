@@ -97,6 +97,11 @@ impl Jogo {
         self.console.executar_quadro()
     }
 
+    /// Devolve as amostras de áudio estereo geradas no último quadro (Float32Array intercalado).
+    pub fn audio(&mut self) -> Vec<f32> {
+        self.console.extrair_audio()
+    }
+
     /// Hash da imagem de 9 bits do último quadro, em hexadecimal (para conferir com o relatório).
     pub fn hash_da_imagem(&self) -> String {
         format!("{:016x}", self.console.hash_da_imagem())

@@ -1,6 +1,5 @@
 use sonic1_audio::{
-    Chip, EscritaSom, Sintetizador, MCLK_POR_AMOSTRA_FM, MCLK_POR_AMOSTRA_PSG,
-    MCLK_POR_QUADRO_NTSC,
+    Chip, EscritaSom, MCLK_POR_AMOSTRA_FM, MCLK_POR_AMOSTRA_PSG, MCLK_POR_QUADRO_NTSC, Sintetizador,
 };
 
 struct Rng(u64);
@@ -73,11 +72,7 @@ fn invariancia_a_fatiacao_do_tempo() {
         if mclk_cur >= mclk_maximo {
             break;
         }
-        let chip = if rng.ate(2) == 0 {
-            Chip::Fm
-        } else {
-            Chip::Psg
-        };
+        let chip = if rng.ate(2) == 0 { Chip::Fm } else { Chip::Psg };
         let porta = u32::try_from(rng.ate(4)).unwrap();
         let valor = u8::try_from(rng.ate(256)).unwrap();
         escritas.push(EscritaSom {

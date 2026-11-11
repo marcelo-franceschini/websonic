@@ -5,6 +5,8 @@
 //! No navegador a posição é nominal (sem tempo gravado, D7.5). No comparador a posição vem do
 //! oráculo (D7.3).
 
+use sonic1_audio::{AmostraFm, AmostraPsg, Chip, MCLK_POR_QUADRO_NTSC, Sintetizador};
+use sonic1_audio_saida::MisturadorSaida;
 use sonic1_core::abertura::{Abertura, Espera, EventoQuadro, Marca};
 use sonic1_core::memoria::{Memoria, PortaVdp, Saida, Tamanho};
 use sonic1_video::quadro::{ALTURA, LARGURA};
@@ -217,13 +219,19 @@ impl Ponte {
     }
 }
 
-/// O console completo no navegador: núcleo com tempo nominal mais a ponte.
+/// O console completo no navegador: núcleo com tempo nominal mais a ponte e o sintetizador de som.
 pub struct Console {
     pub ab: Abertura,
     ponte: Ponte,
     espera_atual: Option<Espera>,
     quadros_na_espera: u32,
     escritas_no_quadro: usize,
+    sint: Sintetizador,
+    misturador: MisturadorSaida,
+    quadro_num: u64,
+    buffer_audio_quadro: Vec<f32>,
+    amostras_fm: Vec<AmostraFm>,
+    amostras_psg: Vec<AmostraPsg>,
 }
 
 impl Console {
@@ -234,6 +242,12 @@ impl Console {
             espera_atual: None,
             quadros_na_espera: 0,
             escritas_no_quadro: 0,
+            sint: Sintetizador::novo(),
+            misturador: MisturadorSaida::novo(48_000.0),
+            quadro_num: 0,
+            buffer_audio_quadro: Vec::new(),
+            amostras_fm: Vec::new(),
+            amostras_psg: Vec::new(),
         }
     }
 
@@ -272,14 +286,66 @@ impl Console {
             .iter()
             .any(|e| matches!(e, EventoQuadro::Interrupcao { .. }));
         self.ab.executar_quadro(&eventos);
+
+        self.quadro_num = self.quadro_num.wrapping_add(1);
+        let mclk_inicio = self
+            .quadro_num
+            .wrapping_sub(1)
+            .wrapping_mul(MCLK_POR_QUADRO_NTSC);
+        let mclk_fim = self.quadro_num.wrapping_mul(MCLK_POR_QUADRO_NTSC);
+
         // Posição nominal: o tratador de VBlank escreve na linha 224; o resto, na linha 0.
         let linha = if teve_vblank { LINHA_VBLANK } else { 0 };
         let saidas = self.ab.mem.tirar_saidas();
         self.escritas_no_quadro = saidas.len();
-        for s in &saidas {
-            self.ponte.aplicar(&mut self.ab.mem, s, linha, 0);
+
+        let n_saidas = saidas.len();
+        for (i, s) in saidas.iter().enumerate() {
+            let delta = if n_saidas > 0 {
+                (MCLK_POR_QUADRO_NTSC.wrapping_mul(i as u64)) / (n_saidas as u64)
+            } else {
+                0
+            };
+            let mclk_esc = mclk_inicio.wrapping_add(delta);
+
+            match s {
+                Saida::Vdp { .. } => {
+                    self.ponte.aplicar(&mut self.ab.mem, s, linha, 0);
+                }
+                Saida::Ym { porta, valor } | Saida::YmZ80 { porta, valor } => {
+                    self.sint
+                        .agendar(mclk_esc, Chip::Fm, u32::from(*porta), *valor);
+                }
+                Saida::Psg(valor) => {
+                    self.sint.agendar(mclk_esc, Chip::Psg, 0, *valor);
+                }
+                _ => {}
+            }
         }
+
+        // Sintetiza o áudio gerado neste quadro e alimenta o misturador
+        self.amostras_fm.clear();
+        self.amostras_psg.clear();
+        self.sint
+            .avancar_ate(mclk_fim, &mut self.amostras_fm, &mut self.amostras_psg);
+        self.misturador
+            .alimentar_quadro(&self.amostras_fm, &self.amostras_psg);
+
+        // Extrai as amostras reamostradas para reprodução no navegador
+        self.buffer_audio_quadro.clear();
+        let disp = self.misturador.ocupacao_buffer();
+        if disp > 0 {
+            let mut bloco = vec![0.0f32; disp.wrapping_mul(2)];
+            self.misturador.extrair_bloco_worklet(&mut bloco);
+            self.buffer_audio_quadro = bloco;
+        }
+
         self.ponte.fechar_quadro()
+    }
+
+    /// Devolve as amostras de áudio estereo geradas no último quadro (intercaladas: L, R, L, R...).
+    pub fn extrair_audio(&mut self) -> Vec<f32> {
+        std::mem::take(&mut self.buffer_audio_quadro)
     }
 
     pub fn hash_da_imagem(&self) -> u64 {
