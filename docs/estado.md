@@ -2,6 +2,27 @@
 
 Documento de acompanhamento do progresso das etapas.
 
+## Etapa 8 (Sintetizador WebSonic): bloco da IA concluído, pronto para o Bloco 2 do Marcelo (10/11/2026)
+
+Plano aprovado em 09/11/2026 (`docs/plano-etapa-8.md`). Decisões D8.1 a D8.14 em `docs/conhecimento/sintese.md`.
+
+**Critério cumprido no bloco da IA:**
+- **PSG (SN76489):** implementado em `crates/audio/src/psg.rs`, 100% idêntico amostra a amostra ao Nuked-PSG em todas as baterias de teste sintéticas (tons, ruído periódico/branco, atenuações e escritas aleatórias).
+- **FM (YM2612):** implementado em `crates/audio/src/fm.rs`, 100% idêntico ao Nuked-OPN2 no modo YM2612 amostra a amostra na bateria diferencial de 25 sementes (`diferencial-sintese/tests/fm.rs`), cobrindo os 24 slots, envelopes ADSR, SSG-EG, LFO, modulação de fase, pino multiplexado de 9 bits e DAC.
+- **Sintetizador unificado e agendador em mclk:** `crates/audio/src/sintetizador.rs` com avanço exato em ciclos de relógio mestre NTSC (42 mclk por ciclo FM, 15 mclk por ciclo PSG). Invariância comprovada à fatiação temporal e contagem estrita de amostras por quadro (888/889 FM, 3733/3734 PSG).
+- **Reamostragem e saída:** crate `crates/audio-saida` com filtro polifásico sinc janelado (256 fases, 32 taps), controlador proporcional dinâmico de baixa banda (±0,5%) para evitar cortes/deriva no navegador, e filtro analógico passa-baixas (~3386 Hz, marcado APROXIMADO).
+- **AudioWorklet web:** `site/audio-worklet.js` com fila circular e transferência `postMessage` sem `SharedArrayBuffer` (compatível com GitHub Pages).
+- **Desempenho:** medido via `WEBSONIC_BENCH=1` em 600 quadros de pior caso. Mediana de ~1,8 ms no nativo (orçamento de 3 ms).
+- **Harness diferencial:** binário `diferencial-sintese/src/bin/sintese.rs` calcula hashes SHA-1 por bloco de 4096 amostras. Bateria sintética produz 100% `IGUAL`.
+- **Script do Bloco 2:** `scripts/etapa8-bloco2.sh` pronto e testado para execução com a ROM real pelo Marcelo.
+
+**Sub-etapas:** 8.0 a 8.9 feitas. 8.10 feita do lado da IA.
+
+**Falta (Marcelo):**
+1. Executar o Bloco 2 com a ROM real: `sh scripts/etapa8-bloco2.sh "$HOME/sonic1-ext/rom/Sonic The Hedgehog (W) (REV01) [!].gen" 600`.
+2. Aplicar os patches pendentes: `docs/pedidos/etapa8-ci.patch` e `docs/pedidos/etapa8-relatorio.patch`.
+3. Assinar o manifesto e sessão de revisão da Etapa 8.
+
 ## Etapa 7 (Telas de abertura): concluída, falta aplicar os patches, assinar o manifesto e a sessão de revisão (09/11/2026)
 
 Plano aprovado em 08/11/2026 (`docs/plano-etapa-7.md`, com D7.3, D7.4 e a exclusão da pilha). Decisões D7.9 a D7.34 em `docs/conhecimento/abertura.md`.

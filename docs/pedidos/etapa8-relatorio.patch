@@ -1,0 +1,11 @@
+diff --git a/crates/fidelidade/relatorio/src/manifesto.rs b/crates/fidelidade/relatorio/src/manifesto.rs
+index 880b3da..f7b8c49 100644
+--- a/crates/fidelidade/relatorio/src/manifesto.rs
++++ b/crates/fidelidade/relatorio/src/manifesto.rs
+@@ -39,6 +39,7 @@ const REFERENCIAS: &[&str] = &[
+     "cobertura",
+     "diferencial",
++    "diferencial-sintese",
+     "crates/teste-nucleo",
+ ];
+ /// Pasta de artefatos de compilação, nunca entra no manifesto.

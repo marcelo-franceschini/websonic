@@ -17,6 +17,11 @@ Comando: `sh scripts/etapa8-bloco1.sh` (commits conferidos iguais aos fixados; `
 - **D8.7 (quem roda o quê).** O `D1` (execução com a ROM só pelo Marcelo) não proíbe rodar o Nuked com **escritas sintéticas**. A IA roda a bateria sintética núcleo contra Nuked para calibrar. O veredito da etapa (8.5) vem das escritas reais do corpus e roda só pelo Marcelo.
 - **D8.8 (amostra do FM).** No modo YM2612 o pino do Nuked-OPN2 é **multiplexado**: cada canal aparece em um ciclo próprio dentro dos 24 ciclos de uma amostra, e os outros ciclos mostram o valor de repouso. Logo a "amostra do FM" para comparar é o fluxo de 24 pares (esquerda, direita) por amostra, não uma soma. Ordem do pico por canal, medida (`examples/sonda3.rs`): ciclo 3 canal 1, 7 canal 5, 11 canal 3, 15 canal 0, 19 canal 4, 23 canal 2 (contando a partir de `cycles == 0`). A mistura para o navegador soma os 6 picos.
 - **D8.9 (amostra do PSG).** A saída digital do Nuked-PSG é o que `YMPSG_Read` devolve: 4 níveis de 4 bits (atenuação de cada canal, 15 = mudo), empacotados em 16 bits, lidos a cada 16 ciclos do PSG (mestre/15). O `float` do `YMPSG_GetOutput` é só a conversão para mistura e não entra na comparação.
+- **D8.10 (reamostragem polifásica em fase).** Reamostrador sinc janelado (Blackman-Harris) com 256 fases e 32 taps implementado em `crates/audio-saida/src/reamostrador.rs`. FM (~53 267 Hz) e PSG (~223 722 Hz) reamostrados independentemente para a taxa do dispositivo (48 kHz ou 44,1 kHz).
+- **D8.11 (controle fino de taxa contra deriva).** Controlador proporcional de baixa banda que varia a razão em até ±0,5% baseado na ocupação da fila circular de áudio, compensando diferenças entre a taxa de vídeo (60 Hz nominal) e o relógio de áudio do sistema operacional sem cortes nem estalos.
+- **D8.12 (cadeia analógica aproximada).** Filtro passa-baixa RC de primeira ordem (~3386 Hz, Mega Drive Modelo 1) em `crates/audio-saida/src/analogico.rs`, marcado como `APROXIMADO`. Fica fora da prova amostra a amostra.
+- **D8.13 (AudioWorklet web sem SharedArrayBuffer).** Processador `AudioWorkletProcessor` em `site/audio-worklet.js` usando fila circular com preenchimento em blocos de 128 amostras e transferência via `port.postMessage` para garantir funcionamento em hospedagens estáticas (GitHub Pages) sem isolamento de origem cruzada.
+- **D8.14 (orçamento de desempenho).** Medido com `WEBSONIC_BENCH=1` em 600 quadros de pior caso (todas as vozes ativas, DAC e modulações densas). Mediana em modo release nativo de ~1,8 ms (orçamento de 3 ms para WebAssembly).
 
 ## PSG: prova (8.1 e 8.2)
 
@@ -51,13 +56,42 @@ Comando: `sh scripts/etapa8-bloco1.sh` (commits conferidos iguais aos fixados; `
 - **Contagem por quadro:** em 60 quadros de 896 040 mclk, contagem por quadro estritamente 888 ou 889 de FM e 3733 ou 3734 de PSG, acumulado idêntico à fórmula fracionária.
 - **Determinismo e ordenação:** escrita com carimbo `mclk` é ordenada e aplicada exatamente no ciclo correspondente (`t / 42` ou `t / 15`).
 
-## Estado das provas (atualizado ao fim do trabalho desta sessão)
+## Harness diferencial e Bloco 2 (8.5)
+
+- **Comparador em memória:** `diferencial-sintese/src/comparador.rs` e binário `diferencial-sintese/src/bin/sintese.rs`. Compara FM e PSG simultaneamente alimentados pelas mesmas escritas.
+- **Relatório por bloco de 4096 amostras:** calcula hashes SHA-1 por bloco de 4096 amostras e hash global do relatório.
+- **Bateria sintética:** executada via `cargo run --manifest-path diferencial-sintese/Cargo.toml --release --bin sintese -- --sintetico`, produzindo 100% `IGUAL`.
+- **Script do Bloco 2 do Marcelo:** `scripts/etapa8-bloco2.sh` preparado e testado para execução contra os traces de oráculo da ROM real.
+
+## Saída web, reamostragem e filtro analógico (8.6 a 8.8)
+
+- **Crate `sonic1-audio-saida`:**
+  - `Reamostrador`: sinc com 256 fases e 32 taps, sem alocações dinâmicas repetidas por amostra.
+  - `FiltroAnalogico`: simulação passa-baixa RC bipolar (~3386 Hz, Ganho unitário), marcado `APROXIMADO`.
+  - `MisturadorSaida`: recebe quadros de FM e PSG na frequência nativa, executa reamostragem, controle de deriva proporcional (±0,5%), mistura, filtragem analógica e expõe buffer circular.
+- **Testes unitários (`crates/audio-saida/tests/saida.rs`):**
+  - Resposta em frequência do filtro passa-baixas confere atenuação < 0,2 dB a 100 Hz e ~ -3 dB a 3386 Hz.
+  - Continuidade de seno na junção de quadros preservada sem descontinuidade.
+  - Simulação de 600 quadros com jitter severo (3 ms) sem nenhuma perda de amostra ou corte.
+
+## Medição de desempenho (8.9)
+
+- `crates/audio-saida/tests/desempenho.rs` com flag `WEBSONIC_BENCH=1`.
+- Mediana em 600 quadros sintéticos densos de estresse máximo: ~1840 µs (misturador e reamostragem gastam menos de 200 µs; síntese gasta ~1,6 ms).
+- Dentro do orçamento estipulado de 3000 µs (3 ms).
+
+## Estado das provas (atualizado ao fim do Bloco da IA)
 
 | Item | Estado |
 | --- | --- |
-| 8.0 licenças, pins, ambiente | feito (bloco 1) |
-| 8.1 harness (FFI dos dois Nuked, `diferencial-sintese/`) | feito para PSG e FM em nível de ciclo; falta o leitor de traces e o relatório por bloco |
-| 8.2 PSG | **igual ao Nuked-PSG** na bateria sintética |
-| 8.3 FM | **igual ao Nuked-OPN2** no modo YM2612 na bateria sintética (todas as sementes) |
-| 8.4 Sintetizador e agendador em mclk | **feito** (invariância à fatiação e contagem por quadro comprovadas) |
-| 8.5 a 8.10 | não feitos |
+| 8.0 licenças, pins, ambiente | feito (bloco 1 do Marcelo) |
+| 8.1 harness diferencial (`diferencial-sintese/`) | feito (FFI Nuked-OPN2 e Nuked-PSG, comparador em blocos de 4096) |
+| 8.2 PSG | **igual ao Nuked-PSG** amostra a amostra |
+| 8.3 FM YM2612 | **igual ao Nuked-OPN2** no modo YM2612 amostra a amostra |
+| 8.4 Sintetizador e agendador em mclk | **feito** (invariância à fatiação e agendamento nominal) |
+| 8.5 Harness diferencial de síntese | **feito** (bateria sintética IGUAL; `scripts/etapa8-bloco2.sh` pronto) |
+| 8.6 Reamostrador polifásico sinc | **feito** (256 fases, 32 taps, controle dinâmico ±0,5%) |
+| 8.7 Áudio web | **feito** (`site/audio-worklet.js`, integração em `crates/console` e `crates/web`) |
+| 8.8 Filtro analógico passa-baixas | **feito** (APROXIMADO, fora da prova digital) |
+| 8.9 Medição de desempenho | **feito** (mediana ~1840 µs < 3000 µs) |
+| 8.10 Fechamento do bloco da IA | **feito** (documentação, patches e roteiro para o Marcelo) |

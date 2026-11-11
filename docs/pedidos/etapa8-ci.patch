@@ -1,0 +1,6 @@
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -66,3 +66,3 @@
+       - name: Testes em WebAssembly (wasm32-wasip1)
+-        run: sh .github/rodar-na-imagem.sh cargo test --target wasm32-wasip1 -p sonic1-core -p sonic1-rom -p sonic1-teste-nucleo -p sonic1-teste-descompressao
++        run: sh .github/rodar-na-imagem.sh cargo test --target wasm32-wasip1 -p sonic1-core -p sonic1-rom -p sonic1-audio -p sonic1-audio-saida -p sonic1-teste-nucleo -p sonic1-teste-descompressao
