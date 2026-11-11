@@ -33,6 +33,24 @@ Comando: `sh scripts/etapa8-bloco1.sh` (commits conferidos iguais aos fixados; `
 - **Latência de escrita:** o efeito de uma escrita depende do ciclo em que ela chega, em degraus de 24 ciclos. Registradores de operador (multiplicador, detune, TL) são lidos num ponto do ciclo e o registrador de F-number baixo seis ciclos antes (`examples/sonda4.rs`: limiar j=11 contra j=17). Isto indica que cada registrador é gravado quando o seu slot passa.
 - **Tabelas log-seno e exponencial:** formula publicada das ROMs do OPL2 (`diferencial-sintese/examples/tabelas.rs`); a operação `exp(x)` indexa `EXP[x & 255]` direto e desloca por `x >> 8`.
 
+## FM: máquina de estados e prova (8.3)
+
+- **Identidade:** idêntico ciclo a ciclo e amostra a amostra ao Nuked-OPN2 no modo YM2612 em toda a bateria sintética (`diferencial-sintese/tests/fm.rs`), incluindo algoritmo 7, um canal, seis canais, envelopes aleatórios e 25 sementes completas de escritas dinâmicas com DAC.
+- **Estrutura interna:**
+  - Cadência de 24 ciclos por amostra, 24 slots (4 operadores × 6 canais).
+  - Barramento: escritas travadas com pipeline de IO e sinal de endereço/dado ativo no ciclo seguinte. Registradores de operador e canal gravados quando o slot/canal correspondente passa.
+  - Envelope Generator (EG): pipeline de 2 ciclos. Cálculo de `eg_inc` no ciclo seguinte a partir de `eg_rate` e `eg_ksv` escalares; atraso de 2 ciclos para `eg_tl` e `eg_sl`; transição de Decai1 para Decai2 quando `(level >> 4) == (sl << 1)`.
+  - Phase Generator (PG): F-Number e bloco travados por canal no ciclo anterior. Detune calculado com `DT` em 3 passos, multiplicador com meio passo quando zero.
+  - DAC: amostrado no registrador `$2A`, sinal de 9 bits (`(d ^ 0x80) << 1` estendido com sinal), ligado por `$2B` substituindo a saída do canal 6.
+  - Saída do pino: multiplexada por canal nos 24 ciclos internos, com repouso `3`.
+
+## Sintetizador e agendamento em mclk (8.4)
+
+- **Unidade:** relógio mestre NTSC (53 693 175 Hz). FM a 42 mclk por ciclo (1008 mclk por amostra de 24 ciclos); PSG a 15 mclk por ciclo (240 mclk por amostra de 16 ciclos).
+- **Invariância à fatiação:** comprovada em `crates/audio/tests/sintetizador.rs` (passo único vs passos curtos fixos vs passos aleatórios produzem as mesmas amostras).
+- **Contagem por quadro:** em 60 quadros de 896 040 mclk, contagem por quadro estritamente 888 ou 889 de FM e 3733 ou 3734 de PSG, acumulado idêntico à fórmula fracionária.
+- **Determinismo e ordenação:** escrita com carimbo `mclk` é ordenada e aplicada exatamente no ciclo correspondente (`t / 42` ou `t / 15`).
+
 ## Estado das provas (atualizado ao fim do trabalho desta sessão)
 
 | Item | Estado |
@@ -40,5 +58,6 @@ Comando: `sh scripts/etapa8-bloco1.sh` (commits conferidos iguais aos fixados; `
 | 8.0 licenças, pins, ambiente | feito (bloco 1) |
 | 8.1 harness (FFI dos dois Nuked, `diferencial-sintese/`) | feito para PSG e FM em nível de ciclo; falta o leitor de traces e o relatório por bloco |
 | 8.2 PSG | **igual ao Nuked-PSG** na bateria sintética |
-| 8.3 FM | **em andamento, ainda não igual**: estrutura e saída do pino medidas, latências de escrita e tecla ainda sem modelo |
-| 8.4 a 8.10 | não feitos |
+| 8.3 FM | **igual ao Nuked-OPN2** no modo YM2612 na bateria sintética (todas as sementes) |
+| 8.4 Sintetizador e agendador em mclk | **feito** (invariância à fatiação e contagem por quadro comprovadas) |
+| 8.5 a 8.10 | não feitos |

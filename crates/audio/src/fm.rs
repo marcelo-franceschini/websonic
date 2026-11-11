@@ -710,4 +710,24 @@ impl Fm {
     pub fn diag_eg(&self) -> [u16; 24] {
         self.eg_level
     }
+
+    /// Soma dos 6 canais com panning (9 bits por canal com sinal, sem distorcao de repouso).
+    pub fn saida_misturada(&self) -> (i16, i16) {
+        let mut sl = 0i16;
+        let mut sr = 0i16;
+        for c in 0..6 {
+            let val = if c == 5 && self.dac_ligado {
+                self.dac_data
+            } else {
+                i16::try_from(self.ch_out[c]).unwrap_or(0)
+            };
+            if self.pan_l[c] {
+                sl = sl.wrapping_add(val);
+            }
+            if self.pan_r[c] {
+                sr = sr.wrapping_add(val);
+            }
+        }
+        (sl, sr)
+    }
 }

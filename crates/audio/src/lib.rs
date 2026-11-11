@@ -8,9 +8,11 @@
 
 pub mod fm;
 pub mod psg;
+pub mod sintetizador;
 mod tabelas;
 
-/// Ciclos do relógio mestre NTSC por ciclo do PSG (mestre/15).
-pub const MCLK_POR_CICLO_PSG: u64 = 15;
-/// Ciclos do PSG por amostra de saída.
-pub const CICLOS_PSG_POR_AMOSTRA: u32 = 16;
+pub use sintetizador::{
+    AmostraFm, AmostraPsg, Chip, EscritaSom, Sintetizador, CICLOS_FM_POR_AMOSTRA,
+    CICLOS_PSG_POR_AMOSTRA, MCLK_POR_AMOSTRA_FM, MCLK_POR_AMOSTRA_PSG, MCLK_POR_CICLO_FM,
+    MCLK_POR_CICLO_PSG, MCLK_POR_QUADRO_NTSC,
+};
