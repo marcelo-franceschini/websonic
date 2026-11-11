@@ -15,10 +15,12 @@ class SonicAudioProcessor extends AudioWorkletProcessor {
     this.falhas = 0;
     this.ultimoL = 0;
     this.ultimoR = 0;
+    this.chamadasProcess = 0;
 
     this.port.onmessage = (e) => {
-      const dados = new Float32Array(e.data); // Intercalado: L, R, L, R...
-      const pares = dados.length / 2;
+      if (!e.data) return;
+      const dados = e.data instanceof Float32Array ? e.data : new Float32Array(e.data);
+      const pares = dados.length >> 1;
       for (let i = 0; i < pares; i++) {
         if (this.disponiveis < this.tam) {
           this.bufL[this.escrita] = dados[i * 2];
@@ -30,9 +32,13 @@ class SonicAudioProcessor extends AudioWorkletProcessor {
     };
   }
 
-  process(inputs, outputs) {
-    const outL = outputs[0][0];
-    const outR = outputs[0][1];
+  process(_inputs, outputs) {
+    this.chamadasProcess++;
+    const out = outputs[0];
+    if (!out || out.length === 0) return true;
+
+    const outL = out[0];
+    const outR = out.length > 1 ? out[1] : null;
     const n = outL.length; // Normalmente 128 amostras
 
     for (let i = 0; i < n; i++) {
@@ -47,8 +53,23 @@ class SonicAudioProcessor extends AudioWorkletProcessor {
         this.ultimoL *= 0.95;
         this.ultimoR *= 0.95;
       }
-      outL[i] = this.ultimoL;
-      outR[i] = this.ultimoR;
+
+      if (outR) {
+        outL[i] = this.ultimoL;
+        outR[i] = this.ultimoR;
+      } else {
+        // Saída mono: faz a média dos dois canais
+        outL[i] = (this.ultimoL + this.ultimoR) * 0.5;
+      }
+    }
+
+    if (this.chamadasProcess % 30 === 0) {
+      this.port.postMessage({
+        tipo: "status",
+        disponiveis: this.disponiveis,
+        falhas: this.falhas,
+        processados: this.chamadasProcess * n,
+      });
     }
 
     return true; // Continua rodando

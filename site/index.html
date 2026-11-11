@@ -5,17 +5,26 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <!-- Só código do próprio site e WebAssembly. Nada de rede, nada de script de fora. -->
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self'">
+        content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; connect-src 'self'">
   <title>Sonic 1 em Rust</title>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; }
+    body { font-family: system-ui, sans-serif; max-width: 44rem; margin: 2rem auto; padding: 0 1rem; color: #222; }
     code { word-break: break-all; }
     #resultado { margin-top: 1rem; padding: 1rem; border: 2px solid #888; border-radius: .5rem; }
     #resultado.ok { border-color: #1a7f37; }
     #resultado.erro { border-color: #b3261e; }
     /* Imagem de 320x224 em escala inteira, sem suavizar os pontos. */
-    #tela { display: block; margin: 1rem 0; background: #000; image-rendering: pixelated; }
-    #aviso { color: #555; font-size: .9rem; }
+    #tela { display: block; margin: 1rem 0; background: #000; image-rendering: pixelated; cursor: pointer; }
+    #aviso { color: #555; font-size: .9rem; margin: 0.5rem 0; }
+    .btn { padding: 0.5rem 1rem; font-size: 0.95rem; font-weight: bold; cursor: pointer; border: none; border-radius: 4px; }
+    .btn-verde { background: #1a7f37; color: white; }
+    .btn-verde:hover { background: #14622b; }
+    .btn-azul { background: #0969da; color: white; }
+    .btn-azul:hover { background: #0856b3; }
+    #painel-diag { margin-top: 1.5rem; padding: 1rem; background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 6px; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.85rem; }
+    #tabela-diag td { padding: 3px 6px; }
+    #barra-volume-container { width: 100%; height: 12px; background: #e1e4e8; border-radius: 6px; overflow: hidden; margin-top: 4px; }
+    #barra-volume { width: 0%; height: 100%; background: #2ea44f; transition: width 0.05s ease; }
   </style>
 </head>
 <body>
@@ -28,9 +37,41 @@
     <p>SHA-1: <code id="sha1"></code></p>
     <p>Tamanho: <span id="tamanho"></span> bytes</p>
   </div>
+
   <canvas id="tela" width="320" height="224" hidden></canvas>
-  <p id="aviso" hidden>Síntese de áudio ativa (FM e PSG reamostrados para o navegador). Teclas: setas, Z (A), X (B), C (C), Enter (Start).</p>
+  <p id="aviso" hidden>Síntese de áudio ativa. Teclas: setas, Z (A), X (B), C (C), Enter (Start).</p>
   <p id="erro-jogo" hidden></p>
-  <script type="module" src="app.js"></script>
+
+  <div id="painel-diag">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.8rem;">
+      <span style="font-weight: bold; font-size: 1rem;">🛠️ Painel de Diagnóstico de Áudio</span>
+      <div style="display: flex; gap: 8px;">
+        <button id="btn-bipe" type="button" class="btn btn-azul" title="Toca um tom puro de 440 Hz direto pelo navegador">🔔 Testar Bipe (440 Hz)</button>
+        <button id="btn-audio" type="button" class="btn btn-verde" title="Retoma o contexto de áudio se estiver pausado">🔊 Desbloquear Áudio</button>
+      </div>
+    </div>
+    <table id="tabela-diag" style="width: 100%; border-collapse: collapse;">
+      <tr><td style="width: 45%;"><b>Estado do Áudio no Navegador:</b></td><td id="diag-estado"><span style="color: #666;">Aguardando inicialização</span></td></tr>
+      <tr><td><b>Taxa de Amostragem do Navegador:</b></td><td id="diag-taxa">-</td></tr>
+      <tr><td><b>Pipeline em Uso:</b></td><td id="diag-pipeline">-</td></tr>
+      <tr><td><b>Quadro Atual do Jogo:</b></td><td id="diag-quadro">0 (0.0s)</td></tr>
+      <tr><td><b>Amostras geradas no quadro:</b></td><td id="diag-amostras">0</td></tr>
+      <tr>
+        <td><b>Pico de Volume do Quadro:</b></td>
+        <td>
+          <span id="diag-pico">0.000</span>
+          <div id="barra-volume-container"><div id="barra-volume"></div></div>
+        </td>
+      </tr>
+      <tr><td><b>Pico Histórico Máximo:</b></td><td id="diag-pico-max">0.000</td></tr>
+      <tr><td><b>Quadros com Som Detectado:</b></td><td id="diag-quadros-som">0</td></tr>
+      <tr><td><b>Comunicação com AudioWorklet:</b></td><td id="diag-worklet">Aguardando...</td></tr>
+    </table>
+    <div style="margin-top: 0.8rem; font-size: 0.8rem; color: #555; border-top: 1px solid #eaecef; padding-top: 0.5rem;">
+      💡 <b>Dica:</b> Nos primeiros ~5 segundos (tela da SEGA), o som é propositalmente silencioso (voz dependia do Z80). A música clássica (FM/PSG) começa a tocar na <b>tela de título</b>.
+    </div>
+  </div>
+
+  <script type="module" src="app.js?v=4"></script>
 </body>
 </html>
