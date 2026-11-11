@@ -4,6 +4,9 @@
 
 use std::ffi::c_void;
 
+pub mod comparador;
+pub use comparador::{ResultadoCaso, Veredito, comparar_fm, comparar_psg};
+
 unsafe extern "C" {
     fn ref_psg_novo() -> *mut c_void;
     fn ref_psg_libera(c: *mut c_void);
