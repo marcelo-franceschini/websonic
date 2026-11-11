@@ -99,10 +99,24 @@ pub fn comparar_fm(
                     blocos_iguais = blocos_iguais.wrapping_add(1);
                 } else if primeiro_erro.is_none() {
                     let camada = diagnosticar_camada_fm(&ref_chip, &nuc_chip);
+                    let mut offset_amostra = 0usize;
+                    for (idx, (r, n)) in buf_ref_bloco
+                        .chunks_exact(96)
+                        .zip(buf_nuc_bloco.chunks_exact(96))
+                        .enumerate()
+                    {
+                        if r != n {
+                            offset_amostra = idx;
+                            break;
+                        }
+                    }
+                    let amostra_exata = n_amostras
+                        .wrapping_sub(AMOSTRAS_POR_BLOCO)
+                        .wrapping_add(offset_amostra);
                     primeiro_erro = Some(DetalheDivergencia {
-                        amostra: n_amostras.wrapping_sub(AMOSTRAS_POR_BLOCO),
+                        amostra: amostra_exata,
                         bloco: n_blocos.wrapping_sub(1),
-                        mclk_aprox: (n_amostras as u64).wrapping_mul(1008),
+                        mclk_aprox: (amostra_exata as u64).wrapping_mul(1008),
                         camada,
                         hash_ref: em_hex(&h_ref),
                         hash_nuc: em_hex(&h_nuc),

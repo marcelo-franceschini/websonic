@@ -439,6 +439,7 @@ impl Fm {
         if self.pg_reset[slot_mask] {
             self.pg_inc[slot_mask] = 0;
         }
+
         let slot_step = usize::try_from(c.wrapping_add(19) % 24).unwrap_or(0);
         if self.pg_reset[slot_step] {
             self.pg_phase[slot_step] = 0;
@@ -528,9 +529,15 @@ impl Fm {
                 nextstate = Eg::Libera;
             }
         }
+
+        if !kon_event && self.eg_state[slot_adsr] != Eg::Ataque && eg_off {
+            nextstate = Eg::Libera;
+            nextlevel = 0x3FF;
+        }
+
         nextlevel = nextlevel.wrapping_add(inc);
         self.eg_kon[slot_adsr] = self.eg_kon_latch[slot_adsr];
-        self.eg_level[slot_adsr] = u16::try_from(nextlevel.clamp(0, 1023)).unwrap_or(1023);
+        self.eg_level[slot_adsr] = u16::try_from(nextlevel & 0x3FF).unwrap_or(0x3FF);
         self.eg_state[slot_adsr] = nextstate;
 
         let slot_eg_gen = usize::try_from(c.wrapping_add(23) % 24).unwrap_or(0);

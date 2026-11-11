@@ -233,9 +233,11 @@ fn diag_sat() {
 #[test]
 #[ignore]
 fn diag_slot() {
-    let mut g = Rng(1);
     let mut e = Vec::new();
-    for s in 1..=20u64 { g = Rng(s.wrapping_mul(0x9E3779B97F4A7C15) | 1); e = aleatorio(&mut g, 1); }
+    for s in 1..=20u64 {
+        let mut g = Rng(s.wrapping_mul(0x9E3779B97F4A7C15) | 1);
+        e = aleatorio(&mut g, 1);
+    }
     let mut a = Fm::novo();
     let mut r = RefOpn2::novo();
     let mut n = 0;
