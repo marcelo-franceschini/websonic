@@ -1,0 +1,213 @@
+diff --git a/hooks/detector/Cargo.toml b/hooks/detector/Cargo.toml
+index f5c4edb..7c51e11 100644
+--- a/hooks/detector/Cargo.toml
++++ b/hooks/detector/Cargo.toml
+@@ -5,11 +5,8 @@ edition = "2024"
+ publish = false
+ description = "Detector de trechos da ROM no commit (decisão L1, 11/11/2026). Fica em hooks/, que é congelado."
+ 
+-# Pacote fora do workspace da raiz: a guarda não depende do código que ela vigia.
++# Pacote fora do workspace da raiz e sem dependências: a guarda não depende do código que ela vigia.
+ [workspace]
+ 
+-[dependencies]
+-sonic1-rom = { path = "../../crates/rom" }
+-
+ [lints.clippy]
+ all = { level = "warn", priority = -1 }
+diff --git a/hooks/detector/src/main.rs b/hooks/detector/src/main.rs
+index aeeda3a..879d79c 100644
+--- a/hooks/detector/src/main.rs
++++ b/hooks/detector/src/main.rs
+@@ -23,6 +23,8 @@
+ use std::path::{Path, PathBuf};
+ use std::process::{Command, ExitCode};
+ 
++mod sha1;
++
+ /// Tamanho mínimo de um trecho copiado, em bytes. Abaixo disso a coincidência é comum.
+ const JANELA: usize = 32;
+ /// Janela com menos valores distintos que isto é ignorada (zeros e preenchimentos).
+@@ -346,7 +348,7 @@ fn confirmar_rev01(raiz: &Path, rom: &[u8]) -> Result<(), String> {
+         .find_map(|l| l.strip_prefix("sha1:"))
+         .map(str::trim)
+         .ok_or("sha1 ausente em refs/rom-hashes.txt")?;
+-    if sonic1_rom::em_hex(&sonic1_rom::sha1(rom)) == esperado {
++    if sha1::em_hex(&sha1::sha1(rom)) == esperado {
+         Ok(())
+     } else {
+         Err("o arquivo dado não é a REV01 (sha1 diferente de refs/rom-hashes.txt)".to_string())
+@@ -547,9 +549,9 @@ mod testes {
+     }
+ 
+     #[test]
+-    fn sha1_do_crate_bate_com_o_vetor_conhecido() {
++    fn sha1_proprio_bate_com_o_vetor_conhecido() {
+         assert_eq!(
+-            sonic1_rom::em_hex(&sonic1_rom::sha1(b"abc")),
++            sha1::em_hex(&sha1::sha1(b"abc")),
+             "a9993e364706816aba3e25717850c26c9cd0d89d"
+         );
+     }
+diff --git a/hooks/detector/src/sha1.rs b/hooks/detector/src/sha1.rs
+new file mode 100644
+index 0000000..66021af
+--- /dev/null
++++ b/hooks/detector/src/sha1.rs
+@@ -0,0 +1,156 @@
++//! SHA-1 próprio do detector, sem dependências.
++//!
++//! O detector não usa `crates/rom`: a guarda não pode depender do código que ela vigia.
++//! Este SHA-1 só confere se o arquivo dado é a REV01. Não serve para segurança.
++
++/// Estado inicial do SHA-1 (FIPS 180-4).
++const ESTADO_INICIAL: [u32; 5] = [
++    0x6745_2301,
++    0xEFCD_AB89,
++    0x98BA_DCFE,
++    0x1032_5476,
++    0xC3D2_E1F0,
++];
++
++/// Dígitos hexadecimais minúsculos, indexados pelo valor do nibble.
++const DIGITOS: &[u8; 16] = b"0123456789abcdef";
++
++/// Calcula o SHA-1 de `dado`, em 20 bytes.
++pub fn sha1(dado: &[u8]) -> [u8; 20] {
++    let mut estado = ESTADO_INICIAL;
++    // Blocos cheios de 64 bytes são processados direto. O resto espera o preenchimento.
++    let (blocos, resto) = dado.as_chunks::<64>();
++    for bloco in blocos {
++        comprimir(&mut estado, bloco);
++    }
++
++    // Preenchimento: byte 0x80, zeros e o tamanho em bits (64 bits, big-endian).
++    // Se o resto deixa menos de 9 bytes livres (o 0x80 mais o tamanho), usa dois blocos.
++    let mut fim = [0u8; 128];
++    fim[..resto.len()].copy_from_slice(resto);
++    fim[resto.len()] = 0x80;
++    let total = if resto.len() < 56 { 64 } else { 128 };
++    // Tamanho em bits, módulo 2^64, como manda a especificação.
++    let bits = (dado.len() as u64).wrapping_mul(8);
++    fim[total - 8..total].copy_from_slice(&bits.to_be_bytes());
++    for bloco in fim[..total].as_chunks::<64>().0 {
++        comprimir(&mut estado, bloco);
++    }
++
++    // Saída: as cinco palavras do estado, em big-endian.
++    let mut saida = [0u8; 20];
++    for (parte, palavra) in saida.as_chunks_mut::<4>().0.iter_mut().zip(estado) {
++        *parte = palavra.to_be_bytes();
++    }
++    saida
++}
++
++/// Processa um bloco de 64 bytes e soma o resultado ao estado.
++fn comprimir(estado: &mut [u32; 5], bloco: &[u8; 64]) {
++    // Cronograma de 80 palavras: as 16 primeiras vêm do bloco, as demais são derivadas delas.
++    let mut w = [0u32; 80];
++    for (palavra, quatro) in w.iter_mut().zip(bloco.as_chunks::<4>().0) {
++        *palavra = u32::from_be_bytes(*quatro);
++    }
++    for t in 16..80 {
++        w[t] = (w[t - 3] ^ w[t - 8] ^ w[t - 14] ^ w[t - 16]).rotate_left(1);
++    }
++
++    let [mut a, mut b, mut c, mut d, mut e] = *estado;
++    for (t, &palavra) in w.iter().enumerate() {
++        // Cada faixa de 20 rodadas tem a sua função e a sua constante.
++        let (f, k) = match t {
++            0..=19 => ((b & c) | (!b & d), 0x5A82_7999),
++            20..=39 => (b ^ c ^ d, 0x6ED9_EBA1),
++            40..=59 => ((b & c) | (b & d) | (c & d), 0x8F1B_BCDC),
++            _ => (b ^ c ^ d, 0xCA62_C1D6),
++        };
++        // `wrapping_add` soma módulo 2^32, que é a aritmética do SHA-1. Estouro não é erro aqui.
++        let temp = a
++            .rotate_left(5)
++            .wrapping_add(f)
++            .wrapping_add(e)
++            .wrapping_add(k)
++            .wrapping_add(palavra);
++        e = d;
++        d = c;
++        c = b.rotate_left(30);
++        b = a;
++        a = temp;
++    }
++
++    for (valor, novo) in estado.iter_mut().zip([a, b, c, d, e]) {
++        *valor = valor.wrapping_add(novo);
++    }
++}
++
++/// Escreve o hash em hexadecimal minúsculo, com 40 caracteres.
++pub fn em_hex(hash: &[u8; 20]) -> String {
++    let mut texto = String::with_capacity(40);
++    for &byte in hash {
++        // Cada byte vira dois dígitos, mesmo quando o nibble alto é zero.
++        texto.push(char::from(DIGITOS[usize::from(byte >> 4)]));
++        texto.push(char::from(DIGITOS[usize::from(byte & 0x0F)]));
++    }
++    texto
++}
++
++#[cfg(test)]
++mod testes {
++    use super::*;
++
++    fn hex_de(dado: &[u8]) -> String {
++        em_hex(&sha1(dado))
++    }
++
++    // Valores conferidos com o `sha1sum` do sistema, não com este código.
++    #[test]
++    fn entrada_vazia() {
++        assert_eq!(hex_de(b""), "da39a3ee5e6b4b0d3255bfef95601890afd80709");
++    }
++
++    #[test]
++    fn abc() {
++        assert_eq!(hex_de(b"abc"), "a9993e364706816aba3e25717850c26c9cd0d89d");
++    }
++
++    // Fronteiras do preenchimento. Com 55 bytes, o preenchimento cabe em um bloco. Com 56, precisa
++    // de dois. Com 64, o bloco de dados enche e o preenchimento vai para outro.
++    #[test]
++    fn cinquenta_e_cinco_bytes() {
++        assert_eq!(
++            hex_de(&[b'a'; 55]),
++            "c1c8bbdc22796e28c0e15163d20899b65621d65a"
++        );
++    }
++
++    #[test]
++    fn cinquenta_e_seis_bytes() {
++        assert_eq!(
++            hex_de(&[b'a'; 56]),
++            "c2db330f6083854c99d4b5bfb6e8f29f201be699"
++        );
++    }
++
++    #[test]
++    fn sessenta_e_quatro_bytes() {
++        assert_eq!(
++            hex_de(&[b'a'; 64]),
++            "0098ba824b5c16427bd7a1122a5a442a25ec644d"
++        );
++    }
++
++    #[test]
++    fn mil_bytes() {
++        assert_eq!(
++            hex_de(&[b'a'; 1000]),
++            "291e9a6c66994949b57ba5e650361e98fc36b1ba"
++        );
++    }
++
++    // Byte menor que 0x10 precisa de zero à esquerda, senão o hash perde caracteres.
++    #[test]
++    fn em_hex_mantem_zero_a_esquerda() {
++        assert_eq!(em_hex(&[0x0A; 20]), "0a".repeat(20));
++    }
++}
