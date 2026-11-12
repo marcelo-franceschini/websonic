@@ -1,6 +1,6 @@
 # Reconstrução do Sonic 1: Requisitos e Objetivos
 
-Nov 2, 2026 · @Marcelo Majer Franceschini
+Nov 11, 2026 · @Marcelo Majer Franceschini
 
 ## Visão e objetivos
 
@@ -84,6 +84,7 @@ Quando os oráculos discordam, decidem a documentação do hardware e os testes 
 - **Bugs injetados:** gerados no núcleo, invertendo cada decisão, com orçamento de tempo por etapa. A rodada completa fica para a auditoria.
 - **Comparador:** fica em `crates/fidelidade/`, junto com o formato do trace e o relatório.
 - **Auditoria:** roda num contêiner separado, da mesma imagem, sem iniciar o Claude Code e com os testes ocultos montados. Só Marcelo roda a auditoria.
+- **Prova independente (decisão L1):** o corpus visível mede o progresso, mas não prova a fidelidade, porque a IA pode ler a ROM e o trace do oráculo. A prova é o conjunto oculto e a auditoria, que a IA não vê.
 
 ## Critério de pronto
 
@@ -154,7 +155,7 @@ Todo o desenvolvimento roda em Docker, e o código do projeto é só Rust. As ex
 - **Pastas fora do repositório:** a ROM e o disassembly, montados só para leitura; a pasta de trabalho, com traces e relatórios; e os testes ocultos, cifrados, que só entram no contêiner de auditoria. As chaves ficam no computador de Marcelo.
 - **Comandos:** `cargo xtask` roda as tarefas, como montar o site, rodar a fidelidade e checar que não há ROM no git.
 - **CI:** o GitHub Actions faz a checagem anti-ROM, o build, os testes unitários do núcleo em nativo e em WebAssembly e a publicação no GitHub Pages, com a mesma imagem Docker. O repositório é público, então os minutos são grátis.
-- **Fidelidade:** roda só no computador de Marcelo, porque a ROM nunca está no repositório.
+- **Fidelidade:** roda no computador de Marcelo e, depois da ativação da decisão L1, no contêiner de trabalho. A ROM nunca está no repositório.
 
 ### Proteção contra a ROM no git
 
@@ -162,7 +163,7 @@ Uma ROM que entre num commit continua no histórico público mesmo depois de apa
 
 1. A ROM, o disassembly, os traces e os estados ficam fora da pasta do repositório.
 2. O `.gitignore` bloqueia extensões e pastas de ROM.
-3. Um hook local, antes do commit e do push, bloqueia por extensão, tamanho e hash da ROM. Ele roda onde o git roda: no contêiner, quando a IA faz commit, e no computador de Marcelo, nos commits e pushes dele. Esta é a camada que realmente impede o vazamento.
+3. Um hook local, antes do commit e do push, bloqueia por extensão, tamanho e hash da ROM. Depois da ativação da decisão L1, o hook do commit também chama o detector de trechos (pasta `hooks/detector`), que procura trechos copiados da ROM nos arquivos do commit. Ele roda onde o git roda: no contêiner, quando a IA faz commit, e no computador de Marcelo, nos commits e pushes dele. Esta é a camada que realmente impede o vazamento.
 4. O CI reprova se achar um arquivo com o hash da ROM. É só a última rede de segurança.
 
 ### Estrutura de pastas
@@ -194,15 +195,15 @@ sonic1/
 A IA escreve o código do jogo, mas nunca altera o que mede se ele está certo. As regras valem por bloqueio técnico, não só por texto: o `CLAUDE.md` orienta o modelo, mas quem bloqueia é o sistema de permissões do Claude Code.
 
 - **Onde a IA roda:** o Claude Code roda dentro do contêiner de trabalho. Ele tem escrita no repositório e na pasta de trabalho, e a ROM e o disassembly ficam montados só para leitura. Testes ocultos, chaves e credenciais do GitHub nunca entram nesse contêiner, e a rede dele só alcança o necessário.
-- **Permissões:** a IA não lê a ROM nem os binários do disassembly. Depois que cada item é congelado, ela também não edita referências, oráculos, comparador, Dockerfile, CI, hooks nem as próprias permissões. As permissões ficam na imagem, com prioridade sobre o repositório. O executor de testes continua lendo a ROM, porque essas regras não valem para outros programas.
+- **Permissões:** até a ativação da decisão L1, a IA não lê a ROM nem os binários do disassembly. Depois da ativação, ela pode lê-los. Depois que cada item é congelado, ela também não edita referências, oráculos, comparador, Dockerfile, CI, hooks nem as próprias permissões. As permissões ficam na imagem, com prioridade sobre o repositório.
 - **Commits:** a IA só faz commit local. Só Marcelo faz push.
 - **Referências:** a IA constrói o oráculo e o comparador nas etapas 1 e 2. Marcelo congela esses itens depois de verificações que ele mesmo roda: o comparador acusa divergências plantadas, duas execuções geram o mesmo trace e os dois oráculos concordam nas demos. Uma sessão nova, que não escreveu o código, também revisa. Depois disso, mudar exige a aprovação de Marcelo. A IA pode criar testes novos, mas nunca altera nem apaga testes, traces ou a lista de exclusões já congelados.
 - **Assinatura:** o comando local de fidelidade falha se uma referência mudar sem a assinatura do manifesto ou se algum teste deixar de rodar. A chave de assinatura exige senha ou toque físico a cada uso, então a IA não assina sozinha.
 - **Testes ocultos:** Marcelo grava jogando, fora do contêiner de trabalho, organizados por zona, com no mínimo uma partida completa de cada ato. Eles ficam cifrados, e só ele tem a chave. Marcelo roda a auditoria no contêiner de auditoria, sem a IA, que só vê "passou" ou "falhou" por zona. Um caso que falha e é mostrado à IA vira caso normal, e Marcelo grava outro.
 - **Exclusões da memória:** áreas ignoradas na comparação seguem a mesma aprovação das exclusões de código.
-- **Origem dos dados:** o núcleo não pode conter dados copiados dos traces nem do disassembly, cujos arquivos `.asm` também trazem dados da ROM em texto, como mapeamentos e animações. Toda tabela vem da ROM, e cada função cita o rótulo da rotina do disassembly que reproduz. Só o nome do rótulo: nunca copiar código nem comentários do disassembly.
+- **Origem dos dados:** o núcleo não pode conter dados copiados dos traces nem do disassembly, cujos arquivos `.asm` também trazem dados da ROM em texto, como mapeamentos e animações. Toda tabela vem da ROM, e cada função cita o rótulo da rotina do disassembly que reproduz. Só o nome do rótulo: nunca copiar código nem comentários do disassembly. A guarda de saída (decisão L1) bloqueia o commit que copie trecho da ROM.
 - **Sem atalhos:** a IA não escreve interpretador nem tradutor automático do código do 68000 ou do Z80, e não usa os registradores desses processadores como estado do núcleo.
-- **ROM e hooks:** a IA nunca lê a ROM direto nem cola dados dela no código ou no chat, e nunca usa `--no-verify` nem desliga os hooks.
+- **ROM e hooks:** a IA não cola dados da ROM no código nem nos commits, e nunca usa `--no-verify` nem desliga os hooks. Até a ativação da decisão L1, ela também não lê a ROM.
 - Um teste que falha se corrige no jogo, nunca no teste.
 
 ### Fluxo por etapa
@@ -310,6 +311,7 @@ Todas as decisões abaixo estão fechadas. Mudanças exigem nova aprovação de 
 | Estrutura do núcleo | Decidido: espelhar a memória e as rotinas do original, com Rust legível e sem registradores do 68000 nem do Z80 como estado. Toda decisão da lógica do jogo corresponde a uma decisão do original |
 | Programa do Z80 | Decidido: reproduzido no núcleo como o código do 68000, com custo em ciclos. A bateria deixa de ser aproximada no nível 2 |
 | Regras para uso de IA | Decidido: as da seção de regras, aplicadas pelas permissões do Claude Code |
+| Leitura da ROM pela IA | Decidido em 11/11/2026, substitui a D1 da auditoria: a IA pode ler a ROM e o disassembly binário, depois da ativação. A guarda passa para a saída: detector no hook do commit. A prova independente continua: oráculo, comparador, manifesto e testes ocultos fora do alcance da IA |
 | Onde a IA roda | Decidido: Claude Code dentro do contêiner de trabalho, sem credenciais do GitHub. Só Marcelo faz push |
 | Contêineres | Decidido: contêiner de trabalho num devcontainer.json, aberto pelo VS Code, pelo Cursor ou pelo terminal, com a rede restrita ao necessário. Auditoria num contêiner separado, da mesma imagem, sem iniciar o Claude Code |
 | O que entra no git | Decidido: metadados, como nomes, endereços, hashes e listas. Conteúdo da ROM nunca |
@@ -327,7 +329,7 @@ Todas as decisões abaixo estão fechadas. Mudanças exigem nova aprovação de 
 | Ambiente de desenvolvimento | Decidido: Docker mínimo, Debian slim com Rust, mais as ferramentas que o build e os testes exigem |
 | Linguagens do projeto | Decidido: só Rust no código, com um mínimo de HTML e JavaScript no site e de shell nos hooks. Sem Python |
 | Repositório e CI | Decidido: público e sem ROM. O CI faz checagem anti-ROM, build, testes do núcleo em WebAssembly e deploy no Pages |
-| Testes de fidelidade | Decidido: rodam só localmente, com a ROM fora do repositório |
+| Testes de fidelidade | Decidido: rodam no computador de Marcelo e, depois da ativação da decisão L1, no contêiner de trabalho. A ROM fica fora do repositório |
 
 ## Glossário
 

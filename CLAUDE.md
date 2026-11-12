@@ -20,11 +20,11 @@ Este arquivo orienta a atuação da IA no repositório.
 
 ## Integridade da ROM e do disassembly
 
-- Nunca leia a ROM diretamente.
-- Nunca leia arquivos binários do disassembly.
-- A única exceção são os testes de isolamento da sub-etapa 0.2. Nesses testes, desvie a saída para `/dev/null` e avalie apenas o código de retorno.
+- Até a ativação da decisão L1 (ver `docs/estado.md`), a IA não lê a ROM nem os binários do disassembly. Depois da ativação, ela pode ler os dois, para desenvolver e testar.
+- A guarda da ROM fica na saída. O detector em `hooks/detector` procura, nos arquivos do commit, trechos copiados da ROM e bloqueia o commit. Não copie trechos da ROM para o código: toda tabela vem da ROM na execução.
 - Nada com conteúdo da ROM pode entrar no git. Imagens, sons, código extraído, dados binários ou traces não entram.
 - Apenas metadados podem entrar no git: hashes, nomes, endereços e listas.
+- Oráculo, comparador, manifesto e testes ocultos ficam fora do alcance da IA. Depois de congelados, não são alterados.
 
 ## Git e fluxo de trabalho
 

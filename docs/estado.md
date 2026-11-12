@@ -2,6 +2,33 @@
 
 Documento de acompanhamento do progresso das etapas.
 
+## Decisão L1 (11/11/2026): leitura da ROM pela IA, com guarda na saída
+
+**Decidido por Marcelo.** A IA pode ler a ROM e os binários do disassembly. A guarda passa da entrada para a saída: um detector, no hook do commit, procura trechos da ROM nos arquivos que entram no git. Continuam fora do alcance da IA: oráculo, comparador, manifesto, testes ocultos, itens congelados e assinatura.
+
+**Substitui a D1 no ponto da leitura.** A D1 continua abaixo, sem alteração, como histórico.
+
+**Verificado em 11/11/2026, em worktree e sem ler a ROM real:** 11 testes unitários do detector, com ROM sintética; `clippy -D warnings` e `fmt` limpos; os três patches aplicam limpos no `HEAD`; o harness `.devcontainer/testes/hooks.sh` passa 14 de 14 com os patches aplicados; sem ROM, o hook bloqueia o commit; com um `.gen` que não é a REV01, o detector recusa e o hook bloqueia.
+
+**Ainda não vale.** A leitura só é liberada depois destes passos, nesta ordem:
+
+1. Aplicar `docs/pedidos/l1-hook-detector.patch` e `docs/pedidos/l1-hook-pre-commit.patch` com `git apply`. Rodar `sh .devcontainer/testes/hooks.sh` e conferir 14 de 14.
+2. No host, com a ROM real, rodar os dois controles do detector. O positivo copia 64 bytes da ROM para um arquivo fora do repositório: o detector deve sair com código 1 e apontar o trecho. O negativo é um texto comum: deve sair com código 0. Comandos, com `ROM` apontando para o arquivo da ROM:
+   - `dd if="$ROM" of=/tmp/controle-positivo.bin bs=1 skip=1000 count=64`
+   - `cargo run --quiet --manifest-path hooks/detector/Cargo.toml -- --rom "$ROM" --arquivo /tmp/controle-positivo.bin`
+   - `printf 'texto comum\n' > /tmp/controle-negativo.txt`
+   - `cargo run --quiet --manifest-path hooks/detector/Cargo.toml -- --rom "$ROM" --arquivo /tmp/controle-negativo.txt`
+3. Aplicar `docs/pedidos/l1-permissoes-rom.patch` em `.devcontainer/managed-settings.json`, reconstruir a imagem do contêiner e confirmar que a IA lê a ROM e os binários do disassembly.
+4. Levar esta decisão à fonte do requisitos (chat de planejamento) e exportar a cópia de novo. A cópia em `docs/requisitos.md` foi editada aqui. A próxima exportação a sobrescreve se a fonte não mudar.
+
+**Limite do detector.** Ele pega cópia literal de bytes e de listas de números. Não pega tabela escrita com outra fórmula. Uma cópia com alguns bytes trocados ainda é achada nos trechos íntegros de pelo menos 32 bytes.
+
+**Por que o detector fica em `hooks/`.** Se ele estivesse em `xtask/`, a própria IA poderia alterá-lo no mesmo commit em que copia a tabela. Em `hooks/`, a proibição de editar itens congelados protege o código.
+
+**Pendência fora da L1.** Os scripts de fidelidade, como `scripts/etapa8-bloco2.sh`, gravam em `$SONIC1_EXT_DIR/privado`, pasta que o contêiner não monta (ver a seção Ambiente de `docs/requisitos.md`). Para rodá-los dentro do contêiner, a saída precisa ir para `trabalho`, e o caminho da ROM precisa apontar para `/mnt/rom`. Isso ainda não foi feito.
+
+**Aviso sobre a prova.** Com a leitura liberada, o corpus visível deixa de ser prova independente. Relatórios com o corpus visível valem como progresso. A prova fica com os testes ocultos e a auditoria.
+
 ## Etapa 8 (Sintetizador WebSonic): concluída, falta aplicar os patches, assinar o manifesto e a sessão de revisão (10/11/2026)
 
 Plano aprovado em 09/11/2026 (`docs/plano-etapa-8.md`). Decisões D8.1 a D8.14 em `docs/conhecimento/sintese.md`.
@@ -117,7 +144,7 @@ Plano aprovado em 06/11/2026 (`docs/plano-etapa-4.md`). 4.0 a 4.9 feitas. Prova 
 
 ## Decisões da auditoria (aprovadas pelo Marcelo em 03/11/2026)
 
-- D1: os testes de fidelidade com a ROM rodam só pelo Marcelo, fora da IA. A IA não lê a ROM por nenhum caminho. A revisão fica para a Etapa 2.
+- D1 (em parte substituída pela decisão L1, de 11/11/2026): os testes de fidelidade com a ROM rodam só pelo Marcelo, fora da IA. A IA não lê a ROM por nenhum caminho. A revisão fica para a Etapa 2.
 - D2: rede mínima, a lista de `.devcontainer/dominios.txt`.
 - D3: o Marcelo valida o contêiner. As sessões só tocam arquivos de texto até a 0.2 passar.
 - D4: caminho único do workspace, `/workspaces/websonic`.

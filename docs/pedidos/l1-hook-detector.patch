@@ -1,0 +1,583 @@
+diff --git a/hooks/detector/Cargo.toml b/hooks/detector/Cargo.toml
+new file mode 100644
+index 0000000..f5c4edb
+--- /dev/null
++++ b/hooks/detector/Cargo.toml
+@@ -0,0 +1,15 @@
++[package]
++name = "detector-rom"
++version = "0.0.0"
++edition = "2024"
++publish = false
++description = "Detector de trechos da ROM no commit (decisão L1, 11/11/2026). Fica em hooks/, que é congelado."
++
++# Pacote fora do workspace da raiz: a guarda não depende do código que ela vigia.
++[workspace]
++
++[dependencies]
++sonic1-rom = { path = "../../crates/rom" }
++
++[lints.clippy]
++all = { level = "warn", priority = -1 }
+diff --git a/hooks/detector/src/main.rs b/hooks/detector/src/main.rs
+new file mode 100644
+index 0000000..aeeda3a
+--- /dev/null
++++ b/hooks/detector/src/main.rs
+@@ -0,0 +1,556 @@
++//! Detector de trechos da ROM, usado pelo hook do commit (decisão L1, 11/11/2026).
++//!
++//! A IA pode ler a ROM. Por isso a guarda fica na saída: antes de cada commit, este programa
++//! procura, nos arquivos que entram no commit, trechos iguais a trechos da ROM.
++//!
++//! Falha fechada: se a ROM não existir ou não for a REV01 (confere com refs/rom-hashes.txt),
++//! o programa falha e o hook bloqueia o commit.
++//!
++//! Procura dois formatos de cópia:
++//! - bytes crus, em qualquer arquivo;
++//! - listas de números separados por vírgula, como `[0x12, 0x34]` (bytes) ou `[4660, 22136]`
++//!   (palavras de 16 bits em big-endian, a ordem em que a ROM guarda os dados).
++//!
++//! Limite: pega só cópia literal. Tabela escrita com outra fórmula passa.
++//! A saída traz caminho, linha, tamanho e endereço na ROM. Nunca imprime conteúdo.
++//!
++//! Uso: `cargo run --manifest-path hooks/detector/Cargo.toml -- --rom <arquivo.gen>`.
++//! Sem `--arquivo`, analisa o que está no índice (o que vai para o commit).
++//! Com `--arquivo <caminho>` (repetível), analisa arquivos do disco. Serve para os controles.
++
++#![forbid(unsafe_code)]
++
++use std::path::{Path, PathBuf};
++use std::process::{Command, ExitCode};
++
++/// Tamanho mínimo de um trecho copiado, em bytes. Abaixo disso a coincidência é comum.
++const JANELA: usize = 32;
++/// Janela com menos valores distintos que isto é ignorada (zeros e preenchimentos).
++const MIN_DISTINTOS: usize = 8;
++/// Menor lista de números que entra na busca.
++const MIN_VALORES: usize = 16;
++/// Achados por arquivo. Acima disso a saída só cresce.
++const MAX_ACHADOS: usize = 20;
++/// Comprimento máximo medido de uma cópia.
++const MAX_COMPRIMENTO: usize = 4096;
++/// Base do hash deslizante. Número ímpar e grande, para espalhar os valores.
++const BASE: u64 = 0x0000_0100_0000_01B3;
++const USO: &str = "uso: --rom <arquivo da ROM> [--arquivo <caminho>]...";
++
++/// Um trecho de arquivo igual a um trecho da ROM.
++#[derive(Debug, PartialEq, Eq)]
++struct Achado {
++    /// "bytes" (arquivo cru), "u8" (lista de bytes) ou "u16be" (lista de palavras).
++    fonte: &'static str,
++    /// Onde o trecho começa no arquivo, ou onde começa a lista.
++    deslocamento: usize,
++    /// Quantos bytes coincidem com a ROM, a partir do trecho.
++    comprimento: usize,
++    /// Endereço do trecho dentro da ROM.
++    endereco_rom: usize,
++}
++
++/// Lista de números separados por vírgula, convertida em bytes.
++#[derive(Debug, PartialEq, Eq)]
++struct Lista {
++    deslocamento: usize,
++    /// Os valores como bytes, se todos couberem em 8 bits.
++    u8s: Option<Vec<u8>>,
++    /// Os valores como palavras de 16 bits em big-endian, se todos couberem em 16 bits.
++    u16be: Option<Vec<u8>>,
++}
++
++/// Hash de um trecho inteiro. A conta é a mesma do hash deslizante de `indice`, para casar os dois.
++fn hash_janela(janela: &[u8]) -> u64 {
++    janela.iter().fold(0u64, |h, &b| {
++        h.wrapping_mul(BASE)
++            .wrapping_add(u64::from(b).wrapping_add(1))
++    })
++}
++
++/// Hash de cada janela da ROM, ordenado. Cada item é (hash, endereço da janela).
++fn indice(rom: &[u8]) -> Vec<(u64, usize)> {
++    let mut entradas = Vec::new();
++    if rom.len() < JANELA {
++        return entradas;
++    }
++    // BASE elevado a JANELA: quanto vale o byte que sai da janela.
++    let potencia = (0..JANELA).fold(1u64, |p, _| p.wrapping_mul(BASE));
++    let mut h = 0u64;
++    for (i, &b) in rom.iter().enumerate() {
++        h = h
++            .wrapping_mul(BASE)
++            .wrapping_add(u64::from(b).wrapping_add(1));
++        if i >= JANELA {
++            let saiu = u64::from(rom[i - JANELA]).wrapping_add(1);
++            h = h.wrapping_sub(saiu.wrapping_mul(potencia));
++        }
++        if i + 1 >= JANELA {
++            entradas.push((h, i + 1 - JANELA));
++        }
++    }
++    entradas.sort_unstable();
++    entradas
++}
++
++/// Verdadeiro se a janela tem valores distintos suficientes para não ser preenchimento.
++fn variada(janela: &[u8]) -> bool {
++    let mut visto = [false; 256];
++    let mut distintos = 0;
++    for &b in janela {
++        let marca = &mut visto[usize::from(b)];
++        if !*marca {
++            *marca = true;
++            distintos += 1;
++        }
++    }
++    distintos >= MIN_DISTINTOS
++}
++
++/// Endereço da ROM onde a janela aparece de verdade. O hash pode colidir, então confere os bytes.
++fn achar(janela: &[u8], rom: &[u8], entradas: &[(u64, usize)]) -> Option<usize> {
++    let h = hash_janela(janela);
++    let inicio = entradas.partition_point(|&(x, _)| x < h);
++    entradas[inicio..]
++        .iter()
++        .take_while(|&&(x, _)| x == h)
++        .map(|&(_, endereco)| endereco)
++        .find(|&endereco| rom[endereco..endereco + JANELA] == *janela)
++}
++
++/// Quantos bytes seguidos são iguais nos dois trechos, com limite em MAX_COMPRIMENTO.
++fn comprimento_comum(a: &[u8], b: &[u8]) -> usize {
++    a.iter()
++        .zip(b)
++        .take(MAX_COMPRIMENTO)
++        .take_while(|(x, y)| x == y)
++        .count()
++}
++
++/// Procura cópias em um fluxo de bytes. `base` soma ao deslocamento (zero para o arquivo cru).
++fn procurar(
++    fluxo: &[u8],
++    rom: &[u8],
++    entradas: &[(u64, usize)],
++    fonte: &'static str,
++    base: usize,
++) -> Vec<Achado> {
++    let mut achados = Vec::new();
++    let mut i = 0;
++    while i + JANELA <= fluxo.len() {
++        let janela = &fluxo[i..i + JANELA];
++        let endereco = if variada(janela) {
++            achar(janela, rom, entradas)
++        } else {
++            None
++        };
++        match endereco {
++            Some(endereco) => {
++                let comprimento = comprimento_comum(&fluxo[i..], &rom[endereco..]);
++                achados.push(Achado {
++                    fonte,
++                    deslocamento: base + i,
++                    comprimento,
++                    endereco_rom: endereco,
++                });
++                if achados.len() >= MAX_ACHADOS {
++                    break;
++                }
++                // Pula o trecho já reportado, para não contar a mesma cópia várias vezes.
++                i += comprimento;
++            }
++            None => i += 1,
++        }
++    }
++    achados
++}
++
++/// Listas de números separados por vírgula. Qualquer caractere que não seja espaço, vírgula
++/// ou número encerra a lista atual.
++fn listas(texto: &[u8]) -> Vec<Lista> {
++    let mut saida = Vec::new();
++    let mut valores = Vec::new();
++    let mut inicio = 0;
++    let mut i = 0;
++    while i < texto.len() {
++        if let Some((valor, fim)) = numero_em(texto, i) {
++            if valores.is_empty() {
++                inicio = i;
++            }
++            valores.push(valor);
++            let mut j = fim;
++            while j < texto.len() && texto[j].is_ascii_whitespace() {
++                j += 1;
++            }
++            if texto.get(j) == Some(&b',') {
++                i = j + 1;
++            } else {
++                fechar_lista(&mut valores, inicio, &mut saida);
++                i = fim;
++            }
++        } else {
++            if !(texto[i].is_ascii_whitespace() || texto[i] == b',') {
++                fechar_lista(&mut valores, inicio, &mut saida);
++            }
++            i += 1;
++        }
++    }
++    fechar_lista(&mut valores, inicio, &mut saida);
++    saida
++}
++
++/// Guarda a lista, se ela for longa o bastante, como bytes e como palavras de 16 bits.
++fn fechar_lista(valores: &mut Vec<u32>, inicio: usize, saida: &mut Vec<Lista>) {
++    if valores.len() >= MIN_VALORES {
++        let u8s: Option<Vec<u8>> = valores.iter().map(|&v| u8::try_from(v).ok()).collect();
++        let palavras: Option<Vec<u16>> = valores.iter().map(|&v| u16::try_from(v).ok()).collect();
++        let u16be: Option<Vec<u8>> =
++            palavras.map(|p| p.iter().flat_map(|w| w.to_be_bytes()).collect());
++        saida.push(Lista {
++            deslocamento: inicio,
++            u8s,
++            u16be,
++        });
++    }
++    valores.clear();
++}
++
++/// Número que começa em `i`, decimal ou hexadecimal (0x), com `_` como separador.
++/// Devolve o valor e a posição logo depois dele. Número colado a letra não conta: `x12`, `12u8`.
++fn numero_em(texto: &[u8], i: usize) -> Option<(u32, usize)> {
++    let colado = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
++    if i > 0 && colado(texto[i - 1]) {
++        return None;
++    }
++    let primeiro = *texto.get(i)?;
++    if !primeiro.is_ascii_digit() {
++        return None;
++    }
++    let hex = primeiro == b'0' && texto.get(i + 1).is_some_and(|&b| b == b'x' || b == b'X');
++    let (base, inicio) = if hex { (16, i + 2) } else { (10, i) };
++    let mut fim = inicio;
++    while let Some(&b) = texto.get(fim) {
++        let digito = if hex {
++            b.is_ascii_hexdigit()
++        } else {
++            b.is_ascii_digit()
++        };
++        if !(digito || b == b'_') {
++            break;
++        }
++        fim += 1;
++    }
++    if texto.get(fim).is_some_and(|&b| colado(b)) {
++        return None;
++    }
++    let digitos: String = texto[inicio..fim]
++        .iter()
++        .filter(|&&b| b != b'_')
++        .map(|&b| char::from(b))
++        .collect();
++    let valor = u32::from_str_radix(&digitos, base).ok()?;
++    Some((valor, fim))
++}
++
++/// Todos os achados de um arquivo: bytes crus, listas em bytes e listas em palavras.
++fn analisar(dado: &[u8], rom: &[u8], entradas: &[(u64, usize)]) -> Vec<Achado> {
++    let mut achados = procurar(dado, rom, entradas, "bytes", 0);
++    for lista in listas(dado) {
++        if let Some(bytes) = &lista.u8s {
++            achados.extend(procurar(bytes, rom, entradas, "u8", lista.deslocamento));
++        }
++        if let Some(bytes) = &lista.u16be {
++            achados.extend(procurar(bytes, rom, entradas, "u16be", lista.deslocamento));
++        }
++    }
++    achados.sort_by_key(|a| a.deslocamento);
++    achados.truncate(MAX_ACHADOS);
++    achados
++}
++
++/// Número da linha (a partir de 1) onde está o deslocamento.
++fn linha_de(dado: &[u8], deslocamento: usize) -> usize {
++    dado.iter()
++        .take(deslocamento)
++        .filter(|&&b| b == b'\n')
++        .count()
++        + 1
++}
++
++/// Roda o git e devolve a saída crua. Erro se o git falhar.
++fn git(raiz: &Path, args: &[&str]) -> Result<Vec<u8>, String> {
++    let saida = Command::new("git")
++        .current_dir(raiz)
++        .args(args)
++        .output()
++        .map_err(|e| format!("git {args:?}: {e}"))?;
++    if saida.status.success() {
++        Ok(saida.stdout)
++    } else {
++        Err(format!("git {args:?} terminou com {}", saida.status))
++    }
++}
++
++/// Caminho e id do blob de cada arquivo que entra no commit. Submódulos ficam de fora, como no hook.
++fn blobs_do_commit(raiz: &Path) -> Result<Vec<(String, String)>, String> {
++    let saida = git(
++        raiz,
++        &[
++            "diff",
++            "--cached",
++            "--raw",
++            "-z",
++            "--no-abbrev",
++            "--no-renames",
++            "--diff-filter=ACM",
++        ],
++    )?;
++    let texto = String::from_utf8_lossy(&saida);
++    let partes: Vec<&str> = texto.split('\0').filter(|p| !p.is_empty()).collect();
++    let mut blobs = Vec::new();
++    // Pares (metadados, caminho). `as_chunks` descarta um eventual resto, como `chunks_exact`.
++    for [meta, caminho] in partes.as_chunks::<2>().0 {
++        // Formato: ":modo_antigo modo_novo id_antigo id_novo estado".
++        let campos: Vec<&str> = meta.split(' ').collect();
++        if campos.get(1) == Some(&"160000") {
++            continue;
++        }
++        if let Some(id) = campos.get(3) {
++            blobs.push((caminho.to_string(), (*id).to_string()));
++        }
++    }
++    Ok(blobs)
++}
++
++/// Valor do argumento `nome`, isto é, o que vem logo depois dele.
++fn valor<'a>(args: &'a [String], nome: &str) -> Option<&'a str> {
++    args.windows(2)
++        .find(|par| par[0] == nome)
++        .map(|par| par[1].as_str())
++}
++
++/// Todos os valores de `nome`, na ordem em que aparecem.
++fn valores(args: &[String], nome: &str) -> Vec<String> {
++    args.windows(2)
++        .filter(|par| par[0] == nome)
++        .map(|par| par[1].clone())
++        .collect()
++}
++
++/// Confere, pelo sha1 de refs/rom-hashes.txt, que o arquivo dado é a REV01.
++fn confirmar_rev01(raiz: &Path, rom: &[u8]) -> Result<(), String> {
++    let texto = std::fs::read_to_string(raiz.join("refs").join("rom-hashes.txt"))
++        .map_err(|e| format!("refs/rom-hashes.txt ilegível: {e}"))?;
++    let esperado = texto
++        .lines()
++        .find_map(|l| l.strip_prefix("sha1:"))
++        .map(str::trim)
++        .ok_or("sha1 ausente em refs/rom-hashes.txt")?;
++    if sonic1_rom::em_hex(&sonic1_rom::sha1(rom)) == esperado {
++        Ok(())
++    } else {
++        Err("o arquivo dado não é a REV01 (sha1 diferente de refs/rom-hashes.txt)".to_string())
++    }
++}
++
++/// Arquivos a analisar: os de `--arquivo`, ou os que estão no índice para o commit.
++fn arquivos_a_analisar(args: &[String], raiz: &Path) -> Result<Vec<(String, Vec<u8>)>, String> {
++    let pedidos = valores(args, "--arquivo");
++    let mut arquivos = Vec::new();
++    if pedidos.is_empty() {
++        for (caminho, id) in blobs_do_commit(raiz)? {
++            let dado = git(raiz, &["cat-file", "blob", id.as_str()])?;
++            arquivos.push((caminho, dado));
++        }
++    } else {
++        for caminho in pedidos {
++            let dado = std::fs::read(&caminho).map_err(|e| format!("{caminho}: {e}"))?;
++            arquivos.push((caminho, dado));
++        }
++    }
++    Ok(arquivos)
++}
++
++fn executar(args: &[String]) -> Result<(), String> {
++    let rom_caminho = valor(args, "--rom").ok_or(USO)?;
++    let raiz = PathBuf::from(
++        String::from_utf8_lossy(&git(Path::new("."), &["rev-parse", "--show-toplevel"])?)
++            .trim()
++            .to_string(),
++    );
++    let rom = std::fs::read(rom_caminho)
++        .map_err(|e| format!("não consegui ler a ROM em {rom_caminho}: {e}"))?;
++    confirmar_rev01(&raiz, &rom)?;
++
++    let entradas = indice(&rom);
++    let analisados = arquivos_a_analisar(args, &raiz)?;
++    let mut problemas = Vec::new();
++    for (caminho, dado) in &analisados {
++        for achado in analisar(dado, &rom, &entradas) {
++            problemas.push(format!(
++                "  {caminho}: linha {}: {} bytes iguais à ROM no endereço {:#x} ({})",
++                linha_de(dado, achado.deslocamento),
++                achado.comprimento,
++                achado.endereco_rom,
++                achado.fonte,
++            ));
++        }
++    }
++    if problemas.is_empty() {
++        println!(
++            "detector: nenhum trecho copiado da ROM em {} arquivo(s).",
++            analisados.len()
++        );
++        return Ok(());
++    }
++    for linha in &problemas {
++        eprintln!("{linha}");
++    }
++    Err(format!("{} trecho(s) copiado(s) da ROM", problemas.len()))
++}
++
++fn main() -> ExitCode {
++    let args: Vec<String> = std::env::args().skip(1).collect();
++    match executar(&args) {
++        Ok(()) => ExitCode::SUCCESS,
++        Err(erro) => {
++            eprintln!("detector: {erro}");
++            ExitCode::FAILURE
++        }
++    }
++}
++
++#[cfg(test)]
++mod testes {
++    use super::*;
++
++    /// ROM sintética e determinística. Não é a ROM real e não sai deste teste.
++    fn rom_falsa() -> Vec<u8> {
++        let mut s: u32 = 0x1234_5678;
++        (0..4096)
++            .map(|_| {
++                s = s.wrapping_mul(1_103_515_245).wrapping_add(12_345);
++                (s >> 16).to_le_bytes()[0]
++            })
++            .collect()
++    }
++
++    #[test]
++    fn hash_deslizante_bate_com_o_direto() {
++        let rom = rom_falsa();
++        let entradas = indice(&rom);
++        for pos in (0..rom.len() - JANELA).step_by(97) {
++            let h = hash_janela(&rom[pos..pos + JANELA]);
++            assert!(
++                entradas.contains(&(h, pos)),
++                "janela em {pos} fora do índice"
++            );
++        }
++    }
++
++    #[test]
++    fn copia_literal_de_bytes_e_achada() {
++        let rom = rom_falsa();
++        let mut dado = b"fn x() {}\n".to_vec();
++        dado.extend_from_slice(&rom[1000..1100]);
++        let achados = analisar(&dado, &rom, &indice(&rom));
++        assert!(
++            achados
++                .iter()
++                .any(|a| a.fonte == "bytes" && a.endereco_rom == 1000 && a.comprimento == 100)
++        );
++    }
++
++    #[test]
++    fn trecho_curto_nao_e_achado() {
++        let rom = rom_falsa();
++        let dado = &rom[500..500 + JANELA - 1];
++        assert!(analisar(dado, &rom, &indice(&rom)).is_empty());
++    }
++
++    #[test]
++    fn texto_comum_nao_e_achado() {
++        let rom = rom_falsa();
++        let dado = "pub fn passo(estado: &mut Estado) -> Resultado {\n    estado.quadro += 1;\n}\n"
++            .repeat(20);
++        assert!(analisar(dado.as_bytes(), &rom, &indice(&rom)).is_empty());
++    }
++
++    #[test]
++    fn lista_hex_de_bytes_e_achada() {
++        let rom = rom_falsa();
++        let itens: Vec<String> = rom[2000..2040]
++            .iter()
++            .map(|b| format!("0x{b:02X}"))
++            .collect();
++        let dado = format!("const T: [u8; 40] = [{}];\n", itens.join(", "));
++        let achados = analisar(dado.as_bytes(), &rom, &indice(&rom));
++        assert!(
++            achados
++                .iter()
++                .any(|a| a.fonte == "u8" && a.endereco_rom == 2000)
++        );
++    }
++
++    #[test]
++    fn lista_de_palavras_be_e_achada() {
++        let rom = rom_falsa();
++        let palavras: Vec<String> = rom[3000..3064]
++            .as_chunks::<2>()
++            .0
++            .iter()
++            .map(|par| u16::from_be_bytes(*par).to_string())
++            .collect();
++        let dado = format!("[{}]", palavras.join(", "));
++        let achados = analisar(dado.as_bytes(), &rom, &indice(&rom));
++        assert!(
++            achados
++                .iter()
++                .any(|a| a.fonte == "u16be" && a.endereco_rom == 3000)
++        );
++    }
++
++    #[test]
++    fn zeros_nao_contam() {
++        let mut rom = rom_falsa();
++        rom[100..164].fill(0);
++        let dado = format!("[{}]", vec!["0x00"; 64].join(", "));
++        assert!(analisar(dado.as_bytes(), &rom, &indice(&rom)).is_empty());
++    }
++
++    #[test]
++    fn variada_exige_oito_valores() {
++        assert!(!variada(&[7u8; JANELA]));
++        let mut janela = [0u8; JANELA];
++        for (k, v) in janela.iter_mut().enumerate().take(8) {
++            *v = u8::try_from(k).unwrap_or(0);
++        }
++        assert!(variada(&janela));
++    }
++
++    #[test]
++    fn numero_colado_a_letra_nao_conta() {
++        assert_eq!(numero_em(b"x12", 1), None);
++        assert_eq!(numero_em(b"12u8", 0), None);
++        assert_eq!(numero_em(b"0x1F,", 0), Some((31, 4)));
++        assert_eq!(numero_em(b"1_000,", 0), Some((1000, 5)));
++    }
++
++    #[test]
++    fn listas_separam_por_virgula() {
++        let itens: Vec<String> = (1..=16).map(|v| v.to_string()).collect();
++        let texto = format!("x = [{}]; y = 1, 2", itens.join(", "));
++        let achadas = listas(texto.as_bytes());
++        assert_eq!(achadas.len(), 1);
++        let esperado: Vec<u8> = (1..=16).collect();
++        assert_eq!(achadas[0].u8s.as_deref(), Some(esperado.as_slice()));
++    }
++
++    #[test]
++    fn sha1_do_crate_bate_com_o_vetor_conhecido() {
++        assert_eq!(
++            sonic1_rom::em_hex(&sonic1_rom::sha1(b"abc")),
++            "a9993e364706816aba3e25717850c26c9cd0d89d"
++        );
++    }
++}

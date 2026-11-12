@@ -1,0 +1,19 @@
+diff --git a/hooks/pre-commit b/hooks/pre-commit
+index e4b0950..7c11dea 100755
+--- a/hooks/pre-commit
++++ b/hooks/pre-commit
+@@ -16,4 +16,14 @@ problemas=$(
+ )
+ 
+ [ -z "$problemas" ] || recusar "commit" "$problemas"
++
++# Decisao L1 (11/11/2026): a IA pode ler a ROM, entao a guarda fica na saida. O detector
++# procura, nos arquivos do commit, trechos iguais a trechos da ROM (ver hooks/detector).
++# So vale no projeto, quando a pasta hooks/detector existe. Sem ROM, o commit e bloqueado.
++if [ -f "$raiz/hooks/detector/Cargo.toml" ]; then
++    rom=$(ls /mnt/rom/*.gen "${SONIC1_EXT_DIR:-$HOME/sonic1-ext}"/rom/*.gen 2>/dev/null | head -n 1)
++    [ -n "$rom" ] || recusar "commit" "  detector: ROM nao encontrada em /mnt/rom nem em SONIC1_EXT_DIR/rom"
++    cargo run --quiet --manifest-path "$raiz/hooks/detector/Cargo.toml" -- --rom "$rom" ||
++        recusar "commit" "  detector: trecho copiado da ROM, ou ROM diferente da REV01 (veja a saida acima)"
++fi
+ exit 0
