@@ -1,0 +1,737 @@
+diff --git a/hooks/detector/src/main.rs b/hooks/detector/src/main.rs
+index 879d79c..db4a2e7 100644
+--- a/hooks/detector/src/main.rs
++++ b/hooks/detector/src/main.rs
+@@ -6,10 +6,11 @@
+ //! Falha fechada: se a ROM não existir ou não for a REV01 (confere com refs/rom-hashes.txt),
+ //! o programa falha e o hook bloqueia o commit.
+ //!
+-//! Procura dois formatos de cópia:
++//! Procura estes formatos de cópia:
+ //! - bytes crus, em qualquer arquivo;
+-//! - listas de números separados por vírgula, como `[0x12, 0x34]` (bytes) ou `[4660, 22136]`
+-//!   (palavras de 16 bits em big-endian, a ordem em que a ROM guarda os dados).
++//! - listas de números separados por vírgula, em bytes e em palavras de 16 e 32 bits (big-endian,
++//!   a ordem em que a ROM guarda os dados), com sufixos de tipo, `$`, sinais, tuplas, `dc.b`,
++//!   `dc.w` e comentários.
+ //!
+ //! Limite: pega só cópia literal. Tabela escrita com outra fórmula passa.
+ //! A saída traz caminho, linha, tamanho e endereço na ROM. Nunca imprime conteúdo.
+@@ -31,6 +32,10 @@ const JANELA: usize = 32;
+ const MIN_DISTINTOS: usize = 8;
+ /// Menor lista de números que entra na busca.
+ const MIN_VALORES: usize = 16;
++/// Sufixos de tipo aceitos depois dos dígitos (`12u8`). Nenhum é prefixo de outro.
++const SUFIXOS: [&[u8]; 10] = [
++    b"u8", b"u16", b"u32", b"u64", b"usize", b"i8", b"i16", b"i32", b"i64", b"isize",
++];
+ /// Achados por arquivo. Acima disso a saída só cresce.
+ const MAX_ACHADOS: usize = 20;
+ /// Comprimento máximo medido de uma cópia.
+@@ -42,7 +47,7 @@ const USO: &str = "uso: --rom <arquivo da ROM> [--arquivo <caminho>]...";
+ /// Um trecho de arquivo igual a um trecho da ROM.
+ #[derive(Debug, PartialEq, Eq)]
+ struct Achado {
+-    /// "bytes" (arquivo cru), "u8" (lista de bytes) ou "u16be" (lista de palavras).
++    /// "bytes" (arquivo cru), "u8", "u16be" ou "u32be" (listas de números).
+     fonte: &'static str,
+     /// Onde o trecho começa no arquivo, ou onde começa a lista.
+     deslocamento: usize,
+@@ -52,14 +57,34 @@ struct Achado {
+     endereco_rom: usize,
+ }
+ 
+-/// Lista de números separados por vírgula, convertida em bytes.
++/// Lista de números separados por vírgula, convertida em bytes de 8, 16 e 32 bits.
+ #[derive(Debug, PartialEq, Eq)]
+ struct Lista {
+     deslocamento: usize,
+-    /// Os valores como bytes, se todos couberem em 8 bits.
++    /// Os valores como bytes, se todos couberem em 8 bits com sinal (-128 a 255).
+     u8s: Option<Vec<u8>>,
+-    /// Os valores como palavras de 16 bits em big-endian, se todos couberem em 16 bits.
++    /// Os valores como palavras de 16 bits em big-endian (-32768 a 65535).
+     u16be: Option<Vec<u8>>,
++    /// Os valores como palavras de 32 bits em big-endian (-2147483648 a 4294967295).
++    u32be: Option<Vec<u8>>,
++}
++
++impl Lista {
++    /// Lista que só tem o fluxo de `bytes` bytes por valor (1, 2 ou 4).
++    fn so_com(deslocamento: usize, bytes: usize, fluxo: Vec<u8>) -> Lista {
++        let mut lista = Lista {
++            deslocamento,
++            u8s: None,
++            u16be: None,
++            u32be: None,
++        };
++        match bytes {
++            1 => lista.u8s = Some(fluxo),
++            2 => lista.u16be = Some(fluxo),
++            _ => lista.u32be = Some(fluxo),
++        }
++        lista
++    }
+ }
+ 
+ /// Hash de um trecho inteiro. A conta é a mesma do hash deslizante de `indice`, para casar os dois.
+@@ -167,23 +192,39 @@ fn procurar(
+     achados
+ }
+ 
+-/// Listas de números separados por vírgula. Qualquer caractere que não seja espaço, vírgula
+-/// ou número encerra a lista atual.
++/// Listas de números do texto, fora e dentro dos comentários.
++///
++/// Fora dos comentários, o comentário vale como espaço: a lista atravessa `// linha 1` e
++/// `/* meio */`. Por isso o que está escrito dentro dos comentários é lido à parte, com a mesma
++/// regra. Sem isso, uma tabela copiada num comentário passaria.
+ fn listas(texto: &[u8]) -> Vec<Lista> {
++    let mut saida = ler_listas(texto);
++    if let Some(vista) = so_comentarios(texto) {
++        saida.extend(ler_listas(&vista));
++    }
++    saida
++}
++
++/// Listas de números separados por vírgula. Depois de um valor, só a vírgula continua a lista. Antes
++/// e depois dela podem vir brancos, comentários, parênteses, colchetes, chaves e `;`, que não
++/// encerram a lista. Qualquer outro caractere encerra a lista atual.
++fn ler_listas(texto: &[u8]) -> Vec<Lista> {
+     let mut saida = Vec::new();
+     let mut valores = Vec::new();
+     let mut inicio = 0;
+     let mut i = 0;
+     while i < texto.len() {
+-        if let Some((valor, fim)) = numero_em(texto, i) {
++        // `-` logo antes de um número é sinal, salvo se estiver colado, à esquerda, a letra, dígito
++        // ou `_`. Nesse caso é subtração (`x-5`, `1-2`) e o número fica positivo.
++        let negativo = texto[i] == b'-' && !(i > 0 && colado(texto[i - 1]));
++        if let Some((valor, fim)) = numero_em(texto, i + usize::from(negativo)) {
+             if valores.is_empty() {
+                 inicio = i;
+             }
+-            valores.push(valor);
+-            let mut j = fim;
+-            while j < texto.len() && texto[j].is_ascii_whitespace() {
+-                j += 1;
+-            }
++            let valor = i64::from(valor);
++            valores.push(if negativo { -valor } else { valor });
++            // O valor só continua a lista se uma vírgula vier depois dele.
++            let j = pular(texto, fim);
+             if texto.get(j) == Some(&b',') {
+                 i = j + 1;
+             } else {
+@@ -191,45 +232,167 @@ fn listas(texto: &[u8]) -> Vec<Lista> {
+                 i = fim;
+             }
+         } else {
+-            if !(texto[i].is_ascii_whitespace() || texto[i] == b',') {
+-                fechar_lista(&mut valores, inicio, &mut saida);
++            let j = pular(texto, i);
++            if j > i {
++                i = j;
++            } else {
++                // A vírgula separa valores, então não encerra a lista.
++                if texto[i] != b',' {
++                    fechar_lista(&mut valores, inicio, &mut saida);
++                }
++                i += 1;
+             }
+-            i += 1;
+         }
+     }
+     fechar_lista(&mut valores, inicio, &mut saida);
+     saida
+ }
+ 
+-/// Guarda a lista, se ela for longa o bastante, como bytes e como palavras de 16 bits.
+-fn fechar_lista(valores: &mut Vec<u32>, inicio: usize, saida: &mut Vec<Lista>) {
++/// Posição depois de brancos, separadores `()[]{};` e comentários que começam em `j`. Comentário
++/// vale como espaço. A vírgula fica de fora, porque ela continua a lista.
++fn pular(texto: &[u8], mut j: usize) -> usize {
++    while j < texto.len() {
++        if let Some((_, fim)) = comentario_em(texto, j) {
++            j = fim;
++        } else if texto[j].is_ascii_whitespace() || b"()[]{};".contains(&texto[j]) {
++            j += 1;
++        } else {
++            break;
++        }
++    }
++    j
++}
++
++/// Comentário que começa em `j`, se houver. Devolve onde acaba o conteúdo e onde acaba o comentário.
++/// `//` vai até a quebra de linha, que não faz parte dele. `/* */` vai até o fecho e, sem fecho, até
++/// o fim do texto. A busca do fecho começa depois do `/*`, então `/*/` não fecha a si mesmo.
++fn comentario_em(texto: &[u8], j: usize) -> Option<(usize, usize)> {
++    let resto = &texto[j..];
++    if resto.starts_with(b"//") {
++        let fim = resto
++            .iter()
++            .position(|&b| b == b'\n')
++            .map_or(texto.len(), |p| j + p);
++        Some((fim, fim))
++    } else if resto.starts_with(b"/*") {
++        let fecho = texto[j + 2..].windows(2).position(|w| w == b"*/");
++        Some(fecho.map_or((texto.len(), texto.len()), |p| (j + 2 + p, j + 2 + p + 2)))
++    } else {
++        None
++    }
++}
++
++/// Cópia do texto, com o mesmo tamanho, em que só sobra o conteúdo dos comentários. Os delimitadores
++/// e os brancos viram espaço. O código vira byte nulo, que encerra qualquer lista. Assim vários
++/// comentários seguidos formam uma lista só, e os deslocamentos valem no texto original. Dentro do
++/// comentário, `/` vira espaço, para um `//` escrito dentro de `/* */` não ser lido como outro
++/// comentário. Devolve `None` se o texto não tem comentário.
++fn so_comentarios(texto: &[u8]) -> Option<Vec<u8>> {
++    let mut vista = vec![0u8; texto.len()];
++    let mut achou = false;
++    let mut i = 0;
++    while i < texto.len() {
++        if let Some((fim_conteudo, fim)) = comentario_em(texto, i) {
++            achou = true;
++            let conteudo = i + 2..fim_conteudo;
++            for (v, &b) in vista[conteudo.clone()].iter_mut().zip(&texto[conteudo]) {
++                *v = if b == b'/' { b' ' } else { b };
++            }
++            vista[i..i + 2].fill(b' ');
++            vista[fim_conteudo..fim].fill(b' ');
++            i = fim;
++        } else {
++            if texto[i].is_ascii_whitespace() {
++                vista[i] = b' ';
++            }
++            i += 1;
++        }
++    }
++    achou.then_some(vista)
++}
++
++/// Guarda a lista, se ela for longa o bastante, em bytes de 8, 16 e 32 bits.
++///
++/// Um valor que não cabe num tamanho derruba o fluxo inteiro desse tamanho. Para ele não esconder
++/// uma cópia colada a ele por vírgula (`[cópia], 1000`), cada trecho seguido de valores que cabem
++/// vira uma lista própria, só com esse tamanho.
++fn fechar_lista(valores: &mut Vec<i64>, inicio: usize, saida: &mut Vec<Lista>) {
+     if valores.len() >= MIN_VALORES {
+-        let u8s: Option<Vec<u8>> = valores.iter().map(|&v| u8::try_from(v).ok()).collect();
+-        let palavras: Option<Vec<u16>> = valores.iter().map(|&v| u16::try_from(v).ok()).collect();
+-        let u16be: Option<Vec<u8>> =
+-            palavras.map(|p| p.iter().flat_map(|w| w.to_be_bytes()).collect());
+-        saida.push(Lista {
++        let inteira = Lista {
+             deslocamento: inicio,
+-            u8s,
+-            u16be,
+-        });
++            u8s: fluxo_be(valores, 1),
++            u16be: fluxo_be(valores, 2),
++            u32be: fluxo_be(valores, 4),
++        };
++        let inteiros = [
++            inteira.u8s.is_some(),
++            inteira.u16be.is_some(),
++            inteira.u32be.is_some(),
++        ];
++        saida.push(inteira);
++        for (bytes, inteiro) in [1, 2, 4].into_iter().zip(inteiros) {
++            if inteiro {
++                continue;
++            }
++            // Trecho curto não enche uma janela, então nem vira lista.
++            let trechos = valores
++                .split(|&v| !cabe(v, bytes))
++                .filter(|t| t.len() * bytes >= JANELA);
++            for trecho in trechos {
++                if let Some(fluxo) = fluxo_be(trecho, bytes) {
++                    saida.push(Lista::so_com(inicio, bytes, fluxo));
++                }
++            }
++        }
+     }
+     valores.clear();
+ }
+ 
+-/// Número que começa em `i`, decimal ou hexadecimal (0x), com `_` como separador.
+-/// Devolve o valor e a posição logo depois dele. Número colado a letra não conta: `x12`, `12u8`.
++/// Verdadeiro se `valor` cabe em `bytes` bytes, com ou sem sinal: de -2^(8*bytes-1) até
++/// 2^(8*bytes)-1.
++fn cabe(valor: i64, bytes: usize) -> bool {
++    let modulo = 1i64 << (8 * bytes);
++    (-(modulo / 2)..modulo).contains(&valor)
++}
++
++/// Bytes big-endian de cada valor, com `bytes` bytes por valor, ou `None` se algum não couber (veja
++/// `cabe`). Negativo vira complemento de dois: -1 vira 0xFF, 0xFFFF ou 0xFFFFFFFF.
++fn fluxo_be(valores: &[i64], bytes: usize) -> Option<Vec<u8>> {
++    let modulo = 1i64 << (8 * bytes);
++    let mut saida = Vec::new();
++    for &valor in valores {
++        if !cabe(valor, bytes) {
++            return None;
++        }
++        saida.extend_from_slice(&valor.rem_euclid(modulo).to_be_bytes()[8 - bytes..]);
++    }
++    Some(saida)
++}
++
++/// Letra, dígito ou `_`: o que cola um número a um identificador.
++fn colado(byte: u8) -> bool {
++    byte.is_ascii_alphanumeric() || byte == b'_'
++}
++
++/// Número que começa em `i`, com `$` ou `0x` (hexadecimal) ou decimal, e `_` como separador. Um
++/// sufixo de tipo (`12u8`) logo depois dos dígitos também conta. Devolve o valor e a posição logo
++/// depois do número. Número colado a letra ou a `_` não conta: `x12`, `12abc` e `v1a` são nomes.
+ fn numero_em(texto: &[u8], i: usize) -> Option<(u32, usize)> {
+-    let colado = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+     if i > 0 && colado(texto[i - 1]) {
+         return None;
+     }
+     let primeiro = *texto.get(i)?;
+-    if !primeiro.is_ascii_digit() {
++    let hex = primeiro == b'$'
++        || (primeiro == b'0' && texto.get(i + 1).is_some_and(|&b| b == b'x' || b == b'X'));
++    if !(hex || primeiro.is_ascii_digit()) {
+         return None;
+     }
+-    let hex = primeiro == b'0' && texto.get(i + 1).is_some_and(|&b| b == b'x' || b == b'X');
+-    let (base, inicio) = if hex { (16, i + 2) } else { (10, i) };
++    let inicio = match primeiro {
++        b'$' => i + 1,
++        b'0' if hex => i + 2,
++        _ => i,
++    };
++    let base = if hex { 16 } else { 10 };
+     let mut fim = inicio;
+     while let Some(&b) = texto.get(fim) {
+         let digito = if hex {
+@@ -242,27 +405,37 @@ fn numero_em(texto: &[u8], i: usize) -> Option<(u32, usize)> {
+         }
+         fim += 1;
+     }
+-    if texto.get(fim).is_some_and(|&b| colado(b)) {
+-        return None;
+-    }
+     let digitos: String = texto[inicio..fim]
+         .iter()
+         .filter(|&&b| b != b'_')
+         .map(|&b| char::from(b))
+         .collect();
+     let valor = u32::from_str_radix(&digitos, base).ok()?;
++    // O sufixo tem que acabar o token: `12u8x` é nome, não número.
++    let sufixo = SUFIXOS
++        .iter()
++        .find(|s| texto[fim..].starts_with(s))
++        .map_or(0, |s| s.len());
++    let fim = fim + sufixo;
++    if texto.get(fim).is_some_and(|&b| colado(b)) {
++        return None;
++    }
+     Some((valor, fim))
+ }
+ 
+-/// Todos os achados de um arquivo: bytes crus, listas em bytes e listas em palavras.
++/// Todos os achados de um arquivo: bytes crus, listas em bytes e palavras.
+ fn analisar(dado: &[u8], rom: &[u8], entradas: &[(u64, usize)]) -> Vec<Achado> {
+     let mut achados = procurar(dado, rom, entradas, "bytes", 0);
+     for lista in listas(dado) {
+-        if let Some(bytes) = &lista.u8s {
+-            achados.extend(procurar(bytes, rom, entradas, "u8", lista.deslocamento));
+-        }
+-        if let Some(bytes) = &lista.u16be {
+-            achados.extend(procurar(bytes, rom, entradas, "u16be", lista.deslocamento));
++        let fluxos = [
++            ("u8", lista.u8s),
++            ("u16be", lista.u16be),
++            ("u32be", lista.u32be),
++        ];
++        for (fonte, bytes) in fluxos {
++            if let Some(bytes) = bytes {
++                achados.extend(procurar(&bytes, rom, entradas, fonte, lista.deslocamento));
++            }
+         }
+     }
+     achados.sort_by_key(|a| a.deslocamento);
+@@ -533,7 +706,8 @@ mod testes {
+     #[test]
+     fn numero_colado_a_letra_nao_conta() {
+         assert_eq!(numero_em(b"x12", 1), None);
+-        assert_eq!(numero_em(b"12u8", 0), None);
++        assert_eq!(numero_em(b"12u8", 0), Some((12, 4)));
++        assert_eq!(numero_em(b"12abc", 0), None);
+         assert_eq!(numero_em(b"0x1F,", 0), Some((31, 4)));
+         assert_eq!(numero_em(b"1_000,", 0), Some((1000, 5)));
+     }
+@@ -548,6 +722,367 @@ mod testes {
+         assert_eq!(achadas[0].u8s.as_deref(), Some(esperado.as_slice()));
+     }
+ 
++    /// Itens separados por `sep`, cada byte de `b` escrito por `f`.
++    fn itens(b: &[u8], sep: &str, f: impl Fn(u8) -> String) -> String {
++        b.iter().map(|&x| f(x)).collect::<Vec<_>>().join(sep)
++    }
++
++    fn hexa(x: u8) -> String {
++        format!("0x{x:02X}")
++    }
++
++    /// Palavras de 16 bits (big-endian) de `b`, escritas por `f` e separadas por vírgula.
++    fn palavras(b: &[u8], f: impl Fn(u16) -> String) -> String {
++        let partes: Vec<String> = b
++            .as_chunks::<2>()
++            .0
++            .iter()
++            .map(|p| f(u16::from_be_bytes(*p)))
++            .collect();
++        partes.join(", ")
++    }
++
++    /// Quartetos de 32 bits (big-endian) de `b`, escritos por `f` e separados por vírgula.
++    fn quartetos(b: &[u8], f: impl Fn(u32) -> String) -> String {
++        let partes: Vec<String> = b
++            .as_chunks::<4>()
++            .0
++            .iter()
++            .map(|q| f(u32::from_be_bytes(*q)))
++            .collect();
++        partes.join(", ")
++    }
++
++    #[test]
++    fn copias_em_cada_formato_sao_achadas() {
++        let rom = rom_falsa();
++        let b = &rom[2000..2040];
++        let neg = |x: u8| {
++            (if x >= 0x80 {
++                i32::from(x) - 256
++            } else {
++                i32::from(x)
++            })
++            .to_string()
++        };
++        let tuplas: Vec<String> = b
++            .chunks(2)
++            .map(|p| format!("(0x{:02X}, 0x{:02X})", p[0], p[1]))
++            .collect();
++        let linhas: String = b
++            .chunks(8)
++            .enumerate()
++            .map(|(n, l)| format!("// linha {}\n{},\n", n + 1, itens(l, ", ", hexa)))
++            .collect();
++        // Menos colado ao número em hexadecimal: `-0x10` e `-$10`.
++        let neg_hex = |x: u8, prefixo: &str| {
++            if x >= 0x80 {
++                format!("-{prefixo}{:02X}", 256 - u16::from(x))
++            } else {
++                format!("{prefixo}{x:02X}")
++            }
++        };
++        let chaves: Vec<String> = b
++            .chunks(8)
++            .map(|l| format!("{{{}}}", itens(l, ", ", hexa)))
++            .collect();
++        let docs: String = b
++            .chunks(8)
++            .map(|l| format!("/// {},\n", itens(l, ", ", hexa)))
++            .collect();
++        // Cada caso é (nome, texto, fonte esperada). Todas as cópias começam em 2000.
++        let casos = [
++            (
++                "sufixo de tipo",
++                format!(
++                    "const T: [u8; 40] = [{}];",
++                    itens(b, ", ", |x| format!("0x{x:02X}u8"))
++                ),
++                "u8",
++            ),
++            (
++                "decimal com sufixo",
++                format!("[{}]", itens(b, ", ", |x| format!("{x}u8"))),
++                "u8",
++            ),
++            (
++                "palavras com sufixo",
++                format!("[{}]", palavras(b, |v| format!("{v}u16"))),
++                "u16be",
++            ),
++            ("tuplas", format!("&[{}]", tuplas.join(", ")), "u8"),
++            (
++                "linhas aninhadas",
++                format!(
++                    "const T: [[u8; 16]; 3] = [[{}], [{}], [{}]];",
++                    itens(&b[..16], ", ", hexa),
++                    itens(&b[16..32], ", ", hexa),
++                    itens(&b[32..], ", ", hexa)
++                ),
++                "u8",
++            ),
++            // Linhas com vírgula final, como o rustfmt escreve: a vírgula depois de `]` continua a lista.
++            (
++                "linhas aninhadas com vírgula final",
++                format!(
++                    "[[{},], [{},], [{},]]",
++                    itens(&b[..16], ", ", hexa),
++                    itens(&b[16..32], ", ", hexa),
++                    itens(&b[32..], ", ", hexa)
++                ),
++                "u8",
++            ),
++            (
++                "dc.b com $",
++                format!("\tdc.b {}\n", itens(b, ",", |x| format!("${x:02X}"))),
++                "u8",
++            ),
++            (
++                "dc.w com $",
++                format!("\tdc.w {}\n", palavras(b, |v| format!("${v:04X}"))),
++                "u16be",
++            ),
++            (
++                "negativos",
++                format!("const T: [i8; 40] = [{}];", itens(b, ", ", neg)),
++                "u8",
++            ),
++            (
++                "32 bits decimais",
++                format!("[{}]", quartetos(&rom[2000..2064], |v| v.to_string())),
++                "u32be",
++            ),
++            (
++                "32 bits hexadecimais",
++                format!(
++                    "dc.l {}",
++                    quartetos(&rom[2000..2064], |v| format!("0x{v:08X}"))
++                ),
++                "u32be",
++            ),
++            (
++                "comentário de linha",
++                format!("const T: [u8; 40] = [\n{linhas}];"),
++                "u8",
++            ),
++            (
++                "comentário de bloco",
++                format!(
++                    "const T: [u8; 40] = [{}, /* meio */ {}];",
++                    itens(&b[..20], ", ", hexa),
++                    itens(&b[20..], ", ", hexa)
++                ),
++                "u8",
++            ),
++            (
++                "negativos em hexadecimal",
++                format!("[{}]", itens(b, ", ", |x| neg_hex(x, "0x"))),
++                "u8",
++            ),
++            (
++                "negativos com $",
++                format!("\tdc.b {}\n", itens(b, ",", |x| neg_hex(x, "$"))),
++                "u8",
++            ),
++            // O menos colado a uma letra é subtração: o primeiro valor da cópia não muda de sinal.
++            (
++                "subtração não é sinal",
++                format!("[x-{}]", itens(b, ", ", hexa)),
++                "u8",
++            ),
++            ("chaves", format!("= {{{}}};", chaves.join(", ")), "u8"),
++            (
++                "ponto e vírgula depois da vírgula",
++                format!("[{}]", itens(b, ",; ", hexa)),
++                "u8",
++            ),
++            // Um valor que não cabe em 8 bits derruba o fluxo da lista, mas não esconde a cópia.
++            (
++                "valor grande depois da cópia",
++                format!("({}), 1000", itens(b, ", ", hexa)),
++                "u8",
++            ),
++            (
++                "valor grande antes da cópia",
++                format!("[[70000], [{}]]", itens(b, ", ", hexa)),
++                "u8",
++            ),
++            (
++                "palavras coladas a valor acima de 16 bits",
++                format!("({}), 70000", palavras(b, |v| format!("0x{v:04X}"))),
++                "u16be",
++            ),
++            (
++                "32 bits colados a valor abaixo de -2^31",
++                format!(
++                    "({}), -3000000000",
++                    quartetos(&rom[2000..2064], |v| format!("0x{v:08X}"))
++                ),
++                "u32be",
++            ),
++            // Cópia escrita dentro de comentário também conta.
++            (
++                "cópia em comentário de linha",
++                format!("let t = 1; // {}\nlet u = 2;", itens(b, ", ", hexa)),
++                "u8",
++            ),
++            (
++                "cópia em comentário de bloco",
++                format!("/*\n{}\n*/", itens(b, ", ", hexa)),
++                "u8",
++            ),
++            (
++                "cópia em dois comentários de bloco",
++                format!(
++                    "/* {}, */ /* {} */",
++                    itens(&b[..20], ", ", hexa),
++                    itens(&b[20..], ", ", hexa)
++                ),
++                "u8",
++            ),
++            (
++                "// dentro de comentário de bloco",
++                format!(
++                    "/* {}, // {} */",
++                    itens(&b[..20], ", ", hexa),
++                    itens(&b[20..], ", ", hexa)
++                ),
++                "u8",
++            ),
++            ("cópia em comentários seguidos", docs, "u8"),
++        ];
++        for (nome, texto, fonte) in casos {
++            let achados = analisar(texto.as_bytes(), &rom, &indice(&rom));
++            assert!(
++                achados
++                    .iter()
++                    .any(|a| a.fonte == fonte && a.endereco_rom == 2000),
++                "caso {nome}: sem {fonte} em 2000, veio {achados:?}"
++            );
++        }
++        // A linha informada é a da lista, no código e dentro de comentário.
++        for (nome, texto, linha) in [
++            (
++                "no código",
++                format!("a\nb\nc\n[{}]", itens(b, ", ", hexa)),
++                4,
++            ),
++            (
++                "em comentário",
++                format!("a\nb\n// {}\n", itens(b, ", ", hexa)),
++                3,
++            ),
++        ] {
++            let achados = analisar(texto.as_bytes(), &rom, &indice(&rom));
++            let no_lugar = |a: &Achado| {
++                a.endereco_rom == 2000 && linha_de(texto.as_bytes(), a.deslocamento) == linha
++            };
++            assert!(achados.iter().any(no_lugar), "linha {nome}: {achados:?}");
++        }
++    }
++
++    #[test]
++    fn copias_erradas_nao_sao_achadas() {
++        let rom = rom_falsa();
++        let b = &rom[2000..2040];
++        let mut trocada = b.to_vec();
++        trocada.reverse();
++        // Texto de 200 KB com endereços, tabelas de contagens e frases.
++        let mut grande = String::new();
++        let mut semente: u32 = 7;
++        while grande.len() < 200_000 {
++            semente = semente.wrapping_mul(1_103_515_245).wrapping_add(12_345);
++            let v = (semente >> 16) % 1000;
++            grande += &format!(
++                "endereço 0x{:04X}: contagem {}, total {}; frase comum.\n",
++                v * 16,
++                v % 97,
++                v % 13
++            );
++            if v.is_multiple_of(10) {
++                let tabela: Vec<String> = (0..20).map(|k| ((v + k) % 256).to_string()).collect();
++                grande += &format!("tabela: {}\n", tabela.join(", "));
++            }
++        }
++        let casos = [
++            (
++                "lista cortada por um nome",
++                format!(
++                    "[{}, x, {}]",
++                    itens(&b[..20], ", ", hexa),
++                    itens(&b[20..], ", ", hexa)
++                ),
++            ),
++            (
++                "ordem trocada",
++                format!("[{}]", itens(&trocada, ", ", hexa)),
++            ),
++            ("31 bytes", format!("[{}]", itens(&b[..31], ", ", hexa))),
++            ("texto de 200 KB", grande),
++        ];
++        for (nome, texto) in casos {
++            let achados = analisar(texto.as_bytes(), &rom, &indice(&rom));
++            assert!(
++                achados.is_empty(),
++                "caso {nome}: achado indevido {achados:?}"
++            );
++        }
++        // Bordas das funções de baixo nível.
++        assert_eq!(numero_em(b"x12", 1), None);
++        assert_eq!(numero_em(b"v1a", 1), None);
++        assert_eq!(numero_em(b"12abc", 0), None);
++        assert_eq!(numero_em(b"_12", 1), None);
++        // O segundo dígito de um número não abre outro número.
++        assert_eq!(numero_em(b"12", 1), None);
++        assert_eq!(numero_em(b"0X1F,", 0), Some((31, 4)));
++        assert_eq!(numero_em(b"$1F,", 0), Some((31, 3)));
++        assert_eq!(numero_em(b"$", 0), None);
++        assert_eq!(numero_em(b"0x", 0), None);
++        // Cada sufixo vale, e só vale se acabar o token.
++        for s in [
++            "u8", "u16", "u32", "u64", "usize", "i8", "i16", "i32", "i64", "isize",
++        ] {
++            let numero = format!("12{s},");
++            assert_eq!(
++                numero_em(numero.as_bytes(), 0),
++                Some((12, 2 + s.len())),
++                "sufixo {s}"
++            );
++            let nome = format!("12{s}x");
++            assert_eq!(
++                numero_em(nome.as_bytes(), 0),
++                None,
++                "sufixo {s} colado a letra"
++            );
++        }
++        // Limites de cada tamanho: complemento de dois no piso, maior valor sem sinal no teto.
++        for (bytes, piso, teto) in [
++            (1, -128, 255),
++            (2, -32_768, 65_535),
++            (4, -2_147_483_648, 4_294_967_295),
++        ] {
++            assert!(fluxo_be(&[piso, teto], bytes).is_some(), "{bytes} byte(s)");
++            assert_eq!(fluxo_be(&[piso - 1], bytes), None, "piso de {bytes}");
++            assert_eq!(fluxo_be(&[teto + 1], bytes), None, "teto de {bytes}");
++        }
++        assert_eq!(fluxo_be(&[-1, 255], 1), Some(vec![0xFF, 0xFF]));
++        assert_eq!(fluxo_be(&[-2], 4), Some(vec![0xFF, 0xFF, 0xFF, 0xFE]));
++        // O menos é sinal quando não vem colado a letra, dígito ou `_`: `-1`, `-0x10` e `-$10`.
++        let sinais =
++            listas(b"[-1, -128, 255, 0x10, -0x10, -$10, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]");
++        assert_eq!(sinais.len(), 1);
++        let esperado = [
++            0xFF, 0x80, 0xFF, 0x10, 0xF0, 0xF0, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
++        ];
++        assert_eq!(sinais[0].u8s.as_deref(), Some(esperado.as_slice()));
++        // Sem vírgula depois do valor, a lista acaba ali: o 9 abre outra lista, curta demais.
++        let um_a_16: Vec<u8> = (1..=16).collect();
++        let texto = format!("[{}] 9, 8, 7", itens(&um_a_16, ", ", |x| x.to_string()));
++        let achadas = listas(texto.as_bytes());
++        assert_eq!(achadas.len(), 1);
++        assert_eq!(achadas[0].u8s.as_deref(), Some(um_a_16.as_slice()));
++    }
++
+     #[test]
+     fn sha1_proprio_bate_com_o_vetor_conhecido() {
+         assert_eq!(
