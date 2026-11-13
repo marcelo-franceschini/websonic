@@ -1,0 +1,260 @@
+diff --git a/hooks/detector/src/main.rs b/hooks/detector/src/main.rs
+index db4a2e7..1b4a6f7 100644
+--- a/hooks/detector/src/main.rs
++++ b/hooks/detector/src/main.rs
+@@ -10,7 +10,9 @@
+ //! - bytes crus, em qualquer arquivo;
+ //! - listas de números separados por vírgula, em bytes e em palavras de 16 e 32 bits (big-endian,
+ //!   a ordem em que a ROM guarda os dados), com sufixos de tipo, `$`, sinais, tuplas, `dc.b`,
+-//!   `dc.w` e comentários.
++//!   `dc.w` e comentários;
++//! - pares hexadecimais seguidos (`4E 71`, `4e:71`), no mínimo 32, e cadeias hexadecimais coladas
++//!   (`4e714e75...`), no mínimo 64 dígitos.
+ //!
+ //! Limite: pega só cópia literal. Tabela escrita com outra fórmula passa.
+ //! A saída traz caminho, linha, tamanho e endereço na ROM. Nunca imprime conteúdo.
+@@ -32,6 +34,8 @@ const JANELA: usize = 32;
+ const MIN_DISTINTOS: usize = 8;
+ /// Menor lista de números que entra na busca.
+ const MIN_VALORES: usize = 16;
++/// Menor cadeia hexadecimal colada que entra na busca, em dígitos (são 32 bytes).
++const HEX_COLADO_MIN: usize = 64;
+ /// Sufixos de tipo aceitos depois dos dígitos (`12u8`). Nenhum é prefixo de outro.
+ const SUFIXOS: [&[u8]; 10] = [
+     b"u8", b"u16", b"u32", b"u64", b"usize", b"i8", b"i16", b"i32", b"i64", b"isize",
+@@ -47,7 +51,7 @@ const USO: &str = "uso: --rom <arquivo da ROM> [--arquivo <caminho>]...";
+ /// Um trecho de arquivo igual a um trecho da ROM.
+ #[derive(Debug, PartialEq, Eq)]
+ struct Achado {
+-    /// "bytes" (arquivo cru), "u8", "u16be" ou "u32be" (listas de números).
++    /// "bytes" (arquivo cru), "u8", "u16be", "u32be" (listas) ou "hex" (pares e cadeias).
+     fonte: &'static str,
+     /// Onde o trecho começa no arquivo, ou onde começa a lista.
+     deslocamento: usize,
+@@ -423,7 +427,87 @@ fn numero_em(texto: &[u8], i: usize) -> Option<(u32, usize)> {
+     Some((valor, fim))
+ }
+ 
+-/// Todos os achados de um arquivo: bytes crus, listas em bytes e palavras.
++/// Valor de um dígito hexadecimal (0-9, a-f, A-F).
++fn digito_hex(byte: u8) -> Option<u8> {
++    u8::try_from(char::from(byte).to_digit(16)?).ok()
++}
++
++/// Byte formado por dois dígitos hexadecimais.
++fn byte_hex(alto: u8, baixo: u8) -> Option<u8> {
++    Some((digito_hex(alto)? << 4) | digito_hex(baixo)?)
++}
++
++/// Par hexadecimal em `i`, com fronteira não alfanumérica antes e depois. A fronteira evita ler
++/// pedaços de palavras e de números: `0x4E`, `g4E` e `4E7` não são pares.
++fn par_hex_em(texto: &[u8], i: usize) -> Option<u8> {
++    let antes = i > 0 && texto.get(i - 1).is_some_and(u8::is_ascii_alphanumeric);
++    let depois = texto.get(i + 2).is_some_and(u8::is_ascii_alphanumeric);
++    if antes || depois {
++        return None;
++    }
++    byte_hex(*texto.get(i)?, *texto.get(i + 1)?)
++}
++
++/// Corridas de pares hexadecimais, como `4E 71 4E 75` ou `4e:71:4e:75`. Entre dois pares há espaço,
++/// tabulação, vírgula, dois-pontos ou quebra de linha. Devolve o deslocamento e os bytes de cada
++/// corrida com pelo menos `JANELA` pares.
++fn pares_hex(texto: &[u8]) -> Vec<(usize, Vec<u8>)> {
++    let mut saida = Vec::new();
++    let mut i = 0;
++    while i < texto.len() {
++        let (mut bytes, mut fim, mut j) = (Vec::new(), i, i);
++        while let Some(byte) = par_hex_em(texto, j) {
++            bytes.push(byte);
++            fim = j + 2;
++            // Entre um par e o seguinte tem que haver pelo menos um separador.
++            let k = (fim..texto.len())
++                .find(|&k| !matches!(texto[k], b' ' | b'\t' | b',' | b':' | b'\n' | b'\r'))
++                .unwrap_or(texto.len());
++            if k == fim {
++                break;
++            }
++            j = k;
++        }
++        if bytes.len() >= JANELA {
++            saida.push((i, bytes));
++        }
++        // Pula a corrida inteira. Uma corrida curta não contém outra longa, e numa longa os sufixos
++        // só repetiriam o achado, com custo quadrático.
++        i = fim.max(i + 1);
++    }
++    saida
++}
++
++/// Cadeias hexadecimais coladas, como `4e714e75...`, com pelo menos `HEX_COLADO_MIN` dígitos. Vale
++/// o maior prefixo de tamanho par, porque cada byte usa dois dígitos.
++fn hex_colado(texto: &[u8]) -> Vec<(usize, Vec<u8>)> {
++    let mut saida = Vec::new();
++    let mut i = 0;
++    while i < texto.len() {
++        let inicio = i;
++        while i < texto.len() && digito_hex(texto[i]).is_some() {
++            i += 1;
++        }
++        // Maior prefixo de tamanho par. O `as_chunks` abaixo também descartaria o dígito que sobra,
++        // mas o `& !1` deixa a regra à vista.
++        let usados = (i - inicio) & !1;
++        if usados >= HEX_COLADO_MIN {
++            let bytes: Vec<u8> = texto[inicio..inicio + usados]
++                .as_chunks::<2>()
++                .0
++                .iter()
++                .filter_map(|&[alto, baixo]| byte_hex(alto, baixo))
++                .collect();
++            saida.push((inicio, bytes));
++        }
++        // O caractere que parou a corrida não é dígito: pula ele.
++        i += 1;
++    }
++    saida
++}
++
++/// Todos os achados de um arquivo: bytes crus, listas em bytes e palavras, e pares ou cadeias
++/// hexadecimais.
+ fn analisar(dado: &[u8], rom: &[u8], entradas: &[(u64, usize)]) -> Vec<Achado> {
+     let mut achados = procurar(dado, rom, entradas, "bytes", 0);
+     for lista in listas(dado) {
+@@ -438,6 +522,9 @@ fn analisar(dado: &[u8], rom: &[u8], entradas: &[(u64, usize)]) -> Vec<Achado> {
+             }
+         }
+     }
++    for (deslocamento, bytes) in pares_hex(dado).into_iter().chain(hex_colado(dado)) {
++        achados.extend(procurar(&bytes, rom, entradas, "hex", deslocamento));
++    }
+     achados.sort_by_key(|a| a.deslocamento);
+     achados.truncate(MAX_ACHADOS);
+     achados
+@@ -790,6 +877,15 @@ mod testes {
+             .chunks(8)
+             .map(|l| format!("/// {},\n", itens(l, ", ", hexa)))
+             .collect();
++        // Pares hexadecimais maiúsculos de `bytes`, separados por `sep`.
++        let pares = |bytes: &[u8], sep: &str| itens(bytes, sep, |x| format!("{x:02X}"));
++        // Os 40 bytes em linhas de 8 pares, ligadas por `quebra`.
++        let pares_em_linhas = |quebra: &str| {
++            let fileiras: Vec<String> = b.chunks(8).map(|l| pares(l, " ")).collect();
++            fileiras.join(quebra)
++        };
++        // Os 32 primeiros bytes colados, em minúsculas: 64 dígitos, o mínimo da cadeia colada.
++        let colada = itens(&b[..32], "", |x| format!("{x:02x}"));
+         // Cada caso é (nome, texto, fonte esperada). Todas as cópias começam em 2000.
+         let casos = [
+             (
+@@ -860,6 +956,51 @@ mod testes {
+                 ),
+                 "u32be",
+             ),
++            ("pares com espaço", pares(b, " "), "hex"),
++            (
++                "pares com dois-pontos",
++                itens(b, ":", |x| format!("{x:02x}")),
++                "hex",
++            ),
++            ("pares com tabulação", pares(b, "\t"), "hex"),
++            ("pares com vírgula", pares(b, ","), "hex"),
++            ("pares com vírgula e espaço", pares(b, ", "), "hex"),
++            // A quebra de linha do fim também é separador: o texto acaba logo depois dela.
++            (
++                "pares em linhas, com quebra no fim",
++                format!("{}\n", pares_em_linhas("\n")),
++                "hex",
++            ),
++            ("pares em linhas CRLF", pares_em_linhas("\r\n"), "hex"),
++            // Exatamente o mínimo, sem nada antes nem depois.
++            ("32 pares sem nada em volta", pares(&b[..32], " "), "hex"),
++            (
++                "cadeia colada minúscula",
++                format!(
++                    "const H: &str = \"{}\";",
++                    itens(b, "", |x| format!("{x:02x}"))
++                ),
++                "hex",
++            ),
++            (
++                "cadeia colada maiúscula",
++                format!(
++                    "const H: &str = \"{}\";",
++                    itens(b, "", |x| format!("{x:02X}"))
++                ),
++                "hex",
++            ),
++            // Um só caractere antes: a cadeia começa numa posição ímpar do texto.
++            ("cadeia colada entre aspas", format!("\"{colada}\""), "hex"),
++            // Sem nada em volta: 64 dígitos exatos e 65, em que o último dígito não conta.
++            ("cadeia de 64 dígitos no fim", colada.clone(), "hex"),
++            ("cadeia de 65 dígitos no fim", format!("{colada}7"), "hex"),
++            // 66 dígitos: o primeiro byte não é da ROM e a cópia de 32 bytes vem logo depois dele.
++            (
++                "cadeia de 66 dígitos, com a cópia no fim",
++                format!("{:02x}{colada}", !rom[1999]),
++                "hex",
++            ),
+             (
+                 "comentário de linha",
+                 format!("const T: [u8; 40] = [\n{linhas}];"),
+@@ -972,6 +1113,9 @@ mod testes {
+                 format!("a\nb\n// {}\n", itens(b, ", ", hexa)),
+                 3,
+             ),
++            // Pares e cadeia colada: a linha é a do primeiro par ou do primeiro dígito.
++            ("em pares", format!("a\nb\nc\n{}", pares(b, " ")), 4),
++            ("em cadeia colada", format!("a\nb\nc\n\"{colada}\""), 4),
+         ] {
+             let achados = analisar(texto.as_bytes(), &rom, &indice(&rom));
+             let no_lugar = |a: &Achado| {
+@@ -1004,6 +1148,16 @@ mod testes {
+                 grande += &format!("tabela: {}\n", tabela.join(", "));
+             }
+         }
++        // Pares hexadecimais maiúsculos de `bytes`, separados por espaço.
++        let pares = |bytes: &[u8]| itens(bytes, " ", |x| format!("{x:02X}"));
++        // Os 32 primeiros bytes colados, em minúsculas: 64 dígitos.
++        let colada = itens(&b[..32], "", |x| format!("{x:02x}"));
++        // Corrida de 50 mil pares decimais de dois dígitos, que também são hexadecimais. A leitura
++        // tem que ser linear: se cada par reiniciasse a corrida, este caso levaria minutos.
++        let enorme = (0..50_000)
++            .map(|k| format!("{:02}", k * 7 % 100))
++            .collect::<Vec<_>>()
++            .join(" ");
+         let casos = [
+             (
+                 "lista cortada por um nome",
+@@ -1018,6 +1172,32 @@ mod testes {
+                 format!("[{}]", itens(&trocada, ", ", hexa)),
+             ),
+             ("31 bytes", format!("[{}]", itens(&b[..31], ", ", hexa))),
++            ("31 pares", pares(&b[..31])),
++            // O mínimo de 32 pares, mas com o primeiro ou o último colado a uma letra ou a um dígito.
++            (
++                "32 pares, o primeiro colado a uma letra",
++                format!("g{}", pares(&b[..32])),
++            ),
++            (
++                "32 pares, o primeiro colado a um dígito",
++                format!("7{}", pares(&b[..32])),
++            ),
++            (
++                "32 pares, o último colado a uma letra",
++                format!("{}g", pares(&b[..32])),
++            ),
++            (
++                "32 pares, o último colado a um dígito",
++                format!("{}7", pares(&b[..32])),
++            ),
++            // Um par incompleto no meio parte a corrida em duas, ambas curtas.
++            (
++                "pares cortados por um par incompleto",
++                format!("{} 7 {}", pares(&b[..20]), pares(&b[20..])),
++            ),
++            // 63 dígitos são 31 bytes e um dígito que sobra.
++            ("cadeia colada de 63 dígitos", colada[..63].to_string()),
++            ("corrida enorme de pares decimais", enorme),
+             ("texto de 200 KB", grande),
+         ];
+         for (nome, texto) in casos {
