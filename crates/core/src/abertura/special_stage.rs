@@ -513,7 +513,7 @@ pub fn gravidade(m: &mut Memoria, a: u32) {
 }
 
 /// Executa a inicialização e o movimento de Sonic na Special Stage.
-/// Os blocos de ação ainda devolvem erro explícito até terem suas rotinas próprias.
+/// Os blocos de ação são processados após o movimento e a gravidade.
 pub fn executar_sonic(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
     if super::rw(m, V_DEBUGUSE) != 0 {
         return Err(ErroAbertura::NaoImplementado("debug da Special Stage"));
@@ -553,6 +553,20 @@ pub fn executar_sonic(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
     }
     mover_sonic(m, a);
     gravidade(m, a);
+    processar_blocos(m, a);
+    super::fisica::speed_to_pos(m, a);
+    fixar_camera(m, a);
+    let angulo = super::rw(m, 0xFF_F780);
+    let velocidade = super::rw(m, 0xFF_F782);
+    ww(m, 0xFF_F780, angulo.wrapping_add(velocidade));
+    super::fisica::sonic_animate(m, a)?;
+    super::fisica::sonic_load_gfx(m, a);
+    super::objetos::display_sprite(m, a);
+    Ok(())
+}
+
+/// `SonicSS_ChkItems_NonSolidActionBlock` e `SonicSS_ChkItems_SolidActionBlock`.
+fn processar_blocos(m: &mut Memoria, a: u32) {
     let x = super::rw(m, a.wrapping_add(OB_X));
     let y = super::rw(m, a.wrapping_add(OB_Y));
     let celula = LAYOUT_BASE
@@ -650,14 +664,11 @@ pub fn executar_sonic(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
         }
         0x2D..=0x30 => {
             if let Some(slot) = agendar_animacao(m, 6, bloco) {
+                let proximo = rb(m, bloco).wrapping_add(1);
                 wb(
                     m,
                     slot.wrapping_add(4),
-                    if contato == 0x30 {
-                        0
-                    } else {
-                        contato.wrapping_add(1)
-                    },
+                    if proximo > 0x30 { 0 } else { proximo },
                 );
             }
             wb(m, V_SOUNDQUEUE1, 0xBA);
@@ -689,15 +700,6 @@ pub fn executar_sonic(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
         }
         _ => {}
     }
-    super::fisica::speed_to_pos(m, a);
-    fixar_camera(m, a);
-    let angulo = super::rw(m, 0xFF_F780);
-    let velocidade = super::rw(m, 0xFF_F782);
-    ww(m, 0xFF_F780, angulo.wrapping_add(velocidade));
-    super::fisica::sonic_animate(m, a)?;
-    super::fisica::sonic_load_gfx(m, a);
-    super::objetos::display_sprite(m, a);
-    Ok(())
 }
 
 /// Reproduz as entradas da demo, incluindo o comportamento de botões da REV01.
@@ -706,10 +708,7 @@ fn entrada_demo(m: &mut Memoria) -> Result<(), ErroAbertura> {
     if demo == 0 {
         return Ok(());
     }
-    if demo & 0x8000 != 0 {
-        return Err(ErroAbertura::NaoImplementado("demo dos créditos"));
-    }
-    if rb(m, V_JPADHOLD1) & BTN_START != 0 {
+    if demo & 0x8000 == 0 && rb(m, V_JPADHOLD1) & BTN_START != 0 {
         wb(m, V_GAMEMODE, GM_TITLE_ID);
     }
     // A escolha ocorre depois de Start alterar o modo, como na REV01.
@@ -718,8 +717,21 @@ fn entrada_demo(m: &mut Memoria) -> Result<(), ErroAbertura> {
     } else {
         u32::from(rb(m, V_ZONE))
     };
-    let base = rom_l(m, DEMO_DATA_PTR.wrapping_add(indice.wrapping_mul(4)));
-    let posicao = base.wrapping_add(u32::from(super::rw(m, V_BTNPUSHTIME1)));
+    let base = if demo & 0x8000 != 0 {
+        // `DemoEndDataPtr` follows the eight pointers of `DemoDataPtr`.
+        let indice = super::rw(m, V_CREDITSNUM).wrapping_sub(1).wrapping_mul(4);
+        let deslocamento = i16::from_be_bytes(indice.to_be_bytes());
+        rom_l(
+            m,
+            DEMO_DATA_PTR
+                .wrapping_add(32)
+                .wrapping_add_signed(i32::from(deslocamento)),
+        )
+    } else {
+        rom_l(m, DEMO_DATA_PTR.wrapping_add(indice.wrapping_mul(4)))
+    };
+    let deslocamento = i16::from_be_bytes(super::rw(m, V_BTNPUSHTIME1).to_be_bytes());
+    let posicao = base.wrapping_add_signed(i32::from(deslocamento));
     let botoes = rom_b(m, posicao);
     wb(m, V_JPADHOLD1, botoes);
     wb(m, V_JPADPRESS1, botoes);
@@ -937,6 +949,113 @@ fn animar_blocos(m: &mut Memoria) {
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    #[test]
+    #[ignore = "requer SONIC1_ROM com a ROM REV01"]
+    fn colisao_com_goal_da_rom_inicia_saida_ate_o_nivel() {
+        let caminho = std::env::var_os("SONIC1_ROM").expect("SONIC1_ROM");
+        let rom = std::fs::read(caminho).expect("leitura da ROM");
+        let mut m = Memoria::nova(rom);
+        wb(&mut m, V_GAMEMODE, ID_SPECIAL);
+        preparar(&mut m).unwrap();
+        let goal = (0..128u32 * 128)
+            .map(|i| LAYOUT_BASE + i)
+            .find(|&endereco| rb(&mut m, endereco) == 0x27)
+            .expect("GOAL no layout real");
+        let indice = goal - LAYOUT_BASE;
+        let x = u16::try_from((indice % 128) * 24 - 20).unwrap();
+        let y = u16::try_from((indice / 128) * 24 - 68).unwrap();
+        // Cada verificação de parede examina quatro células; tente posições vizinhas
+        // para que o GOAL seja o último bloco sólido encontrado.
+        'busca: for dy in -24i16..=24 {
+            for dx in -24i16..=24 {
+                ww(&mut m, V_PLAYER + OB_X, x.wrapping_add_signed(dx));
+                ww(&mut m, V_PLAYER + OB_Y, y.wrapping_add_signed(dy));
+                ww(&mut m, V_PLAYER + OB_VELX, 0);
+                ww(&mut m, V_PLAYER + OB_VELY, 0);
+                ww(&mut m, V_PLAYER + OB_INERTIA, 0);
+                executar_sonic(&mut m, V_PLAYER).unwrap();
+                if rb(&mut m, V_PLAYER + OB_ROUTINE) == 4 {
+                    break 'busca;
+                }
+            }
+        }
+        assert_eq!(rb(&mut m, V_PLAYER + OB_ROUTINE), 4);
+        assert_eq!(rb(&mut m, V_PLAYER + 0x30), 0x27);
+        assert_eq!(rb(&mut m, V_GAMEMODE), ID_SPECIAL);
+        for _ in 0..256 {
+            executar_sonic(&mut m, V_PLAYER).unwrap();
+            if rb(&mut m, V_GAMEMODE) != ID_SPECIAL {
+                break;
+            }
+        }
+        assert_eq!(rb(&mut m, V_GAMEMODE), ID_LEVEL);
+    }
+
+    #[test]
+    fn itens_concedem_continue_vida_e_esmeralda() {
+        let mut m = Memoria::nova(vec![0; 0x20000]);
+        let celula = LAYOUT_BASE + 3 * 128 + 1;
+        wb(&mut m, celula, 0x3A);
+        ww(&mut m, V_RINGS, 49);
+        processar_blocos(&mut m, V_PLAYER);
+        assert_eq!(super::super::rw(&mut m, V_RINGS), 50);
+        assert_eq!(rb(&mut m, V_CONTINUES), 1);
+        assert_eq!(rb(&mut m, ANIMACOES), 1);
+        wb(&mut m, celula, 0x28);
+        processar_blocos(&mut m, V_PLAYER);
+        assert_eq!(rb(&mut m, V_LIVES), 1);
+        wb(&mut m, celula, 0x3D);
+        processar_blocos(&mut m, V_PLAYER);
+        assert_eq!(rb(&mut m, V_EMERALDS), 1);
+        assert_eq!(rb(&mut m, LISTA_ESMERALDAS), 2);
+    }
+
+    #[test]
+    fn blocos_de_rotacao_respeitam_temporizador_e_mudam_sentido() {
+        let mut m = Memoria::nova(vec![]);
+        let bloco = LAYOUT_REAL;
+        ww(&mut m, 0xFF_F782, 0x40);
+        wb(&mut m, bloco, 0x29);
+        wb(&mut m, V_PLAYER + 0x30, 0x29);
+        wl(&mut m, V_PLAYER + 0x32, bloco + 1);
+        processar_blocos(&mut m, V_PLAYER);
+        assert_eq!(super::super::rw(&mut m, 0xFF_F782), 0x80);
+        assert_eq!(rb(&mut m, bloco), 0x2A);
+        processar_blocos(&mut m, V_PLAYER);
+        assert_eq!(super::super::rw(&mut m, 0xFF_F782), 0x80);
+        wb(&mut m, V_PLAYER + 0x30, 0x2B);
+        processar_blocos(&mut m, V_PLAYER);
+        assert_eq!(super::super::rw(&mut m, 0xFF_F782), 0xFF80);
+        assert_eq!(rb(&mut m, ANIMACOES), 4);
+    }
+
+    #[test]
+    fn gatilho_fantasma_solidifica_blocos_ao_sair() {
+        let mut m = Memoria::nova(vec![]);
+        let celula = LAYOUT_BASE + 3 * 128 + 1;
+        wb(&mut m, LAYOUT_REAL, 0x41);
+        wb(&mut m, celula, 0x41);
+        processar_blocos(&mut m, V_PLAYER);
+        wb(&mut m, celula, 0x4A);
+        processar_blocos(&mut m, V_PLAYER);
+        wb(&mut m, celula, 0);
+        processar_blocos(&mut m, V_PLAYER);
+        assert_eq!(rb(&mut m, LAYOUT_REAL), 0x2C);
+        assert_eq!(rb(&mut m, V_PLAYER + 0x3A), 0);
+    }
+
+    #[test]
+    fn vidro_usa_id_atual_do_bloco_para_proxima_animacao() {
+        let mut m = Memoria::nova(vec![]);
+        let bloco = LAYOUT_REAL;
+        wb(&mut m, bloco, 0x2F);
+        wb(&mut m, V_PLAYER + 0x30, 0x2D);
+        wl(&mut m, V_PLAYER + 0x32, bloco + 1);
+        processar_blocos(&mut m, V_PLAYER);
+        assert_eq!(rb(&mut m, ANIMACOES), 6);
+        assert_eq!(rb(&mut m, ANIMACOES + 4), 0x30);
+    }
 
     #[test]
     fn fundo_copia_faixas_de_rolagem_a_partir_da_rom() {
@@ -1164,6 +1283,43 @@ mod testes {
         ww(&mut m, F_DEMO, 1);
         wb(&mut m, V_GAMEMODE, ID_SPECIAL);
         entrada_demo(&mut m).unwrap();
+        assert_eq!(rb(&mut m, V_JPADHOLD1), 0x48);
+        assert_eq!(rb(&mut m, V_JPADPRESS1), 0x48);
+        assert_eq!(rb(&mut m, V_BTNPUSHTIME2), 3);
+        assert_eq!(super::super::rw(&mut m, V_BTNPUSHTIME1), 2);
+    }
+
+    #[test]
+    #[ignore = "requer SONIC1_ROM apontando para REV01"]
+    fn demo_dos_creditos_le_sequencia_da_rom_real() {
+        let caminho = std::env::var_os("SONIC1_ROM").expect("SONIC1_ROM");
+        let mut m = Memoria::nova(std::fs::read(caminho).expect("ler ROM"));
+        preparar(&mut m).unwrap();
+        wb(&mut m, V_GAMEMODE, ID_SPECIAL);
+        ww(&mut m, F_DEMO, 0x8001);
+        ww(&mut m, V_CREDITSNUM, 1);
+        let base = rom_l(&m, DEMO_DATA_PTR + 32);
+        let botoes = rom_b(&m, base);
+        entrada_demo(&mut m).unwrap();
+        assert_eq!(rb(&mut m, V_JPADHOLD1), botoes);
+        assert_eq!(rb(&mut m, V_JPADPRESS1), botoes);
+        assert_eq!(rb(&mut m, V_GAMEMODE), ID_SPECIAL);
+    }
+
+    #[test]
+    fn demo_dos_creditos_ignora_start_e_usa_ponteiro_dos_creditos() {
+        let mut rom = vec![0; 0x20000];
+        let ponteiro = usize::try_from(DEMO_DATA_PTR + 32 + 4).unwrap();
+        rom[ponteiro..ponteiro + 4].copy_from_slice(&0x1000u32.to_be_bytes());
+        rom[0x1000] = 0x48;
+        rom[0x1003] = 3;
+        let mut m = Memoria::nova(rom);
+        ww(&mut m, F_DEMO, 0x8001);
+        ww(&mut m, V_CREDITSNUM, 2);
+        wb(&mut m, V_GAMEMODE, ID_SPECIAL);
+        wb(&mut m, V_JPADHOLD1, BTN_START);
+        entrada_demo(&mut m).unwrap();
+        assert_eq!(rb(&mut m, V_GAMEMODE), ID_SPECIAL);
         assert_eq!(rb(&mut m, V_JPADHOLD1), 0x48);
         assert_eq!(rb(&mut m, V_JPADPRESS1), 0x48);
         assert_eq!(rb(&mut m, V_BTNPUSHTIME2), 3);
