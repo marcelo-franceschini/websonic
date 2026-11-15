@@ -1,5 +1,15 @@
 # Sintetizador (Etapa 8)
 
+## Saída no navegador, evolução de 13/11/2026
+
+- O AudioWorklet espera aproximadamente três quadros de amostras antes de iniciar e conta separadamente faltas e amostras descartadas. `node --test site/tests/audio-worklet.test.cjs` verifica preenchimento, falta, reinício e fila cheia.
+- O controlador recebe a ocupação da fila do navegador. Com a fila cheia, aumenta o passo do reamostrador e reduz a produção. Prova: `cargo test -p sonic1-console --test audio fila_cheia_reduz_a_quantidade_de_audio_produzido`.
+- `cargo test -p sonic1-audio-saida --test fluxo_real` simula 600 quadros NTSC com consumo fracionário a 44,1 e 48 kHz e atualização periódica da ocupação, sem esvaziar nem saturar a fila simulada. Não substitui uma partida real.
+- O misturador preserva sobras de FM e PSG entre lotes, inclusive quando chegam separados. Prova: `cargo test -p sonic1-audio-saida --test lotes_defasados`, também executado em `wasm32-wasip1`.
+- A tabela sinc ajusta o corte para a menor taxa entre entrada e saída. Prova: `cargo test -p sonic1-audio-saida --test antialias`, também em `wasm32-wasip1`, compara atenuação de um sinal acima do Nyquist com um sinal audível.
+- No Chrome headless com a ROM REV01, AudioWorklet ficou ativo e informou zero faltas durante os primeiros 468 quadros observados. O navegador usou SwiftShader. Isso não comprova fidelidade da temporização dos eventos de som nem uma partida completa.
+- Medida nativa após as mudanças: `WEBSONIC_BENCH=1 cargo test --locked --offline -p sonic1-audio-saida --release --test desempenho -- --nocapture`, mediana 879 µs, p95 2473 µs e máximo 3284 µs, com outras tarefas em execução. Essa medida não representa desempenho Wasm.
+
 Plano: `docs/plano-etapa-8.md`. Cada afirmação cita o teste ou o comando. Nada aqui tem dado da ROM.
 
 ## Licenças e fontes (8.0, bloco 1 do Marcelo, 09/11/2026)

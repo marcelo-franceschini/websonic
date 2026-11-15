@@ -15,14 +15,14 @@ pub fn pal_cycle_title(m: &mut Memoria) {
     pcyc_ghz_go(m, PAL_TITLECYC_WATER);
 }
 
-/// `PaletteCycle`: o ciclo da zona atual (`PalCycle_Index`). A GHZ e o final (zona 6, que reusa
-/// a GHZ) existem aqui; as outras zonas devolvem `NaoImplementado`.
+/// `PaletteCycle`: GHZ e final usam a água; o ciclo da MZ não realiza operações na REV01.
 pub fn palette_cycle(m: &mut Memoria) -> Result<(), ErroAbertura> {
     match rb(m, V_ZONE) {
         0 | 6 => {
             pcyc_ghz_go(m, PAL_GHZCYC_WATER);
             Ok(())
         }
+        ID_MZ => Ok(()),
         _ => Err(ErroAbertura::NaoImplementado(
             "ciclo de paleta de outra zona",
         )),

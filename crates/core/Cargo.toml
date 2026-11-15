@@ -13,6 +13,8 @@ license.workspace = true
 # Registro de decisoes para o relatorio de cobertura e injecao de bugs (sub-etapas 5.6 e 5.7).
 cobertura = []
 mutacao = ["cobertura"]
+# Expõe pontos de entrada isolados para comparação local com o oráculo.
+diagnostico = []
 
 [lints.rust]
 unsafe_code = "forbid"

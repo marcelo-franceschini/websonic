@@ -20,6 +20,8 @@ pub const ROTINA_CARTOES: u8 = 0x0C;
 /// Índice de `VBlank_Levels` (a fase e a demo).
 pub const ROTINA_NIVEL: u8 = 0x08;
 pub const ROTINA_SEGA_PCM: u8 = 0x14;
+/// Índice de `VBlank_Continue`.
+pub const ROTINA_CONTINUE: u8 = 0x16;
 
 /// Macros `writeCRAM` e `writeVRAM`: DMA do 68000 para a VDP. `cram` escolhe o tipo de destino.
 fn dma_para_vdp(m: &mut Memoria, fonte: u32, bytes: u32, destino: u32, cram: bool) {
@@ -145,6 +147,30 @@ fn temporizador_generico(m: &mut Memoria) {
     }
 }
 
+fn vblank_continue(m: &mut Memoria) -> Result<(), ErroAbertura> {
+    ww(m, Z80_BUSREQ, 0x100);
+    esperar_z80(m)?;
+    read_joypads(m);
+    dma_para_vdp(m, V_PALETTE, 0x80, 0, true);
+    let sprites = V_SPRITETABLEBUFFER_END.wrapping_sub(V_SPRITETABLEBUFFER);
+    dma_para_vdp(m, V_SPRITETABLEBUFFER, sprites, 0xF800, false);
+    dma_para_vdp(m, V_HSCROLLTABLEBUFFER, 0x380, 0xFC00, false);
+    ww(m, Z80_BUSREQ, 0);
+    if rb(m, F_SONFRAMECHG) != 0 {
+        let tamanho = V_SGFX_BUFFER_END.wrapping_sub(V_SGFX_BUFFER);
+        dma_para_vdp(
+            m,
+            V_SGFX_BUFFER,
+            tamanho,
+            u32::from(ARTTILE_SONIC).wrapping_mul(32),
+            false,
+        );
+        wb(m, F_SONFRAMECHG, 0);
+    }
+    temporizador_generico(m);
+    Ok(())
+}
+
 /// `VBlank`: o tratador inteiro, da entrada até o `rte`. Roda o driver de som no fim
 /// (`VBlank_Music`) e conta o VBlank.
 pub fn tratar(m: &mut Memoria) -> Result<(), ErroAbertura> {
@@ -172,6 +198,7 @@ pub fn tratar(m: &mut Memoria) -> Result<(), ErroAbertura> {
             }
             ROTINA_CARTOES => vblank_cartoes(m, false)?,
             ROTINA_NIVEL => vblank_cartoes(m, true)?,
+            ROTINA_CONTINUE => vblank_continue(m)?,
             ROTINA_PALETTE_FADE => {
                 standard_transfers(m)?;
                 let h = rw(m, V_HBLANK_HREG);
@@ -188,4 +215,23 @@ pub fn tratar(m: &mut Memoria) -> Result<(), ErroAbertura> {
     wl(m, V_VBLANK_COUNT, c);
     let _ = Tamanho::Byte;
     Ok(())
+}
+
+#[cfg(test)]
+mod testes_continue {
+    use super::*;
+
+    #[test]
+    fn transfere_arte_do_sonic_e_decrementa_o_temporizador() {
+        let mut m = Memoria::nova(vec![0; 0x100]);
+        ww(&mut m, V_GENERICTIMER, 2);
+        wb(&mut m, F_SONFRAMECHG, 1);
+        vblank_continue(&mut m).unwrap();
+        assert_eq!(rw(&mut m, V_GENERICTIMER), 1);
+        assert_eq!(rb(&mut m, F_SONFRAMECHG), 0);
+        assert!(!m.saidas().is_empty());
+        vblank_continue(&mut m).unwrap();
+        vblank_continue(&mut m).unwrap();
+        assert_eq!(rw(&mut m, V_GENERICTIMER), 0);
+    }
 }

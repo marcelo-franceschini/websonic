@@ -14,18 +14,45 @@
 //! original nesse caso: com a rotina zero, só o driver de som e o contador.
 
 pub mod animacao;
+pub mod badniks;
 pub mod boot;
+pub mod boss_ghz;
+pub mod buzz;
+pub mod capsula;
+pub mod caterkiller;
 pub mod cenario;
+pub mod chopper;
+pub mod collapse_ledge;
+pub mod continue_screen;
+pub mod crabmeat;
 pub mod desenho;
+pub mod edge_walls;
 pub mod fase;
 pub mod fisica;
+pub mod game_over;
+pub mod ghz_extras;
+pub mod got_through;
 pub mod hud;
+pub mod labirinto;
+pub mod lamppost;
+pub mod marble_bloco;
+pub mod marble_fogo;
+pub mod marble_plataformas;
+pub mod marble_stomper;
+pub mod motobug;
 pub mod objetos;
 pub mod objpos;
 pub mod paleta;
+pub mod parede_quebravel;
+pub mod plataforma_basica;
+pub mod plataforma_oscilante;
 pub mod plc;
+pub mod ponte;
 pub mod ram;
 pub mod sega;
+pub mod signpost;
+pub mod special_stage;
+pub mod spikes;
 pub mod titulo;
 pub mod vblank;
 
@@ -198,7 +225,13 @@ enum Fase {
     FadeIn(u8),
     /// Espera a marca `Level_StartGame`.
     PreparoFim,
-    /// A fase em andamento ainda não existe nesta versão do núcleo.
+    /// Laço principal da fase, com os objetos e controles já implementados.
+    Jogando,
+    ContinueFadeOut(u8),
+    ContinueFadeIn(u8),
+    ContinueLaco,
+    DemoFade,
+    /// Fim da abertura para o comparador histórico.
     Parado,
 }
 
@@ -269,6 +302,8 @@ pub struct Abertura {
     pendentes: Vec<EventoQuadro>,
     /// Com tempo gravado os eventos rodam um quadro depois; no modo nominal rodam na hora.
     atraso: bool,
+    /// O comparador histórico encerra as saídas em Level_StartGame.
+    parar_no_fim_abertura: bool,
     /// Chamado depois de cada evento (marca ou interrupção) com a memória: o comparador recolhe
     /// as saídas da VDP na hora em que saem, quando a RAM ainda é a do evento (o DMA lê dela).
     observador: Option<Observador>,
@@ -292,6 +327,7 @@ impl Abertura {
             esperas: None,
             pendentes: Vec::new(),
             atraso: true,
+            parar_no_fim_abertura: true,
             observador: None,
             quadro: 0,
             erro: None,
@@ -308,7 +344,13 @@ impl Abertura {
     pub fn nova_nominal(rom: Vec<u8>) -> Self {
         let mut a = Self::nova(rom);
         a.atraso = false;
+        a.parar_no_fim_abertura = false;
         a
+    }
+
+    /// Permite comparar a fase com eventos gravados após a abertura.
+    pub fn continuar_apos_abertura(&mut self) {
+        self.parar_no_fim_abertura = false;
     }
 
     /// O que o laço principal espera agora. O modo nominal usa isto para criar o tempo.
@@ -339,9 +381,17 @@ impl Abertura {
             Modo::Fase(Fase::PreparoCartoes) => Espera::Marca(Marca::LevelTtlCardLoop),
             Modo::Fase(Fase::PreparoFinal) => Espera::Marca(Marca::LevelDelay),
             Modo::Fase(Fase::PreparoFim) => Espera::Marca(Marca::LevelStartGame),
-            Modo::Fase(Fase::FadeOut(_) | Fase::Cartoes | Fase::Atraso(_) | Fase::FadeIn(_)) => {
-                Espera::VBlank
-            }
+            Modo::Fase(
+                Fase::FadeOut(_)
+                | Fase::Cartoes
+                | Fase::Atraso(_)
+                | Fase::FadeIn(_)
+                | Fase::ContinueFadeOut(_)
+                | Fase::ContinueFadeIn(_)
+                | Fase::ContinueLaco
+                | Fase::DemoFade
+                | Fase::Jogando,
+            ) => Espera::VBlank,
             Modo::Fase(Fase::Parado) => Espera::Nenhuma,
         }
     }
@@ -363,7 +413,17 @@ impl Abertura {
                         | Titulo::Laco
                         | Titulo::PreDemo
                 )
-                | Modo::Fase(Fase::FadeOut(_) | Fase::Cartoes | Fase::Atraso(_) | Fase::FadeIn(_))
+                | Modo::Fase(
+                    Fase::FadeOut(_)
+                        | Fase::Cartoes
+                        | Fase::Atraso(_)
+                        | Fase::FadeIn(_)
+                        | Fase::ContinueFadeOut(_)
+                        | Fase::ContinueFadeIn(_)
+                        | Fase::ContinueLaco
+                        | Fase::DemoFade
+                        | Fase::Jogando
+                )
         )
     }
 
@@ -487,7 +547,12 @@ impl Abertura {
             }
             (Modo::Fase(Fase::PreparoFim), Marca::LevelStartGame) => {
                 fase::level_start_game(&mut self.mem)?;
-                self.modo = Modo::Fase(Fase::Parado);
+                if self.parar_no_fim_abertura {
+                    self.modo = Modo::Fase(Fase::Parado);
+                } else {
+                    self.pedir_vblank(vblank::ROTINA_NIVEL);
+                    self.modo = Modo::Fase(Fase::Jogando);
+                }
             }
             (Modo::Fase(Fase::PreparoCartoes), Marca::LevelTtlCardLoop) => {
                 // O preparo dos cartões roda de uma vez (D7.10); os VBlanks no meio dele chegam
@@ -612,10 +677,12 @@ impl Abertura {
                         self.modo = Modo::Titulo(Titulo::PreDemo);
                     }
                     titulo::DepoisDoTitulo::VoltaSega => {
-                        return Err(ErroAbertura::NaoImplementado("volta à Sega pelo título"));
+                        wb(&mut self.mem, ram::V_GAMEMODE, 0);
+                        self.modo = Modo::Sega(Sega::Entrada);
                     }
                     titulo::DepoisDoTitulo::Jogar => {
-                        return Err(ErroAbertura::NaoImplementado("começo do jogo pelo título"));
+                        titulo::play_level(&mut self.mem);
+                        self.modo = Modo::Fase(Fase::Entrada);
                     }
                 }
             }
@@ -632,10 +699,12 @@ impl Abertura {
                         self.modo = Modo::Fase(Fase::Entrada);
                     }
                     titulo::DepoisDoGotoDemo::VoltaSega => {
-                        return Err(ErroAbertura::NaoImplementado("volta à Sega pelo título"));
+                        wb(&mut self.mem, ram::V_GAMEMODE, 0);
+                        self.modo = Modo::Sega(Sega::Entrada);
                     }
                     titulo::DepoisDoGotoDemo::Jogar => {
-                        return Err(ErroAbertura::NaoImplementado("começo do jogo pelo título"));
+                        titulo::play_level(&mut self.mem);
+                        self.modo = Modo::Fase(Fase::Entrada);
                     }
                 }
             }
@@ -695,6 +764,87 @@ impl Abertura {
                 } else {
                     Fase::PreparoFim
                 });
+            }
+            Fase::Jogando => {
+                self.vblanks_tratados = self.vblanks_tratados.saturating_add(1);
+                self.tratar_vblank()?;
+                fase::level_main_loop(&mut self.mem)?;
+                if rw(&mut self.mem, ram::F_RESTART) != 0 {
+                    fase::gm_level_inicio(&mut self.mem);
+                    self.pedir_espera();
+                    self.modo = Modo::Fase(Fase::FadeOut(22));
+                    return Ok(());
+                }
+                if rb(&mut self.mem, ram::V_GAMEMODE) == 0 {
+                    self.modo = Modo::Sega(Sega::Entrada);
+                    return Ok(());
+                }
+                if rb(&mut self.mem, ram::V_GAMEMODE) == 0x14 {
+                    titulo::palette_fade_out_inicio(&mut self.mem);
+                    self.pedir_espera();
+                    self.modo = Modo::Fase(Fase::ContinueFadeOut(22));
+                    return Ok(());
+                }
+                if rb(&mut self.mem, ram::V_GAMEMODE) == ram::ID_SPECIAL {
+                    return Err(ErroAbertura::NaoImplementado("Special Stage"));
+                }
+                if rb(&mut self.mem, ram::V_GAMEMODE) == ram::GM_TITLE_ID {
+                    self.modo = Modo::Titulo(Titulo::Entrada);
+                    return Ok(());
+                }
+                if rw(&mut self.mem, ram::F_DEMO) != 0
+                    && rw(&mut self.mem, ram::V_GENERICTIMER) == 0
+                {
+                    fase::demo_fade_inicio(&mut self.mem);
+                    self.pedir_vblank(vblank::ROTINA_NIVEL);
+                    self.modo = Modo::Fase(Fase::DemoFade);
+                    return Ok(());
+                }
+                self.pedir_vblank(vblank::ROTINA_NIVEL);
+            }
+            Fase::ContinueFadeOut(n) => {
+                let restam = self.vblank_fade_out(n)?;
+                if restam != 0 {
+                    self.modo = Modo::Fase(Fase::ContinueFadeOut(restam));
+                } else {
+                    continue_screen::preparar(&mut self.mem)?;
+                    titulo::palette_fade_in_inicio(&mut self.mem);
+                    self.pedir_espera();
+                    self.modo = Modo::Fase(Fase::ContinueFadeIn(22));
+                }
+            }
+            Fase::ContinueFadeIn(n) => {
+                let restam = self.vblank_fade_in(n)?;
+                if restam != 0 {
+                    self.modo = Modo::Fase(Fase::ContinueFadeIn(restam));
+                } else {
+                    self.pedir_vblank(vblank::ROTINA_CONTINUE);
+                    self.modo = Modo::Fase(Fase::ContinueLaco);
+                }
+            }
+            Fase::ContinueLaco => {
+                self.vblanks_tratados = self.vblanks_tratados.saturating_add(1);
+                self.tratar_vblank()?;
+                match continue_screen::passo(&mut self.mem)? {
+                    continue_screen::Resultado::Aguardar => {
+                        self.pedir_vblank(vblank::ROTINA_CONTINUE)
+                    }
+                    continue_screen::Resultado::Sega => self.modo = Modo::Sega(Sega::Entrada),
+                    continue_screen::Resultado::Fase => self.modo = Modo::Fase(Fase::Entrada),
+                }
+            }
+            Fase::DemoFade => {
+                self.vblanks_tratados = self.vblanks_tratados.saturating_add(1);
+                self.tratar_vblank()?;
+                if fase::demo_fade_passo(&mut self.mem)? {
+                    self.modo = if rb(&mut self.mem, ram::V_GAMEMODE) == ram::GM_TITLE_ID {
+                        Modo::Titulo(Titulo::Entrada)
+                    } else {
+                        Modo::Sega(Sega::Entrada)
+                    };
+                } else {
+                    self.pedir_vblank(vblank::ROTINA_NIVEL);
+                }
             }
             Fase::Entrada
             | Fase::PreparoCartoes
@@ -770,7 +920,7 @@ impl Abertura {
     /// próxima espera. Se o laço ainda não chegou à espera, é quadro de lag.
     fn vblank(&mut self) -> Result<(), ErroAbertura> {
         match self.modo {
-            // Boot (sem VBlank) e fim da parte implementada: nada roda.
+            // Boot ainda não chegou ao laço de interrupções.
             Modo::Boot | Modo::Fase(Fase::Parado) => {
                 self.ignorar();
                 return Ok(());
@@ -885,4 +1035,95 @@ pub(crate) fn rw(m: &mut Memoria, a: u32) -> u16 {
 
 pub(crate) fn rl(m: &mut Memoria, a: u32) -> u32 {
     m.ler(a, Tamanho::Long).unwrap_or(0)
+}
+
+#[cfg(test)]
+mod testes_transicoes {
+    use super::*;
+
+    #[test]
+    #[ignore = "requer SONIC1_ROM com a ROM REV01"]
+    fn game_over_continue_fades_e_retorno_a_fase_com_rom_real() {
+        let caminho = std::env::var_os("SONIC1_ROM").expect("SONIC1_ROM");
+        let rom = std::fs::read(caminho).expect("leitura da ROM");
+        let mut a = Abertura::nova_nominal(rom);
+        a.modo = Modo::Fase(Fase::Jogando);
+        a.na_espera = true;
+        wb(&mut a.mem, ram::V_GAMEMODE, ram::ID_LEVEL);
+        wb(&mut a.mem, ram::V_PLAYER + ram::OB_ID, ram::ID_SONIC);
+        wb(&mut a.mem, ram::V_PLAYER + ram::OB_ROUTINE, 8);
+        wb(&mut a.mem, ram::V_TITLECARD + ram::OB_ID, 0x39);
+        wb(&mut a.mem, ram::V_TITLECARD + ram::OB_ROUTINE, 4);
+        wb(&mut a.mem, ram::V_CONTINUES, 2);
+        wb(&mut a.mem, ram::V_OPL_ROUTINE, 2);
+        a.vblank().unwrap();
+        for _ in 0..44 {
+            a.chegar_na_espera();
+            a.vblank().unwrap();
+        }
+        assert_eq!(a.modo, Modo::Fase(Fase::ContinueLaco));
+        for _ in 0..80 {
+            a.chegar_na_espera();
+            a.vblank().unwrap();
+        }
+        assert_eq!(rb(&mut a.mem, ram::V_PLAYER + ram::OB_ROUTINE), 4);
+        wb(&mut a.mem, 0xA1_0009, 0x40);
+        a.mem.definir_botoes(ram::BTN_START);
+        a.chegar_na_espera();
+        a.vblank().unwrap();
+        a.mem.definir_botoes(0);
+        for _ in 0..250 {
+            if a.modo == Modo::Fase(Fase::Entrada) {
+                break;
+            }
+            a.chegar_na_espera();
+            a.vblank().unwrap();
+        }
+        assert_eq!(a.modo, Modo::Fase(Fase::Entrada));
+        assert_eq!(rb(&mut a.mem, ram::V_CONTINUES), 1);
+        assert_eq!(rb(&mut a.mem, ram::V_LIVES), 3);
+    }
+
+    #[test]
+    fn game_over_com_credito_inicia_fade_do_continue() {
+        let mut a = Abertura::nova_nominal(vec![0; 0x40000]);
+        a.modo = Modo::Fase(Fase::Jogando);
+        a.na_espera = true;
+        wb(&mut a.mem, ram::V_GAMEMODE, ram::ID_LEVEL);
+        wb(&mut a.mem, ram::V_PLAYER + ram::OB_ID, ram::ID_SONIC);
+        wb(&mut a.mem, ram::V_PLAYER + ram::OB_ROUTINE, 8);
+        wb(&mut a.mem, ram::V_TITLECARD + ram::OB_ID, 0x39);
+        wb(&mut a.mem, ram::V_TITLECARD + ram::OB_ROUTINE, 4);
+        wb(&mut a.mem, ram::V_CONTINUES, 1);
+        wb(&mut a.mem, ram::V_OPL_ROUTINE, 2);
+        a.vblank().unwrap();
+        assert_eq!(a.modo, Modo::Fase(Fase::ContinueFadeOut(22)));
+        assert_eq!(rb(&mut a.mem, ram::V_GAMEMODE), 0x14);
+    }
+
+    #[test]
+    fn vblank_titulo_jogar_inicia_fase_e_zera_demo() {
+        let mut a = Abertura::nova_nominal(vec![0; 0x10000]);
+        a.modo = Modo::Titulo(Titulo::Laco);
+        a.na_espera = true;
+        wb(&mut a.mem, ram::V_JPADPRESS1, ram::BTN_START);
+        ww(&mut a.mem, ram::V_GENERICTIMER, 100);
+
+        a.vblank().unwrap();
+        assert_eq!(a.modo, Modo::Fase(Fase::Entrada));
+        assert_eq!(rb(&mut a.mem, ram::V_GAMEMODE), ram::ID_LEVEL);
+        assert_eq!(rw(&mut a.mem, ram::F_DEMO), 0);
+        assert_eq!(rb(&mut a.mem, ram::V_LIVES), 3);
+    }
+
+    #[test]
+    fn fase_jogando_com_reinicio_reinicia_fase() {
+        let mut a = Abertura::nova_nominal(vec![0; 0x10000]);
+        a.modo = Modo::Fase(Fase::Jogando);
+        a.na_espera = true;
+        ww(&mut a.mem, ram::F_RESTART, 1);
+
+        a.vblank().unwrap();
+        assert_eq!(a.modo, Modo::Fase(Fase::FadeOut(22)));
+    }
 }

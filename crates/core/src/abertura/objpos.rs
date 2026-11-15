@@ -1,7 +1,6 @@
 //! Carga dos objetos da fase (`_inc/ObjPosLoad.asm`): a janela de objetos ao redor da câmera, a
 //! lista de lembrados e a criação de cada objeto no primeiro espaço livre. Só a partida da fase
-//! (câmera parada à direita do último ponto) e o movimento para a direita existem aqui; a janela
-//! andando para a esquerda devolve `NaoImplementado`.
+//! (câmera parada à direita do último ponto) e os movimentos para os dois lados.
 
 use super::boot::{rom_b, rom_w};
 use super::ram::*;
@@ -92,9 +91,7 @@ fn opl_next(m: &mut Memoria) -> Result<(), ErroAbertura> {
         return Ok(());
     }
     if com_sinal(d6.wrapping_sub(anterior)) < 0 {
-        return Err(ErroAbertura::NaoImplementado(
-            "janela de objetos para a esquerda",
-        ));
+        return opl_moved_left(m, d6);
     }
     ww(m, V_OPL_SCREEN, d6);
     let mut a0 = rl(m, V_OPL_DATA);
@@ -124,6 +121,47 @@ fn opl_next(m: &mut Memoria) -> Result<(), ErroAbertura> {
         }
     }
     wl(m, V_OPL_DATA.wrapping_add(4), a0);
+    Ok(())
+}
+
+/// `OPL_MovedLeft`: recua os dois cursores e reconstitui os contadores de objetos lembrados.
+fn opl_moved_left(m: &mut Memoria, posicao: u16) -> Result<(), ErroAbertura> {
+    let a2 = V_OBJSTATE;
+    ww(m, V_OPL_SCREEN, posicao);
+    let (esquerda, sob_fluxo) = posicao.overflowing_sub(128);
+    let mut a0 = rl(m, V_OPL_DATA.wrapping_add(4));
+    let mut d2 = 0u8;
+    if !sob_fluxo {
+        while com_sinal(esquerda) < com_sinal(rw(m, a0.wrapping_sub(ENTRADA))) {
+            a0 = a0.wrapping_sub(ENTRADA);
+            let lembrar = rb(m, a0.wrapping_add(4)) & 0x80 != 0;
+            if lembrar {
+                d2 = rb(m, a2.wrapping_add(1)).wrapping_sub(1);
+                wb(m, a2.wrapping_add(1), d2);
+            }
+            let (criou, seguinte) = opl_spawn_obj(m, a0, a2, d2)?;
+            if !criou {
+                if lembrar {
+                    let n = rb(m, a2.wrapping_add(1)).wrapping_add(1);
+                    wb(m, a2.wrapping_add(1), n);
+                }
+                a0 = seguinte.wrapping_add(ENTRADA);
+                break;
+            }
+            a0 = seguinte.wrapping_sub(ENTRADA);
+        }
+    }
+    wl(m, V_OPL_DATA.wrapping_add(4), a0);
+    let direita = esquerda.wrapping_add(128 + 320 + 320);
+    let mut a0 = rl(m, V_OPL_DATA);
+    while com_sinal(direita) <= com_sinal(rw(m, a0.wrapping_sub(ENTRADA))) {
+        if rb(m, a0.wrapping_sub(2)) & 0x80 != 0 {
+            let n = rb(m, a2).wrapping_sub(1);
+            wb(m, a2, n);
+        }
+        a0 = a0.wrapping_sub(ENTRADA);
+    }
+    wl(m, V_OPL_DATA, a0);
     Ok(())
 }
 
@@ -163,4 +201,53 @@ fn opl_spawn_obj(m: &mut Memoria, a0: u32, a2: u32, d2: u8) -> Result<(bool, u32
     let sub = rom_b(m, a0.wrapping_add(5));
     wb(m, a1.wrapping_add(OB_SUBTYPE), sub);
     Ok((true, a0.wrapping_add(ENTRADA)))
+}
+
+#[cfg(test)]
+mod testes_esquerda {
+    use super::*;
+
+    fn memoria() -> Memoria {
+        let mut rom = vec![0; 0x5000];
+        for (i, x) in [100u16, 200, 300, 500, 800, 0xFFFF].iter().enumerate() {
+            let pos = 0x4000usize.wrapping_add(i.wrapping_mul(6));
+            rom[pos..pos.wrapping_add(2)].copy_from_slice(&x.to_be_bytes());
+            if *x != 0xFFFF {
+                rom[pos.wrapping_add(3)] = 64;
+                rom[pos.wrapping_add(4)] = if *x == 200 { 0xA5 } else { 0x25 };
+            }
+        }
+        let mut m = Memoria::nova(rom);
+        ww(&mut m, V_OPL_SCREEN, 384);
+        ww(&mut m, V_SCREENPOSX, 256);
+        wl(&mut m, V_OPL_DATA, 0x401E);
+        wl(&mut m, V_OPL_DATA + 4, 0x400C);
+        wb(&mut m, V_OBJSTATE + 1, 2);
+        m
+    }
+
+    #[test]
+    fn ao_recuar_recria_objeto_e_atualiza_cursor_e_contador() {
+        let mut m = memoria();
+        opl_next(&mut m).unwrap();
+        assert_eq!(rw(&mut m, V_OPL_SCREEN), 256);
+        assert_eq!(rl(&mut m, V_OPL_DATA + 4), 0x4006);
+        assert_eq!(rb(&mut m, V_OBJSTATE + 1), 1);
+        assert_eq!(rb(&mut m, V_LVLOBJSPACE + OB_ID), 0x25);
+        assert_eq!(rw(&mut m, V_LVLOBJSPACE + OB_X), 200);
+        assert_eq!(rb(&mut m, V_LVLOBJSPACE + OB_RESPAWNNO), 1);
+    }
+
+    #[test]
+    fn ao_faltar_espaco_restaura_contador_e_cursor() {
+        let mut m = memoria();
+        let mut objeto = V_LVLOBJSPACE;
+        while objeto < V_LVLOBJEND {
+            wb(&mut m, objeto + OB_ID, 1);
+            objeto += OBJECT_SIZE;
+        }
+        opl_next(&mut m).unwrap();
+        assert_eq!(rb(&mut m, V_OBJSTATE + 1), 2);
+        assert_eq!(rl(&mut m, V_OPL_DATA + 4), 0x400C);
+    }
 }

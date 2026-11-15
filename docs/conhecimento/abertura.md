@@ -2,6 +2,14 @@
 
 Plano: `docs/plano-etapa-7.md`. Cada afirmação cita o comando que a sustenta. Nada aqui tem dado da ROM, só rótulos, quadros e `mclk`.
 
+## Extensão experimental da fase (13/11/2026)
+
+- O modo nominal entra no laço de fase após `Level_StartGame`. O comparador histórico continua parando nesse ponto; testes novos podem chamar `continuar_apos_abertura`.
+- `CARGO_TARGET_DIR=/tmp/websonic-diferencial-abertura cargo run --locked --offline --release --manifest-path /tmp/websonic-comparacao-isolada/diferencial-abertura/Cargo.toml --bin abertura -- comparar ROM 1170 refs/rotulos.txt`: veredito `IGUAL`, 1166 imagens, VRAM, CRAM e VSRAM iguais, 822 esperas iguais. O manifesto e o lock do comparador foram copiados para `/tmp`, com lock regenerado apenas nessa cópia; os originais ficaram intactos.
+- `cargo test --locked --offline -p sonic1-core -p sonic1-teste-som`: testes passaram. A execução nominal com `console_hashes ROM 1300` avança na demo até `NaoImplementado("Sonic no ar ou rolando")`. Este caminho usa tempo nominal e não tem prova de fidelidade de fase.
+- Uma cópia descartável do comparador, alterada apenas em `/tmp` para continuar depois da marca e não cortar as escritas, rodou 1220 quadros. Comparou 1220 imagens iguais e 876 esperas iguais; o veredito foi `DIVERGE` por contagem final de PSG e YM, com aviso de leituras gravadas ausentes no fechamento. A causa ainda não foi provada. Esta experiência não substitui o comparador congelado.
+- `cargo test --locked --offline -p sonic1-core testes_mola` passou nos casos sintéticos de inicialização e lançamento vertical e horizontal. `testes_esquerda` passou para carregamento de objetos ao recuar a câmera e para recuperação do contador quando falta espaço. Eles não provam a fidelidade das rotinas contra o oráculo.
+
 ## Medidas do bloco 1 (Marcelo, 08/11/2026, `sh scripts/etapa7-bloco1.sh`, caso `boot-demos`, sem botões)
 
 Perfil (mudanças de `v_gamemode`): quadro 1 modo 0 (boot e Sega); 329 modo 4 (título); 933 modo `136` (`$88`, demo); 1167 modo 8.
@@ -299,3 +307,11 @@ Escrita, sem prova com a ROM ainda. Rodada pendente: `sh scripts/etapa7-bloco2.s
 - Defeitos achados e corrigidos pela comparação, na ordem: laço do DAC sem limite (D7.24), quadro de lag (D7.25), objetos `25` e `26` da partida, DMA da paleta lido depois do passo do laço principal (o observador recolhe as escritas logo depois do tratador de VBlank).
 - Regras do comparador, para o fechamento: a contagem final das escritas esperadas corta no `mclk` da marca `Level_StartGame`; as escritas do Z80 no YM podem terminar atrás do oráculo (o Z80 do núcleo só anda quando o 68000 o toca, nível 1), nunca diferentes.
 - Limites aceitos, no backlog: a física do Sonic fora do chão plano, objetos além de Sonic, HUD, anéis e monitores, e as zonas além da GHZ.
+
+## Continuação de GHZ e Marble (14/11/2026)
+
+- Eventos de GHZ2 e GHZ3, poste de checkpoint, chefe, cápsula e objetos adicionais foram implementados a partir do disassembly. As rotinas ainda precisam de comparação por quadro durante o jogo.
+- Marble tem carga e animação iniciais de cenário. Um percurso com a ROM REV01 alcançou X=0x2A3 em MZ1, antes de encontrar um objeto ainda não implementado. Isso não valida a fidelidade visual da zona.
+- A comparação de abertura com o oráculo solicitada para 2849 quadros confrontou somente 1166 imagens. O modo usado para no início da fase e deixou os quadros seguintes pendentes. O veredito geral não prova a demo.
+- Comparação no Chrome entre composição GPU e renderizador CPU: 2849 quadros executados, 49 imagens amostradas e nenhuma diferença de pixel. Não é comparação com o oráculo.
+- O relógio calcula a fração temporal, mas o renderizador ainda não a usa para interpolar posições. O seletor do site não anuncia interpolação até que ela esteja conectada.

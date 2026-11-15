@@ -269,7 +269,7 @@ fn draw_bg_block3(m: &mut Memoria, mut a0: u32, a2: u32, p: Plano) -> Result<u32
         return Ok(a0);
     }
     if rb(m, V_ZONE) == ID_MZ {
-        return Err(ErroAbertura::NaoImplementado("fundo da MZ"));
+        return Ok(draw_mz(m, a0, a2, p));
     }
     if bclr(m, a2, 0) {
         let cmd = calc_vram_pos(m, QUARTA_LINHA, A_ESQUERDA, p.a3);
@@ -280,6 +280,81 @@ fn draw_bg_block3(m: &mut Memoria, mut a0: u32, a2: u32, p: Plano) -> Result<u32
         a0 = draw_blocks_tb(m, a0, cmd, (QUARTA_LINHA, A_DIREITA), 3, p);
     }
     Ok(a0)
+}
+
+/// `Draw_MZ`: atualiza a linha vertical e as colunas das faixas móveis do fundo.
+fn draw_mz(m: &mut Memoria, mut a0: u32, flags: u32, p: Plano) -> u32 {
+    const MAPA: u32 = 0x6EF2;
+    const POSICOES: [u32; 4] = [
+        V_BGSCREENPOSX_DUP,
+        V_BGSCREENPOSX_DUP,
+        V_BG2SCREENPOSX_DUP,
+        V_BG3SCREENPOSX_DUP,
+    ];
+    let y = if bclr(m, flags, 0) {
+        Some(ACIMA)
+    } else if bclr(m, flags, 1) {
+        Some(ABAIXO)
+    } else {
+        None
+    };
+    if let Some(y) = y {
+        let indice = (rw(m, V_BGSCREENPOSY).wrapping_sub(0x200).wrapping_add(y) & 0x7F0) >> 4;
+        let tipo = rb(m, MAPA.wrapping_add(1).wrapping_add(u32::from(indice)));
+        a0 = MAPA.wrapping_add(1);
+        let a3 = POSICOES
+            .get(usize::from(tipo >> 1))
+            .copied()
+            .unwrap_or(V_BGSCREENPOSX_DUP);
+        let plano = Plano { a3, ..p };
+        if tipo == 0 {
+            let cmd = calc_vram_pos_2(m, y, 0, a3);
+            a0 = draw_blocks_lr(m, a0, cmd, (y, 0), BLOCOS_NO_PLANO, SomaX::Nao, plano);
+        } else {
+            let cmd = calc_vram_pos(m, y, A_ESQUERDA, a3);
+            a0 = draw_blocks_lr(
+                m,
+                a0,
+                cmd,
+                (y, A_ESQUERDA),
+                BLOCOS_NA_LARGURA,
+                SomaX::Sim,
+                plano,
+            );
+        }
+    }
+    let mut bits = rb(m, flags);
+    if bits == 0 {
+        return a0;
+    }
+    let x = if bits & 0xA8 != 0 {
+        bits = (bits & 0xA8) >> 1;
+        wb(m, flags, bits);
+        A_DIREITA
+    } else {
+        A_ESQUERDA
+    };
+    let indice = (rw(m, V_BGSCREENPOSY).wrapping_sub(0x200) & 0x7F0) >> 4;
+    let mut y = ACIMA;
+    for i in 0..BLOCOS_NA_ALTURA {
+        let endereco = MAPA
+            .wrapping_add(u32::from(indice))
+            .wrapping_add(u32::from(i));
+        let tipo = rb(m, endereco);
+        a0 = endereco.wrapping_add(1);
+        if bits & 1u8.wrapping_shl(u32::from(tipo & 7)) != 0 {
+            let a3 = POSICOES
+                .get(usize::from(tipo >> 1))
+                .copied()
+                .unwrap_or(V_BGSCREENPOSX_DUP);
+            let (proximo, bloco) = get_block_data(m, a0, y, x, a3, p.a4);
+            let cmd = calc_vram_pos(m, y, x, a3);
+            draw_block(m, cmd, p.d2, proximo, bloco);
+        }
+        y = y.wrapping_add(16);
+    }
+    wb(m, flags, 0);
+    a0
 }
 
 /// `LoadTilesAsYouMove`: as faixas novas da fase, pelas cópias que o VBlank fez das posições e
@@ -389,7 +464,7 @@ fn draw_bg_row_for_bg_index(m: &mut Memoria, a0: u32, d0: u16, y: u16, p: Plano)
 pub fn load_tiles_from_start(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
     draw_chunks_com_a0(m, a0, V_SCREENPOSX, V_LVLLAYOUT_FG, 0x4000);
     let zona = rb(m, V_ZONE);
-    if zona != 0 && zona != 6 {
+    if zona != 0 && zona != 6 && zona != ID_MZ {
         return Err(ErroAbertura::NaoImplementado("fundo inicial de outra zona"));
     }
     let fundo = Plano {
@@ -397,10 +472,20 @@ pub fn load_tiles_from_start(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertur
         a4: V_LVLLAYOUT_BG,
         d2: 0x6000,
     };
-    let mut y: u16 = 0;
+    let mut y: u16 = if zona == ID_MZ { ACIMA } else { 0 };
     for _ in 0..BLOCOS_NA_ALTURA {
-        let d0 = rw(m, V_BGSCREENPOSY).wrapping_add(y) & 0xF0;
-        draw_bg_row_for_bg_index(m, BG_SCROLLBLOCKMAP_GHZ, d0, y, fundo);
+        let (mapa, d0) = if zona == ID_MZ {
+            (
+                0x6EF3,
+                rw(m, V_BGSCREENPOSY).wrapping_sub(0x200).wrapping_add(y) & 0x7F0,
+            )
+        } else {
+            (
+                BG_SCROLLBLOCKMAP_GHZ,
+                rw(m, V_BGSCREENPOSY).wrapping_add(y) & 0xF0,
+            )
+        };
+        draw_bg_row_for_bg_index(m, mapa, d0, y, fundo);
         y = y.wrapping_add(16);
     }
     Ok(())

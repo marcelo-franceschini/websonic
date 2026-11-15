@@ -358,3 +358,49 @@ fn preparar_demo(m: &mut Memoria) {
     // REV01: a vida extra seguinte vem nos 50000 pontos.
     wl(m, V_SCORELIFE, 5000);
 }
+
+/// `PlayLevel`: prepara o jogo para iniciar com controle normal do jogador.
+pub fn play_level(m: &mut Memoria) {
+    wb(m, V_GAMEMODE, ID_LEVEL);
+    wb(m, V_LIVES, 3);
+    ww(m, V_RINGS, 0);
+    wl(m, V_TIME, 0);
+    wl(m, V_SCORE, 0);
+    wb(m, V_LASTSPECIAL, 0);
+    wb(m, V_EMERALDS, 0);
+    wl(m, V_EMLDLIST, 0);
+    wl(m, V_EMLDLIST.wrapping_add(4), 0);
+    wb(m, V_CONTINUES, 0);
+    wl(m, V_SCORELIFE, 5000);
+    ww(m, F_DEMO, 0);
+    wb(m, V_SOUNDQUEUE1, BGM_FADE);
+}
+
+#[cfg(test)]
+mod testes_play_level {
+    use super::super::rl;
+    use super::*;
+
+    #[test]
+    fn play_level_inicializa_parametros_do_jogo_normal() {
+        let mut m = Memoria::nova(vec![0; 0x10000]);
+        ww(&mut m, F_DEMO, 1);
+        wb(&mut m, V_LIVES, 1);
+        wl(&mut m, V_SCORE, 9999);
+        play_level(&mut m);
+
+        assert_eq!(rb(&mut m, V_GAMEMODE), ID_LEVEL);
+        assert_eq!(rb(&mut m, V_LIVES), 3);
+        assert_eq!(rw(&mut m, V_RINGS), 0);
+        assert_eq!(rl(&mut m, V_TIME), 0);
+        assert_eq!(rl(&mut m, V_SCORE), 0);
+        assert_eq!(rb(&mut m, V_LASTSPECIAL), 0);
+        assert_eq!(rb(&mut m, V_EMERALDS), 0);
+        assert_eq!(rl(&mut m, V_EMLDLIST), 0);
+        assert_eq!(rl(&mut m, V_EMLDLIST + 4), 0);
+        assert_eq!(rb(&mut m, V_CONTINUES), 0);
+        assert_eq!(rl(&mut m, V_SCORELIFE), 5000);
+        assert_eq!(rw(&mut m, F_DEMO), 0);
+        assert_eq!(rb(&mut m, V_SOUNDQUEUE1), BGM_FADE);
+    }
+}

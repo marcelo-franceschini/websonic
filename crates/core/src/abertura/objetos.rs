@@ -2,7 +2,7 @@
 //! e o objeto `CreditsText`. Os objetos do original são código na ROM (tabela `Obj_Index`);
 //! aqui cada identificador chama uma função nativa, citando o rótulo que reproduz.
 
-use super::boot::{rom_b, rom_w};
+use super::boot::{rom_b, rom_l, rom_w};
 use super::ram::*;
 use super::{ErroAbertura, plc, rb, rl, rw, wb, wl, ww};
 use crate::memoria::Memoria;
@@ -10,6 +10,7 @@ use crate::memoria::Memoria;
 const SPRITES_MAX: u8 = 80;
 const SPRITELAYER_NUM: u32 = 8;
 const SPRITELAYER_SIZE: u32 = 0x80;
+const SCEN_VALUES: u32 = 0x8EAC;
 
 /// Estende o sinal de uma palavra, como `movea.w` e `adda.w` fazem.
 fn ext(a: u16) -> u32 {
@@ -43,11 +44,27 @@ pub fn display_sprite(m: &mut Memoria, a0: u32) {
 
 /// `ExecuteObjects`: roda cada objeto da memória de objetos.
 pub fn execute_objects(m: &mut Memoria) -> Result<(), ErroAbertura> {
-    // O Sonic morto (rotina 6 ou mais) é tratado na fase; fora dela o objeto 0 está vazio.
-    if rb(m, V_PLAYER.wrapping_add(OB_ROUTINE)) >= 6 {
-        return Err(ErroAbertura::NaoImplementado(
-            "ExecuteObjects com o Sonic morto",
-        ));
+    if rb(m, V_PLAYER.wrapping_add(OB_ID)) == ID_SONIC
+        && rb(m, V_PLAYER.wrapping_add(OB_ROUTINE)) >= 6
+    {
+        // Roda os primeiros 32 objetos (reservados, incluindo o Sonic) normalmente
+        let mut a = V_OBJSPACE;
+        while a < V_LVLOBJSPACE {
+            let id = rb(m, a.wrapping_add(OB_ID));
+            if id != 0 {
+                rodar_objeto(m, a, id)?;
+            }
+            a = a.wrapping_add(OBJECT_SIZE);
+        }
+        // Os demais 96 objetos de fase ficam congelados, apenas sendo exibidos se visíveis na tela
+        while a < V_LVLOBJEND {
+            let id = rb(m, a.wrapping_add(OB_ID));
+            if id != 0 && rb(m, a.wrapping_add(OB_RENDER)) & 0x80 != 0 {
+                display_sprite(m, a);
+            }
+            a = a.wrapping_add(OBJECT_SIZE);
+        }
+        return Ok(());
     }
     let mut a0 = V_OBJSPACE;
     while a0 < V_OBJSPACE_END {
@@ -73,6 +90,51 @@ fn rodar_objeto(m: &mut Memoria, a0: u32, id: u8) -> Result<(), ErroAbertura> {
         ID_HUD => hud_objeto(m, a0),
         ID_RINGS => aneis(m, a0),
         ID_MONITOR => monitor(m, a0),
+        ID_SPRING => mola(m, a0),
+        ID_SCENERY => cenario(m, a0),
+        ID_EXPLOSION_ITEM => explosao_item(m, a0),
+        ID_ANIMALS => animal(m, a0),
+        ID_POINTS => pontos_objeto(m, a0),
+        ID_CHOPPER => super::chopper::executar(m, a0),
+        ID_WATER_SOUND => water_sound(m, a0),
+        ID_BRIDGE => super::ponte::executar(m, a0),
+        ID_CRABMEAT => super::crabmeat::executar(m, a0),
+        ID_PURPLE_ROCK => purple_rock(m, a0),
+        ID_EDGE_WALLS => super::edge_walls::executar(m, a0),
+        ID_SPIKES => super::spikes::executar(m, a0),
+        ID_COLLAPSE_LEDGE => super::collapse_ledge::executar(m, a0),
+        ID_SIGNPOST => super::signpost::executar(m, a0),
+        0x79 => super::lamppost::executar(m, a0),
+        0x3E => super::capsula::executar(m, a0),
+        0x3D => super::boss_ghz::executar(m, a0),
+        0x48 => super::boss_ghz::bola(m, a0),
+        0x3C => super::parede_quebravel::executar(m, a0),
+        0x15 => super::plataforma_oscilante::executar(m, a0),
+        0x18 => super::plataforma_basica::executar(m, a0),
+        0x17 => super::ghz_extras::helix(m, a0),
+        0x7D => super::ghz_extras::bonus(m, a0),
+        0x4B => super::ghz_extras::anel_gigante(m, a0),
+        0x7C => super::ghz_extras::brilho_anel(m, a0),
+        0x2F => super::marble_plataformas::plataforma(m, a0),
+        0x35 => super::marble_plataformas::fogo(m, a0),
+        0x54 => super::marble_plataformas::lava(m, a0),
+        0x42 => super::badniks::newtron(m, a0),
+        0x1E => super::badniks::ball_hog(m, a0),
+        0x20 => super::badniks::cannonball(m, a0),
+        0x3F => super::badniks::explosao(m, a0),
+        0x39 => super::game_over::executar(m, a0),
+        0x80 => super::continue_screen::item(m, a0),
+        0x81 => super::continue_screen::sonic(m, a0),
+        0x78 => super::caterkiller::executar(m, a0),
+        0x13 => super::marble_fogo::gerador(m, a0),
+        0x14 => super::marble_fogo::bola(m, a0),
+        0x31 => super::marble_stomper::executar(m, a0),
+        0x1B => super::labirinto::superficie(m, a0),
+        0x33 => super::marble_bloco::executar(m, a0),
+        ID_GOT_THROUGH_CARD => super::got_through::executar(m, a0),
+        0x40 => super::motobug::executar(m, a0),
+        0x22 => super::buzz::executar(m, a0),
+        0x23 => super::buzz::missil(m, a0),
         outro => Err(ErroAbertura::ObjetoNaoImplementado(outro)),
     }
 }
@@ -89,7 +151,742 @@ pub fn objeto_existe(id: u8) -> bool {
             | ID_HUD
             | ID_RINGS
             | ID_MONITOR
+            | ID_SPRING
+            | ID_SCENERY
+            | ID_EXPLOSION_ITEM
+            | ID_ANIMALS
+            | ID_POINTS
+            | ID_CHOPPER
+            | ID_WATER_SOUND
+            | ID_BRIDGE
+            | ID_CRABMEAT
+            | ID_PURPLE_ROCK
+            | ID_EDGE_WALLS
+            | ID_SPIKES
+            | ID_COLLAPSE_LEDGE
+            | ID_SIGNPOST
+            | 0x79
+            | 0x15
+            | 0x18
+            | 0x17
+            | 0x7D
+            | 0x4B
+            | 0x7C
+            | 0x2F
+            | 0x35
+            | 0x54
+            | 0x3C
+            | 0x3D
+            | 0x48
+            | 0x3E
+            | 0x42
+            | 0x1E
+            | 0x20
+            | 0x3F
+            | 0x39
+            | 0x80
+            | 0x81
+            | 0x78
+            | 0x13
+            | 0x14
+            | 0x31
+            | 0x1B
+            | 0x33
+            | ID_GOT_THROUGH_CARD
+            | 0x40
+            | 0x22
+            | 0x23
     )
+}
+
+/// `SolidObject`: rotina padrão de colisão sólida para molas, pedras, blocos, etc.
+pub fn solid_object(
+    m: &mut Memoria,
+    objeto: u32,
+    largura: u16,
+    altura: u16,
+    altura_em_cima: u16,
+) -> Result<i8, ErroAbertura> {
+    let jogador = V_PLAYER;
+    let x_obj = rw(m, objeto.wrapping_add(OB_X));
+    let y_obj = rw(m, objeto.wrapping_add(OB_Y));
+    let x_sonic = rw(m, jogador.wrapping_add(OB_X));
+    let y_sonic = rw(m, jogador.wrapping_add(OB_Y));
+    let sonic_status = rb(m, jogador.wrapping_add(OB_STATUS));
+    if rb(m, objeto.wrapping_add(OB_ROUTINE_2)) != 0 {
+        let pos = x_sonic.wrapping_sub(x_obj).wrapping_add(largura);
+        if sonic_status & 2 != 0 || com_sinal(pos) < 0 || pos >= largura.wrapping_mul(2) {
+            wb(m, jogador.wrapping_add(OB_STATUS), sonic_status & !8);
+            let status = rb(m, objeto.wrapping_add(OB_STATUS));
+            wb(m, objeto.wrapping_add(OB_STATUS), status & !8);
+            wb(m, objeto.wrapping_add(OB_ROUTINE_2), 0);
+        } else if rb(m, F_PLAYERCTRL) & 0x80 == 0
+            && rb(m, jogador.wrapping_add(OB_ROUTINE)) < 6
+            && rw(m, V_DEBUGUSE) == 0
+        {
+            let h = u16::from(rb(m, jogador.wrapping_add(OB_HEIGHT)));
+            ww(
+                m,
+                jogador.wrapping_add(OB_Y),
+                y_obj.wrapping_sub(altura_em_cima).wrapping_sub(h),
+            );
+        }
+        return Ok(0);
+    }
+    let x = x_sonic.wrapping_sub(x_obj).wrapping_add(largura);
+    let altura_sonic = u16::from(rb(m, jogador.wrapping_add(OB_HEIGHT)));
+    let soma_altura = altura.wrapping_add(altura_sonic);
+    let y = y_sonic
+        .wrapping_sub(y_obj)
+        .wrapping_add(4)
+        .wrapping_add(soma_altura);
+    if rb(m, objeto.wrapping_add(OB_RENDER)) & 0x80 == 0
+        || com_sinal(x) < 0
+        || x > largura.wrapping_mul(2)
+        || com_sinal(y) < 0
+        || y >= soma_altura.wrapping_mul(2)
+    {
+        let status = rb(m, objeto.wrapping_add(OB_STATUS));
+        if status & 0x20 != 0 {
+            ww(m, jogador.wrapping_add(OB_ANIM), 1);
+            wb(m, objeto.wrapping_add(OB_STATUS), status & !0x20);
+            wb(m, jogador.wrapping_add(OB_STATUS), sonic_status & !0x20);
+        }
+        return Ok(0);
+    }
+    if rb(m, F_PLAYERCTRL) & 0x80 != 0
+        || rb(m, jogador.wrapping_add(OB_ROUTINE)) >= 6
+        || rw(m, V_DEBUGUSE) != 0
+    {
+        return Ok(0);
+    }
+    let (desloc_x, borda_x) = if x <= largura {
+        (x, x)
+    } else {
+        let d = x.wrapping_sub(largura.wrapping_mul(2));
+        (d, d.wrapping_neg())
+    };
+    let (desloc_y, borda_y) = if y <= soma_altura {
+        (y, y)
+    } else {
+        let d = y.wrapping_sub(4).wrapping_sub(soma_altura.wrapping_mul(2));
+        (d, d.wrapping_neg())
+    };
+    if borda_x <= borda_y {
+        if borda_y > 4 {
+            let vx = com_sinal(rw(m, jogador.wrapping_add(OB_VELX)));
+            if (com_sinal(desloc_x) > 0 && vx >= 0) || (com_sinal(desloc_x) < 0 && vx < 0) {
+                ww(m, jogador.wrapping_add(OB_INERTIA), 0);
+                ww(m, jogador.wrapping_add(OB_VELX), 0);
+            }
+            ww(
+                m,
+                jogador.wrapping_add(OB_X),
+                x_sonic.wrapping_sub(desloc_x),
+            );
+            if sonic_status & 2 == 0 {
+                wb(m, jogador.wrapping_add(OB_STATUS), sonic_status | 0x20);
+                let status = rb(m, objeto.wrapping_add(OB_STATUS));
+                wb(m, objeto.wrapping_add(OB_STATUS), status | 0x20);
+                return Ok(1);
+            }
+        }
+        let status = rb(m, objeto.wrapping_add(OB_STATUS));
+        wb(m, objeto.wrapping_add(OB_STATUS), status & !0x20);
+        wb(m, jogador.wrapping_add(OB_STATUS), sonic_status & !0x20);
+        return Ok(1);
+    }
+    if com_sinal(desloc_y) < 0 {
+        let vy = com_sinal(rw(m, jogador.wrapping_add(OB_VELY)));
+        if vy == 0 && sonic_status & 2 == 0 {
+            super::fisica::kill_sonic(m);
+            return Ok(-1);
+        }
+        if vy < 0 {
+            ww(
+                m,
+                jogador.wrapping_add(OB_Y),
+                y_sonic.wrapping_sub(desloc_y),
+            );
+            ww(m, jogador.wrapping_add(OB_VELY), 0);
+        }
+        return Ok(-1);
+    }
+    if desloc_y >= 16 {
+        return Ok(0);
+    }
+    let largura_real = u16::from(rb(m, objeto.wrapping_add(OB_ACTWID)));
+    let pos = largura_real.wrapping_add(x_sonic).wrapping_sub(x_obj);
+    if com_sinal(pos) < 0
+        || pos >= largura_real.wrapping_mul(2)
+        || com_sinal(rw(m, jogador.wrapping_add(OB_VELY))) < 0
+    {
+        return Ok(0);
+    }
+    ww(
+        m,
+        jogador.wrapping_add(OB_Y),
+        y_sonic
+            .wrapping_sub(desloc_y.wrapping_sub(4))
+            .wrapping_sub(1),
+    );
+    if sonic_status & 8 != 0 {
+        let indice = u32::from(rb(m, jogador.wrapping_add(SON_STANDONOBJECT)));
+        let anterior = V_OBJSPACE.wrapping_add(indice.wrapping_mul(OBJECT_SIZE));
+        let status = rb(m, anterior.wrapping_add(OB_STATUS));
+        wb(m, anterior.wrapping_add(OB_STATUS), status & !8);
+        wb(m, anterior.wrapping_add(OB_ROUTINE_2), 0);
+    }
+    let indice = objeto
+        .wrapping_sub(V_OBJSPACE)
+        .checked_div(OBJECT_SIZE)
+        .unwrap_or(0);
+    wb(
+        m,
+        jogador.wrapping_add(SON_STANDONOBJECT),
+        u8::try_from(indice & 0x7F).unwrap_or(0),
+    );
+    wb(m, jogador.wrapping_add(OB_ANGLE), 0);
+    ww(m, jogador.wrapping_add(OB_VELY), 0);
+    let vx = rw(m, jogador.wrapping_add(OB_VELX));
+    ww(m, jogador.wrapping_add(OB_INERTIA), vx);
+    if sonic_status & 2 != 0 {
+        super::fisica::sonic_reset_on_floor(m, jogador);
+    }
+    let status = rb(m, jogador.wrapping_add(OB_STATUS));
+    wb(m, jogador.wrapping_add(OB_STATUS), status | 8);
+    let status = rb(m, objeto.wrapping_add(OB_STATUS));
+    wb(m, objeto.wrapping_add(OB_STATUS), status | 8);
+    wb(m, objeto.wrapping_add(OB_ROUTINE_2), 2);
+    Ok(-1)
+}
+
+/// `Scenery` (`1C`): toco da ponte da Green Hill e lançador da Star Light (`1C GHZ, SYZ Scenery.asm`).
+/// Rotina 0 lê a tabela `Scen_Values` e avança para a rotina 2; rotina 2 checa `fora_da_janela` e exibe o sprite.
+fn cenario(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
+    match rb(m, a0.wrapping_add(OB_ROUTINE)) {
+        0 => {
+            wb(m, a0.wrapping_add(OB_ROUTINE), 2);
+            let subtipo = rb(m, a0.wrapping_add(OB_SUBTYPE));
+            let base = SCEN_VALUES.wrapping_add(u32::from(subtipo).wrapping_mul(10));
+            let (map, gfx, frame, actwid, prio, coltype) =
+                if m.rom().len() > (base as usize).wrapping_add(10) && rom_l(m, base) != 0 {
+                    (
+                        rom_l(m, base),
+                        rom_w(m, base.wrapping_add(4)),
+                        rom_b(m, base.wrapping_add(6)),
+                        rom_b(m, base.wrapping_add(7)),
+                        rom_b(m, base.wrapping_add(8)),
+                        rom_b(m, base.wrapping_add(9)),
+                    )
+                } else if subtipo == 3 {
+                    (0x7FB2, 0x438E, 1, 16, 1, 0)
+                } else {
+                    (0x8ED4, 0x44D8, 0, 8, 2, 0)
+                };
+            wl(m, a0.wrapping_add(OB_MAP), map);
+            ww(m, a0.wrapping_add(OB_GFX), gfx);
+            let render = rb(m, a0.wrapping_add(OB_RENDER)) | 4;
+            wb(m, a0.wrapping_add(OB_RENDER), render);
+            wb(m, a0.wrapping_add(OB_FRAME), frame);
+            wb(m, a0.wrapping_add(OB_ACTWID), actwid);
+            wb(m, a0.wrapping_add(OB_PRIORITY), prio);
+            wb(m, a0.wrapping_add(OB_COLTYPE), coltype);
+            cenario_chkdel(m, a0);
+            Ok(())
+        }
+        2 => {
+            cenario_chkdel(m, a0);
+            Ok(())
+        }
+        _ => Err(ErroAbertura::NaoImplementado("rotina de Scenery")),
+    }
+}
+
+fn cenario_chkdel(m: &mut Memoria, a0: u32) {
+    let x = rw(m, a0.wrapping_add(OB_X));
+    if fora_da_janela(m, x) {
+        delete_object(m, a0);
+    } else {
+        display_sprite(m, a0);
+    }
+}
+
+/// `ExplosionItem` (`27`): explosão cinza de inimigo ou monitor destruído (`27, 3F Explosions.asm`).
+fn explosao_item(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
+    match rb(m, a0.wrapping_add(OB_ROUTINE)) {
+        0 => {
+            wb(m, a0.wrapping_add(OB_ROUTINE), 2);
+            let mut a1 = V_LVLOBJSPACE;
+            while a1 < V_LVLOBJEND && rb(m, a1.wrapping_add(OB_ID)) != 0 {
+                a1 = a1.wrapping_add(OBJECT_SIZE);
+            }
+            if a1 < V_LVLOBJEND {
+                let x = rw(m, a0.wrapping_add(OB_X));
+                let y = rw(m, a0.wrapping_add(OB_Y));
+                let pf = rw(m, a0.wrapping_add(0x3E));
+                wb(m, a1.wrapping_add(OB_ID), ID_ANIMALS);
+                ww(m, a1.wrapping_add(OB_X), x);
+                ww(m, a1.wrapping_add(OB_Y), y);
+                ww(m, a1.wrapping_add(0x3E), pf);
+            }
+            explosao_main(m, a0);
+            Ok(())
+        }
+        2 => {
+            explosao_main(m, a0);
+            Ok(())
+        }
+        4 => {
+            let tempo = rb(m, a0.wrapping_add(OB_TIME_FRAME)).wrapping_sub(1);
+            wb(m, a0.wrapping_add(OB_TIME_FRAME), tempo);
+            if i8::from_be_bytes([tempo]) < 0 {
+                wb(m, a0.wrapping_add(OB_TIME_FRAME), 7);
+                let frame = rb(m, a0.wrapping_add(OB_FRAME)).wrapping_add(1);
+                wb(m, a0.wrapping_add(OB_FRAME), frame);
+                if frame >= 5 {
+                    delete_object(m, a0);
+                    return Ok(());
+                }
+            }
+            display_sprite(m, a0);
+            Ok(())
+        }
+        _ => Err(ErroAbertura::NaoImplementado("rotina de ExplosionItem")),
+    }
+}
+
+fn explosao_main(m: &mut Memoria, a0: u32) {
+    wb(m, a0.wrapping_add(OB_ROUTINE), 4);
+    wl(m, a0.wrapping_add(OB_MAP), 0x9544); // Map_ExplodeItem
+    ww(m, a0.wrapping_add(OB_GFX), 0x5A0); // ArtTile_Explosion
+    wb(m, a0.wrapping_add(OB_RENDER), 4);
+    wb(m, a0.wrapping_add(OB_PRIORITY), 1);
+    wb(m, a0.wrapping_add(OB_COLTYPE), 0);
+    wb(m, a0.wrapping_add(OB_ACTWID), 12);
+    wb(m, a0.wrapping_add(OB_TIME_FRAME), 7);
+    wb(m, a0.wrapping_add(OB_FRAME), 0);
+    wb(m, V_SOUNDQUEUE1, 0xC1); // sfx_BreakItem
+    display_sprite(m, a0);
+}
+
+/// `Animals` (`28`): animais libertados dos badniks (`28, 29 Animals and Points.asm`).
+fn animal(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
+    match rb(m, a0.wrapping_add(OB_ROUTINE)) {
+        0 => {
+            wb(m, a0.wrapping_add(OB_ROUTINE), 2);
+            let rnd = super::fisica::random_number(m) & 1;
+            let zone = rb(m, V_ZONE);
+            let animal_id = match zone {
+                1 => {
+                    if rnd == 0 {
+                        2
+                    } else {
+                        3
+                    }
+                }
+                2 => {
+                    if rnd == 0 {
+                        6
+                    } else {
+                        3
+                    }
+                }
+                3 => {
+                    if rnd == 0 {
+                        4
+                    } else {
+                        5
+                    }
+                }
+                4 => {
+                    if rnd == 0 {
+                        4
+                    } else {
+                        1
+                    }
+                }
+                5 => {
+                    if rnd == 0 {
+                        0
+                    } else {
+                        1
+                    }
+                }
+                _ => {
+                    if rnd == 0 {
+                        0
+                    } else {
+                        5
+                    }
+                }
+            };
+            wb(m, a0.wrapping_add(0x30), animal_id);
+
+            let (spdx, spdy, map) = match animal_id {
+                0 => (-0x200i16, -0x400i16, 0x9AE4u32),
+                1 => (-0x200i16, -0x300i16, 0x9AFCu32),
+                2 => (-0x180i16, -0x300i16, 0x9AE4u32),
+                3 => (-0x140i16, -0x180i16, 0x9AFCu32),
+                4 => (-0x1C0i16, -0x300i16, 0x9B14u32),
+                5 => (-0x300i16, -0x400i16, 0x9AFCu32),
+                _ => (-0x280i16, -0x380i16, 0x9B14u32),
+            };
+            let gfx = if animal_id & 1 == 0 {
+                0x580u16
+            } else {
+                0x592u16
+            };
+
+            ww(m, a0.wrapping_add(0x32), u16_de(spdx)); // animal_speedX
+            ww(m, a0.wrapping_add(0x34), u16_de(spdy)); // animal_speedY
+            wl(m, a0.wrapping_add(OB_MAP), map);
+            ww(m, a0.wrapping_add(OB_GFX), gfx);
+            wb(m, a0.wrapping_add(OB_HEIGHT), 12);
+            wb(m, a0.wrapping_add(OB_RENDER), 5); // sprite_cam_field | sprite_xflip
+            wb(m, a0.wrapping_add(OB_PRIORITY), 6);
+            wb(m, a0.wrapping_add(OB_ACTWID), 8);
+            wb(m, a0.wrapping_add(OB_TIME_FRAME), 7);
+            wb(m, a0.wrapping_add(OB_FRAME), 2);
+            ww(m, a0.wrapping_add(OB_VELY), u16_de(-0x400i16));
+
+            if rb(m, 0xFF_F7A7) != 0 {
+                wb(m, a0.wrapping_add(OB_ROUTINE), 0x12);
+                ww(m, a0.wrapping_add(OB_VELX), 0);
+                display_sprite(m, a0);
+                return Ok(());
+            }
+
+            let mut a1 = V_LVLOBJSPACE;
+            while a1 < V_LVLOBJEND && rb(m, a1.wrapping_add(OB_ID)) != 0 {
+                a1 = a1.wrapping_add(OBJECT_SIZE);
+            }
+            if a1 < V_LVLOBJEND {
+                let x = rw(m, a0.wrapping_add(OB_X));
+                let y = rw(m, a0.wrapping_add(OB_Y));
+                let pframe = rw(m, a0.wrapping_add(0x3E)) >> 1;
+                wb(m, a1.wrapping_add(OB_ID), ID_POINTS);
+                ww(m, a1.wrapping_add(OB_X), x);
+                ww(m, a1.wrapping_add(OB_Y), y);
+                wb(
+                    m,
+                    a1.wrapping_add(OB_FRAME),
+                    u8::try_from(pframe & 0x7F).unwrap_or(0),
+                );
+            }
+            display_sprite(m, a0);
+            Ok(())
+        }
+        2 => {
+            let x = rw(m, a0.wrapping_add(OB_X));
+            if fora_da_janela(m, x) {
+                delete_object(m, a0);
+                return Ok(());
+            }
+            super::fisica::speed_to_pos(m, a0);
+            let vy = com_sinal(rw(m, a0.wrapping_add(OB_VELY))).wrapping_add(0x38);
+            ww(m, a0.wrapping_add(OB_VELY), u16_de(vy));
+            if vy >= 0 {
+                let dist = com_sinal(super::fisica::obj_floor_dist(m, a0));
+                if dist < 0 {
+                    let y = rw(m, a0.wrapping_add(OB_Y)).wrapping_add(u16_de(dist));
+                    ww(m, a0.wrapping_add(OB_Y), y);
+                    let spdx = rw(m, a0.wrapping_add(0x32));
+                    let spdy = rw(m, a0.wrapping_add(0x34));
+                    ww(m, a0.wrapping_add(OB_VELX), spdx);
+                    ww(m, a0.wrapping_add(OB_VELY), spdy);
+                    wb(m, a0.wrapping_add(OB_FRAME), 1);
+                    let anml_id = rb(m, a0.wrapping_add(0x30));
+                    let rotina = anml_id.wrapping_mul(2).wrapping_add(4);
+                    wb(m, a0.wrapping_add(OB_ROUTINE), rotina);
+                    if rb(m, 0xFF_F7A7) != 0 && rb(m, V_VBLANK_BYTE) & 0x10 != 0 {
+                        ww(m, a0.wrapping_add(OB_VELX), 0u16.wrapping_sub(spdx));
+                        let render = rb(m, a0.wrapping_add(OB_RENDER)) ^ 1;
+                        wb(m, a0.wrapping_add(OB_RENDER), render);
+                    }
+                }
+            }
+            display_sprite(m, a0);
+            Ok(())
+        }
+        0x12 => {
+            if rb(m, a0.wrapping_add(OB_RENDER)) & 0x80 == 0 {
+                delete_object(m, a0);
+                return Ok(());
+            }
+            let atraso = rw(m, a0.wrapping_add(0x36)).wrapping_sub(1);
+            ww(m, a0.wrapping_add(0x36), atraso);
+            if atraso == 0 {
+                wb(m, a0.wrapping_add(OB_ROUTINE), 2);
+                wb(m, a0.wrapping_add(OB_PRIORITY), 3);
+            }
+            display_sprite(m, a0);
+            Ok(())
+        }
+        4 | 8 | 10 | 12 | 16 => {
+            super::fisica::speed_to_pos(m, a0);
+            let vy = com_sinal(rw(m, a0.wrapping_add(OB_VELY))).wrapping_add(0x38);
+            ww(m, a0.wrapping_add(OB_VELY), u16_de(vy));
+            if vy < 0 {
+                wb(m, a0.wrapping_add(OB_FRAME), 1);
+            } else {
+                wb(m, a0.wrapping_add(OB_FRAME), 0);
+                let dist = com_sinal(super::fisica::obj_floor_dist(m, a0));
+                if dist < 0 {
+                    let y = rw(m, a0.wrapping_add(OB_Y)).wrapping_add(u16_de(dist));
+                    ww(m, a0.wrapping_add(OB_Y), y);
+                    let spdy = rw(m, a0.wrapping_add(0x34));
+                    ww(m, a0.wrapping_add(OB_VELY), spdy);
+                }
+            }
+            let x = rw(m, a0.wrapping_add(OB_X));
+            if fora_da_janela(m, x) {
+                delete_object(m, a0);
+            } else {
+                display_sprite(m, a0);
+            }
+            Ok(())
+        }
+        6 | 14 => {
+            super::fisica::speed_to_pos(m, a0);
+            let vy = com_sinal(rw(m, a0.wrapping_add(OB_VELY))).wrapping_add(0x18);
+            ww(m, a0.wrapping_add(OB_VELY), u16_de(vy));
+            if vy >= 0 {
+                let dist = com_sinal(super::fisica::obj_floor_dist(m, a0));
+                if dist < 0 {
+                    let y = rw(m, a0.wrapping_add(OB_Y)).wrapping_add(u16_de(dist));
+                    ww(m, a0.wrapping_add(OB_Y), y);
+                    let spdy = rw(m, a0.wrapping_add(0x34));
+                    ww(m, a0.wrapping_add(OB_VELY), spdy);
+                }
+            }
+            let tempo = rb(m, a0.wrapping_add(OB_TIME_FRAME)).wrapping_sub(1);
+            wb(m, a0.wrapping_add(OB_TIME_FRAME), tempo);
+            if i8::from_be_bytes([tempo]) < 0 {
+                wb(m, a0.wrapping_add(OB_TIME_FRAME), 1);
+                let quadro = (rb(m, a0.wrapping_add(OB_FRAME)).wrapping_add(1)) & 1;
+                wb(m, a0.wrapping_add(OB_FRAME), quadro);
+            }
+            let x = rw(m, a0.wrapping_add(OB_X));
+            if fora_da_janela(m, x) {
+                delete_object(m, a0);
+            } else {
+                display_sprite(m, a0);
+            }
+            Ok(())
+        }
+        _ => {
+            let x = rw(m, a0.wrapping_add(OB_X));
+            if fora_da_janela(m, x) {
+                delete_object(m, a0);
+            } else {
+                display_sprite(m, a0);
+            }
+            Ok(())
+        }
+    }
+}
+
+/// `Points` (`29`): indicador flutuante de pontos (`28, 29 Animals and Points.asm`).
+fn pontos_objeto(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
+    match rb(m, a0.wrapping_add(OB_ROUTINE)) {
+        0 => {
+            wb(m, a0.wrapping_add(OB_ROUTINE), 2);
+            wl(m, a0.wrapping_add(OB_MAP), 0x9B2C); // Map_Points
+            ww(m, a0.wrapping_add(OB_GFX), 0x797 | 0x2000); // ArtTile_Points | Tile_Pal2 ($2797)
+            wb(m, a0.wrapping_add(OB_RENDER), 4);
+            wb(m, a0.wrapping_add(OB_PRIORITY), 1);
+            wb(m, a0.wrapping_add(OB_ACTWID), 8);
+            ww(m, a0.wrapping_add(OB_VELY), u16_de(-0x300i16));
+            display_sprite(m, a0);
+            Ok(())
+        }
+        2 => {
+            let vy = com_sinal(rw(m, a0.wrapping_add(OB_VELY)));
+            if vy >= 0 {
+                delete_object(m, a0);
+                return Ok(());
+            }
+            super::fisica::speed_to_pos(m, a0);
+            let novo_vy = vy.wrapping_add(0x18);
+            ww(m, a0.wrapping_add(OB_VELY), u16_de(novo_vy));
+            display_sprite(m, a0);
+            Ok(())
+        }
+        _ => Err(ErroAbertura::NaoImplementado("rotina de Points")),
+    }
+}
+
+/// `WaterSound` (`49`): emissor invisível do som de cachoeira da GHZ (`49 GHZ Waterfall Sound.asm`).
+fn water_sound(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
+    match rb(m, a0.wrapping_add(OB_ROUTINE)) {
+        0 => {
+            wb(m, a0.wrapping_add(OB_ROUTINE), 2);
+            wb(m, a0.wrapping_add(OB_RENDER), 4);
+            wsnd_play(m, a0);
+            Ok(())
+        }
+        2 => {
+            wsnd_play(m, a0);
+            Ok(())
+        }
+        _ => Err(ErroAbertura::NaoImplementado("rotina de WaterSound")),
+    }
+}
+
+fn wsnd_play(m: &mut Memoria, a0: u32) {
+    let vb = rb(m, V_VBLANK_BYTE);
+    if vb & 0x3F == 0 {
+        wb(m, V_SOUNDQUEUE1, 0xD0); // sfx_Waterfall
+    }
+    let x = rw(m, a0.wrapping_add(OB_X));
+    if fora_da_janela(m, x) {
+        delete_object(m, a0);
+    }
+}
+
+pub const MAP_PROCK: u32 = 0x00D79C;
+pub const ART_TILE_PURPLE_ROCK: u16 = 0x63D0;
+
+/// `PurpleRock` (`3B`): pedra roxa sólida da Green Hill Zone (`3B GHZ Purple Rock.asm`).
+fn purple_rock(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
+    if rb(m, a0.wrapping_add(OB_ROUTINE)) == 0 {
+        wb(m, a0.wrapping_add(OB_ROUTINE), 2);
+        wl(m, a0.wrapping_add(OB_MAP), MAP_PROCK);
+        ww(m, a0.wrapping_add(OB_GFX), ART_TILE_PURPLE_ROCK);
+        wb(m, a0.wrapping_add(OB_RENDER), 4);
+        wb(m, a0.wrapping_add(OB_ACTWID), 19);
+        wb(m, a0.wrapping_add(OB_PRIORITY), 4);
+    }
+
+    solid_object(m, a0, 27, 16, 16)?;
+    display_sprite(m, a0);
+    let x = rw(m, a0.wrapping_add(OB_X));
+    if fora_da_janela(m, x) {
+        delete_object(m, a0);
+    }
+    Ok(())
+}
+
+/// `Springs`: prepara a orientação, reage ao contato e anima sem alterar os dados da ROM.
+fn mola(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
+    let rotina = rb(m, a0.wrapping_add(OB_ROUTINE));
+    match rotina {
+        0 => {
+            wb(m, a0.wrapping_add(OB_ROUTINE), 2);
+            wl(m, a0.wrapping_add(OB_MAP), MAP_SPRING);
+            ww(m, a0.wrapping_add(OB_GFX), 0x523);
+            let render = rb(m, a0.wrapping_add(OB_RENDER));
+            wb(m, a0.wrapping_add(OB_RENDER), render | 4);
+            wb(m, a0.wrapping_add(OB_ACTWID), 16);
+            wb(m, a0.wrapping_add(OB_PRIORITY), 4);
+            let sub = rb(m, a0.wrapping_add(OB_SUBTYPE));
+            if sub & 0x10 != 0 {
+                wb(m, a0.wrapping_add(OB_ROUTINE), 8);
+                wb(m, a0.wrapping_add(OB_ANIM), 1);
+                wb(m, a0.wrapping_add(OB_FRAME), 3);
+                ww(m, a0.wrapping_add(OB_GFX), 0x533);
+                wb(m, a0.wrapping_add(OB_ACTWID), 8);
+            }
+            if sub & 0x20 != 0 {
+                wb(m, a0.wrapping_add(OB_ROUTINE), 14);
+                let status = rb(m, a0.wrapping_add(OB_STATUS));
+                wb(m, a0.wrapping_add(OB_STATUS), status | 2);
+            }
+            if sub & 2 != 0 {
+                let gfx = rb(m, a0.wrapping_add(OB_GFX));
+                wb(m, a0.wrapping_add(OB_GFX), gfx | 0x20);
+            }
+            let forca = rom_w(m, SPRING_POWERS.wrapping_add(u32::from(sub & 15)));
+            ww(m, a0.wrapping_add(0x30), forca);
+        }
+        2 | 8 | 14 => {
+            let colisao = if rotina == 8 {
+                solid_object(m, a0, 19, 14, 15)?
+            } else {
+                solid_object(m, a0, 27, 8, 16)?
+            };
+            let status_mola = rb(m, a0.wrapping_add(OB_STATUS));
+            let solido = rb(m, a0.wrapping_add(OB_ROUTINE_2));
+            let acionar = match rotina {
+                2 => solido != 0,
+                8 => status_mola & 0x20 != 0,
+                _ => solido == 0 && colisao < 0,
+            };
+            if acionar {
+                wb(m, a0.wrapping_add(OB_ROUTINE), rotina.wrapping_add(2));
+                let forca = rw(m, a0.wrapping_add(0x30));
+                let status = rb(m, V_PLAYER.wrapping_add(OB_STATUS));
+                if rotina == 8 {
+                    let x = rw(m, V_PLAYER.wrapping_add(OB_X));
+                    let virada = status_mola & 1 != 0;
+                    ww(
+                        m,
+                        V_PLAYER.wrapping_add(OB_X),
+                        if virada {
+                            x.wrapping_add(8)
+                        } else {
+                            x.wrapping_sub(8)
+                        },
+                    );
+                    let vx = if virada { forca } else { forca.wrapping_neg() };
+                    ww(m, V_PLAYER.wrapping_add(OB_VELX), vx);
+                    ww(m, V_PLAYER.wrapping_add(OB_INERTIA), vx);
+                    ww(m, V_PLAYER.wrapping_add(SON_LOCKTIME), 15);
+                    wb(m, V_PLAYER.wrapping_add(OB_STATUS), (status ^ 1) & !0x20);
+                    if status & 4 == 0 {
+                        wb(m, V_PLAYER.wrapping_add(OB_ANIM), ANIM_WALK);
+                    }
+                    wb(m, a0.wrapping_add(OB_STATUS), status_mola & !0x20);
+                } else {
+                    let y = rw(m, V_PLAYER.wrapping_add(OB_Y));
+                    ww(
+                        m,
+                        V_PLAYER.wrapping_add(OB_Y),
+                        if rotina == 2 {
+                            y.wrapping_add(8)
+                        } else {
+                            y.wrapping_sub(8)
+                        },
+                    );
+                    ww(
+                        m,
+                        V_PLAYER.wrapping_add(OB_VELY),
+                        if rotina == 2 {
+                            forca
+                        } else {
+                            forca.wrapping_neg()
+                        },
+                    );
+                    wb(m, V_PLAYER.wrapping_add(OB_STATUS), (status | 2) & !8);
+                    wb(m, V_PLAYER.wrapping_add(OB_ROUTINE), 2);
+                    if rotina == 2 {
+                        wb(m, V_PLAYER.wrapping_add(OB_ANIM), 0x10);
+                    }
+                    wb(m, a0.wrapping_add(OB_STATUS), status_mola & !8);
+                    wb(m, a0.wrapping_add(OB_ROUTINE_2), 0);
+                }
+                wb(m, V_SOUNDQUEUE1, 0xCC);
+                animate_sprite(m, a0, ANI_SPRING)?;
+            }
+        }
+        4 | 10 | 16 => animate_sprite(m, a0, ANI_SPRING)?,
+        6 | 12 | 18 => {
+            wb(
+                m,
+                a0.wrapping_add(OB_PREV_ANI),
+                if rotina == 12 { 2 } else { 1 },
+            );
+            wb(m, a0.wrapping_add(OB_ROUTINE), rotina.wrapping_sub(4));
+        }
+        _ => return Err(ErroAbertura::NaoImplementado("rotina de mola")),
+    }
+    display_sprite(m, a0);
+    let x = rw(m, a0.wrapping_add(OB_X));
+    if fora_da_janela(m, x) {
+        delete_object(m, a0);
+    }
+    Ok(())
 }
 
 /// `Monitor` (`26`): a caixa de item. Rotina 0 prepara; rotina 2 confere o Sonic em cima, ao lado
@@ -175,24 +972,7 @@ fn mon_display(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
 }
 
 /// Deslocamento (X, Y) entre os anéis de uma fileira, por subtipo (`Ring_PosData`).
-const RING_POS_DATA: [(i8, i8); 16] = [
-    (0x10, 0),
-    (0x18, 0),
-    (0x20, 0),
-    (0, 0x10),
-    (0, 0x18),
-    (0, 0x20),
-    (0x10, 0x10),
-    (0x18, 0x18),
-    (0x20, 0x20),
-    (-0x10, 0x10),
-    (-0x18, 0x18),
-    (-0x20, 0x20),
-    (0x10, 8),
-    (0x18, 0x10),
-    (-0x10, 8),
-    (-0x18, 0x10),
-];
+const RING_POS_DATA: u32 = 0xA1BC;
 /// `ring_origX` e `ring_respawnbit` (`objoff_32` e `objoff_34`).
 const RING_ORIGX: u32 = 0x32;
 const RING_RESPAWNBIT: u32 = 0x34;
@@ -208,11 +988,96 @@ fn aneis(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
             ring_animate(m, a0);
             Ok(())
         }
+        4 => {
+            wb(m, a0.wrapping_add(OB_ROUTINE), 6);
+            wb(m, a0.wrapping_add(OB_COLTYPE), 0);
+            wb(m, a0.wrapping_add(OB_PRIORITY), 1);
+            collect_ring(m);
+            let marca = V_OBJSTATE
+                .wrapping_add(2)
+                .wrapping_add(u32::from(rb(m, a0.wrapping_add(OB_RESPAWNNO))));
+            let bit = rb(m, a0.wrapping_add(RING_RESPAWNBIT)) & 7;
+            let estado = rb(m, marca) | 1u8.wrapping_shl(u32::from(bit));
+            wb(m, marca, estado);
+            ring_sparkle(m, a0)
+        }
+        6 => ring_sparkle(m, a0),
         8 => {
             delete_object(m, a0);
             Ok(())
         }
         _ => Err(ErroAbertura::NaoImplementado("anel coletado")),
+    }
+}
+
+/// `CollectRing`: o original permite ultrapassar 999 anéis.
+fn collect_ring(m: &mut Memoria) {
+    let aneis = rw(m, V_RINGS).wrapping_add(1);
+    ww(m, V_RINGS, aneis);
+    let atualizacao = rb(m, F_RINGCOUNT) | 1;
+    wb(m, F_RINGCOUNT, atualizacao);
+    let mut som = SFX_RING;
+    if aneis >= 100 {
+        let flags = rb(m, V_LIFECOUNT);
+        let bit = if flags & 2 == 0 {
+            2
+        } else if aneis >= 200 && flags & 4 == 0 {
+            4
+        } else {
+            0
+        };
+        if bit != 0 {
+            wb(m, V_LIFECOUNT, flags | bit);
+            let vidas = rb(m, V_LIVES).wrapping_add(1);
+            let atualizacao = rb(m, F_LIFECOUNT).wrapping_add(1);
+            wb(m, V_LIVES, vidas);
+            wb(m, F_LIFECOUNT, atualizacao);
+            som = 0x88;
+        }
+    }
+    wb(m, V_SOUNDQUEUE1, som);
+}
+
+fn ring_sparkle(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
+    animate_sprite(m, a0, ANI_RING)?;
+    display_sprite(m, a0);
+    Ok(())
+}
+
+#[cfg(test)]
+mod testes_aneis {
+    use super::*;
+
+    #[test]
+    fn anel_atualiza_contadores_e_vidas_nos_limites() {
+        let mut m = Memoria::nova(vec![0; 16]);
+        ww(&mut m, V_RINGS, 99);
+        wb(&mut m, V_LIVES, 3);
+        collect_ring(&mut m);
+        assert_eq!(rw(&mut m, V_RINGS), 100);
+        assert_eq!(rb(&mut m, V_LIVES), 4);
+        assert_eq!(rb(&mut m, V_LIFECOUNT) & 2, 2);
+        assert_eq!(rb(&mut m, V_SOUNDQUEUE1), 0x88);
+
+        ww(&mut m, V_RINGS, 199);
+        collect_ring(&mut m);
+        assert_eq!(rw(&mut m, V_RINGS), 200);
+        assert_eq!(rb(&mut m, V_LIVES), 5);
+        assert_eq!(rb(&mut m, V_LIFECOUNT) & 6, 6);
+        collect_ring(&mut m);
+        assert_eq!(rb(&mut m, V_LIVES), 5);
+        assert_eq!(rb(&mut m, V_SOUNDQUEUE1), SFX_RING);
+    }
+
+    #[test]
+    fn fim_de_animacao_avanca_rotina_do_objeto() {
+        let mut rom = vec![0; 0x200];
+        rom[0x101] = 2;
+        rom[0x103] = 0xfc;
+        let mut m = Memoria::nova(rom);
+        wb(&mut m, V_LVLOBJSPACE.wrapping_add(OB_ROUTINE), 6);
+        animate_sprite(&mut m, V_LVLOBJSPACE, 0x100).unwrap();
+        assert_eq!(rb(&mut m, V_LVLOBJSPACE.wrapping_add(OB_ROUTINE)), 8);
     }
 }
 
@@ -234,6 +1099,34 @@ pub fn fora_da_janela(m: &mut Memoria, x: u16) -> bool {
     d0.wrapping_sub(d1) > 128 + 320 + 192
 }
 
+/// Encontra um slot livre de objeto na faixa de objetos de fase.
+pub fn find_free_obj(m: &mut Memoria) -> Option<u32> {
+    let mut a1 = V_LVLOBJSPACE;
+    while a1 < V_LVLOBJEND {
+        if rb(m, a1.wrapping_add(OB_ID)) == 0 {
+            return Some(a1);
+        }
+        a1 = a1.wrapping_add(OBJECT_SIZE);
+    }
+    None
+}
+
+/// `RememberState`: desenha o sprite ou apaga o objeto com atualização do bit de respawn.
+pub fn remember_state(m: &mut Memoria, a0: u32) {
+    let x = rw(m, a0.wrapping_add(OB_X));
+    if fora_da_janela(m, x) {
+        let n = rb(m, a0.wrapping_add(OB_RESPAWNNO));
+        if n != 0 {
+            let marca = V_OBJSTATE.wrapping_add(2).wrapping_add(u32::from(n));
+            let valor = rb(m, marca) & 0x7F;
+            wb(m, marca, valor);
+        }
+        delete_object(m, a0);
+    } else {
+        display_sprite(m, a0);
+    }
+}
+
 /// `Ring_Main`: cria os anéis da fileira que ainda não foram coletados.
 fn ring_main(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
     let a2 = V_OBJSTATE
@@ -245,12 +1138,11 @@ fn ring_main(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
     if restam == 7 {
         restam = 6;
     }
-    let (dx, dy) = RING_POS_DATA
-        .get(usize::from(subtipo >> 4))
-        .copied()
-        .unwrap_or((0, 0));
-    let dx = u16::from_be_bytes(i16::from(dx).to_be_bytes());
-    let dy = u16::from_be_bytes(i16::from(dy).to_be_bytes());
+    let pos = RING_POS_DATA.wrapping_add(u32::from(subtipo >> 4).wrapping_mul(2));
+    let dx = u16::from_be_bytes(i16::from(i8::from_be_bytes([rom_b(m, pos)])).to_be_bytes());
+    let dy = u16::from_be_bytes(
+        i16::from(i8::from_be_bytes([rom_b(m, pos.wrapping_add(1))])).to_be_bytes(),
+    );
     let mut d2 = rw(m, a0.wrapping_add(OB_X));
     let mut d3 = rw(m, a0.wrapping_add(OB_Y));
     let mut indice = 0u8;
@@ -339,6 +1231,10 @@ fn hud_objeto(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
 /// Palavra com sinal (`bge` e `bmi` comparam assim).
 fn com_sinal(w: u16) -> i16 {
     i16::from_be_bytes(w.to_be_bytes())
+}
+
+fn u16_de(i: i16) -> u16 {
+    u16::from_be_bytes(i.to_be_bytes())
 }
 
 /// Objeto `TitleCard` (`34`): os quatro elementos dos cartões de título da fase (nome da zona,
@@ -488,7 +1384,7 @@ fn card_change_art(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
 /// `AnimateSprite` (`_incObj/sub AnimateSprite.asm`): avança o roteiro de animação do objeto
 /// `a0`. `roteiro` é o endereço do roteiro na ROM. Só os códigos de fim `$FF` (recomeça) e `$FE`
 /// (volta alguns quadros) existem nesta versão; os outros devolvem `NaoImplementado`.
-fn animate_sprite(m: &mut Memoria, a0: u32, roteiro: u32) -> Result<(), ErroAbertura> {
+pub(super) fn animate_sprite(m: &mut Memoria, a0: u32, roteiro: u32) -> Result<(), ErroAbertura> {
     let animacao = rb(m, a0.wrapping_add(OB_ANIM));
     if animacao != rb(m, a0.wrapping_add(OB_PREV_ANI)) {
         wb(m, a0.wrapping_add(OB_PREV_ANI), animacao);
@@ -526,6 +1422,11 @@ fn animate_sprite(m: &mut Memoria, a0: u32, roteiro: u32) -> Result<(), ErroAber
             let indice_novo = indice.wrapping_sub(u32::from(voltar)) & 0xFF;
             let quadro = rom_byte(m, roteiro.wrapping_add(indice_novo).wrapping_add(1));
             animacao_quadro(m, a0, quadro)
+        }
+        0xFC => {
+            let rotina = rb(m, a0.wrapping_add(OB_ROUTINE)).wrapping_add(2);
+            wb(m, a0.wrapping_add(OB_ROUTINE), rotina);
+            Ok(())
         }
         _ => Err(ErroAbertura::NaoImplementado("flag de animação")),
     }
@@ -822,4 +1723,150 @@ fn desenhar_objeto(
 
 fn rom_byte(m: &Memoria, a: u32) -> u8 {
     super::boot::rom_b(m, a)
+}
+
+#[cfg(test)]
+mod testes_mola {
+    use super::*;
+
+    fn memoria() -> Memoria {
+        let mut rom = vec![0; 0x10000];
+        let i = usize::try_from(SPRING_POWERS).unwrap();
+        rom[i..i.wrapping_add(4)].copy_from_slice(&[0xF0, 0, 0xF6, 0]);
+        let i = usize::try_from(ANI_SPRING).unwrap();
+        rom[i..i.wrapping_add(6)].copy_from_slice(&[0, 4, 0, 4, 5, 1]);
+        Memoria::nova(rom)
+    }
+
+    #[test]
+    fn mola_inicial_le_forca_e_configura_tipo() {
+        let mut m = memoria();
+        let a = V_LVLOBJSPACE;
+        wb(&mut m, a + OB_SUBTYPE, 0x12);
+        ww(&mut m, a + OB_X, 128);
+        mola(&mut m, a).unwrap();
+        assert_eq!(rb(&mut m, a + OB_ROUTINE), 8);
+        assert_eq!(rw(&mut m, a + OB_GFX), 0x2533);
+        assert_eq!(rw(&mut m, a + 0x30), 0xF600);
+        assert_eq!(rb(&mut m, a + OB_ACTWID), 8);
+    }
+
+    #[test]
+    fn mola_vertical_lanca_sonic_ao_pousar() {
+        let mut m = memoria();
+        let a = V_LVLOBJSPACE;
+        wb(&mut m, a + OB_ROUTINE, 2);
+        wb(&mut m, a + OB_RENDER, 0x84);
+        wb(&mut m, a + OB_ACTWID, 16);
+        ww(&mut m, a + OB_X, 100);
+        ww(&mut m, a + OB_Y, 100);
+        ww(&mut m, a + 0x30, 0xF000);
+        ww(&mut m, V_PLAYER + OB_X, 100);
+        ww(&mut m, V_PLAYER + OB_Y, 73);
+        ww(&mut m, V_PLAYER + OB_VELY, 0x100);
+        wb(&mut m, V_PLAYER + OB_HEIGHT, 19);
+        wb(&mut m, V_PLAYER + OB_STATUS, 2);
+        mola(&mut m, a).unwrap();
+        assert_eq!(rb(&mut m, a + OB_ROUTINE), 4);
+        assert_eq!(rw(&mut m, V_PLAYER + OB_VELY), 0xF000);
+        assert_eq!(rw(&mut m, V_PLAYER + OB_Y), 80);
+        assert_eq!(rb(&mut m, V_PLAYER + OB_STATUS) & 0x0A, 2);
+        assert_eq!(rb(&mut m, V_SOUNDQUEUE1), 0xCC);
+    }
+
+    #[test]
+    fn mola_horizontal_lanca_sonic_para_fora() {
+        let mut m = memoria();
+        let a = V_LVLOBJSPACE;
+        wb(&mut m, a + OB_ROUTINE, 8);
+        wb(&mut m, a + OB_RENDER, 0x84);
+        wb(&mut m, a + OB_ACTWID, 8);
+        ww(&mut m, a + OB_X, 100);
+        ww(&mut m, a + OB_Y, 100);
+        ww(&mut m, a + 0x30, 0xF000);
+        ww(&mut m, V_PLAYER + OB_X, 82);
+        ww(&mut m, V_PLAYER + OB_Y, 100);
+        ww(&mut m, V_PLAYER + OB_VELX, 0x100);
+        wb(&mut m, V_PLAYER + OB_HEIGHT, 19);
+        mola(&mut m, a).unwrap();
+        assert_eq!(rb(&mut m, a + OB_ROUTINE), 10);
+        assert_eq!(rw(&mut m, V_PLAYER + OB_X), 73);
+        assert_eq!(rw(&mut m, V_PLAYER + OB_VELX), 0x1000);
+        assert_eq!(rw(&mut m, V_PLAYER + SON_LOCKTIME), 15);
+    }
+
+    #[test]
+    fn cenario_inicializa_subtipo_ponte_ghz_e_coloca_na_fila() {
+        let mut m = memoria();
+        let a = V_LVLOBJSPACE;
+        wb(&mut m, a + OB_SUBTYPE, 3);
+        ww(&mut m, a + OB_X, 100);
+        ww(&mut m, V_SCREENPOSX, 100);
+        cenario(&mut m, a).unwrap();
+        assert_eq!(rb(&mut m, a + OB_ROUTINE), 2);
+        assert_eq!(rl(&mut m, a + OB_MAP), 0x7FB2);
+        assert_eq!(rw(&mut m, a + OB_GFX), 0x438E);
+        assert_eq!(rb(&mut m, a + OB_FRAME), 1);
+        assert_eq!(rb(&mut m, a + OB_ACTWID), 16);
+        assert_eq!(rb(&mut m, a + OB_PRIORITY), 1);
+        assert_eq!(rb(&mut m, a + OB_RENDER), 4);
+    }
+
+    #[test]
+    fn cenario_fora_da_janela_e_removido() {
+        let mut m = memoria();
+        let a = V_LVLOBJSPACE;
+        wb(&mut m, a + OB_ROUTINE, 2);
+        ww(&mut m, a + OB_X, 2000);
+        ww(&mut m, V_SCREENPOSX, 100);
+        cenario(&mut m, a).unwrap();
+        assert_eq!(rb(&mut m, a + OB_ID), 0);
+    }
+
+    #[test]
+    fn water_sound_emite_som_a_cada_64_quadros_e_deleta_fora_da_tela() {
+        let mut m = memoria();
+        let a = V_LVLOBJSPACE;
+        wb(&mut m, a + OB_ID, ID_WATER_SOUND);
+        ww(&mut m, a + OB_X, 100);
+        ww(&mut m, V_SCREENPOSX, 100);
+        wb(&mut m, V_VBLANK_BYTE, 0); // multiplo de 64
+
+        water_sound(&mut m, a).unwrap();
+        assert_eq!(rb(&mut m, a + OB_ROUTINE), 2);
+        assert_eq!(rb(&mut m, V_SOUNDQUEUE1), 0xD0);
+
+        // Nao emite som quando nao for multiplo de 64
+        wb(&mut m, V_SOUNDQUEUE1, 0);
+        wb(&mut m, V_VBLANK_BYTE, 1);
+        water_sound(&mut m, a).unwrap();
+        assert_eq!(rb(&mut m, V_SOUNDQUEUE1), 0);
+
+        // Fora da janela: deleta
+        ww(&mut m, a + OB_X, 2000);
+        water_sound(&mut m, a).unwrap();
+        assert_eq!(rb(&mut m, a + OB_ID), 0);
+    }
+
+    #[test]
+    fn purple_rock_inicializa_e_e_solida() {
+        let mut m = memoria();
+        let a = V_LVLOBJSPACE;
+        wb(&mut m, a + OB_ID, ID_PURPLE_ROCK);
+        ww(&mut m, a + OB_X, 200);
+        ww(&mut m, a + OB_Y, 200);
+        ww(&mut m, V_SCREENPOSX, 200);
+
+        purple_rock(&mut m, a).unwrap();
+        assert_eq!(rb(&mut m, a + OB_ROUTINE), 2);
+        assert_eq!(rl(&mut m, a + OB_MAP), MAP_PROCK);
+        assert_eq!(rw(&mut m, a + OB_GFX), ART_TILE_PURPLE_ROCK);
+        assert_eq!(rb(&mut m, a + OB_ACTWID), 19);
+        assert_eq!(rb(&mut m, a + OB_PRIORITY), 4);
+
+        // Fora da janela: deleta
+        ww(&mut m, a + OB_X, 2000);
+        purple_rock(&mut m, a).unwrap();
+        assert_eq!(rb(&mut m, a + OB_ID), 0);
+    }
 }

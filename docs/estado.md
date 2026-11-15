@@ -2,6 +2,17 @@
 
 Documento de acompanhamento do progresso das etapas.
 
+## Trabalho iniciado em 13/11/2026: caminho web
+
+- O laço web usa o período NTSC (896040 ciclos em 53693175 Hz), acumula passos atrasados e pausa em aba oculta. A taxa real do AudioContext configura a reamostragem; a troca de jogo limpa a fila de áudio.
+- O controlador de reamostragem recebe a ocupação da fila do navegador e reduz a produção quando ela está cheia. O teste `fila_cheia_reduz_a_quantidade_de_audio_produzido` verifica a direção do ajuste.
+- O navegador aceita teclado e gamepad padrão, incluindo direcional, analógico esquerdo, três botões e Start. O teclado é liberado quando a janela perde foco.
+- `node --test site/tests/relogio.test.mjs site/tests/audio-worklet.test.cjs` verifica o acumulador a 60, 120 e 144 Hz, a recuperação de atrasos, pausa e fila de áudio.
+- Validação nativa: `cargo test --locked --offline -p sonic1-console -p sonic1-web -p sonic1-audio-saida`, além do teste de taxas 44100 e 48000 Hz em `sonic1-console`.
+- A compilação `wasm32-unknown-unknown` e os testes `wasm32-wasip1` do núcleo, vídeo, console e som passaram na imagem `websonic-dev:ci` antes da mudança do controlador da fila.
+- Após essa mudança, o build Wasm passou novamente. No Chrome headless, com a ROM REV01, o site informou ROM válida, ativou AudioWorklet e alcançou o quadro 468 sem erro visível. O renderizador do Chrome headless é SwiftShader, sem prova de GPU física.
+- Pendente: validar uma partida no navegador e em Wasm, concluir a composição na GPU e a recompilação, e fechar a jogabilidade e as comparações com o oráculo. O temporizador interno do console ainda usa eventos nominais e não prevê o tempo do hardware.
+
 ## Decisão L1 (11/11/2026): leitura da ROM pela IA, com guarda na saída
 
 **Decidido por Marcelo.** A IA pode ler a ROM e os binários do disassembly. A guarda passa da entrada para a saída: um detector, no hook do commit, procura trechos da ROM nos arquivos que entram no git. Continuam fora do alcance da IA: oráculo, comparador, manifesto, testes ocultos, itens congelados e assinatura.

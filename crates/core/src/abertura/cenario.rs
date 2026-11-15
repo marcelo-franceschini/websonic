@@ -1,14 +1,14 @@
 //! Cenário da fase e do título (sub-etapa 7.5, parte B): `LevelSizeLoad`, `BgScrollSpeed`,
-//! `DeformLayers` (fundo da GHZ), `ScrollHoriz`, `ScrollVertical`, `DynamicLevelEvents` (GHZ1) e
+//! `DeformLayers` (fundos da GHZ e MZ), `ScrollHoriz`, `ScrollVertical`, `DynamicLevelEvents` e
 //! `LevelLayoutLoad`. Cada função cita o rótulo que reproduz. Referência REV01, com `FixBugs = 0`.
 //!
 //! As contas seguem o 68000 em 16 e 32 bits: `wrapping_*` onde o processador dá a volta, e
-//! comparações com ou sem sinal conforme o desvio que o original usa. Só o caminho que o título e
-//! a primeira demo percorrem existe. Os outros devolvem [`ErroAbertura::NaoImplementado`].
+//! comparações com ou sem sinal conforme o desvio que o original usa. Outras zonas devolvem
+//! [`ErroAbertura::NaoImplementado`].
 
 use super::boot::{rom_b, rom_w};
 use super::ram::*;
-use super::{ErroAbertura, rb, rl, rw, wb, wl, ww};
+use super::{ErroAbertura, objetos, plc, rb, rl, rw, wb, wl, ww};
 use crate::memoria::Memoria;
 
 /// Reinterpreta uma palavra como com sinal, sem mudar nenhum bit.
@@ -78,21 +78,23 @@ pub fn level_size_load(m: &mut Memoria) -> Result<(), ErroAbertura> {
     ww(m, V_FG_XBLOCK, 0x1010);
     ww(m, V_LOOKSHIFT, olhar);
 
-    // `LevSz_InitScreenAndPlayerStart`: lampião e créditos ficam de fora deste trecho.
-    if rb(m, V_LASTLAMP) != 0 {
-        return Err(ErroAbertura::NaoImplementado("retorno de lampião"));
-    }
-    if rw(m, F_DEMO) & 0x8000 != 0 {
-        return Err(ErroAbertura::NaoImplementado("posição dos créditos"));
-    }
-    // `.getStartLocEntry`: quatro bytes por zona e ato (X e Y de Sonic).
-    let loc = START_LOC_ARRAY
-        .wrapping_add(zona.wrapping_mul(16))
-        .wrapping_add(ato.wrapping_mul(4));
-    let x = rom_w(m, loc);
-    let y = rom_w(m, loc.wrapping_add(2));
-    ww(m, V_PLAYER + OB_X, x);
-    ww(m, V_PLAYER + OB_Y, y);
+    let (x, y) = if rb(m, V_LASTLAMP) != 0 {
+        super::lamppost::carregar(m);
+        (rw(m, V_PLAYER + OB_X), rw(m, V_PLAYER + OB_Y))
+    } else {
+        if rw(m, F_DEMO) & 0x8000 != 0 {
+            return Err(ErroAbertura::NaoImplementado("posição dos créditos"));
+        }
+        // `.getStartLocEntry`: quatro bytes por zona e ato (X e Y de Sonic).
+        let loc = START_LOC_ARRAY
+            .wrapping_add(zona.wrapping_mul(16))
+            .wrapping_add(ato.wrapping_mul(4));
+        let x = rom_w(m, loc);
+        let y = rom_w(m, loc.wrapping_add(2));
+        ww(m, V_PLAYER + OB_X, x);
+        ww(m, V_PLAYER + OB_Y, y);
+        (x, y)
+    };
 
     // `LevSz_InitCameraPositions`: Sonic no centro, sem passar dos limites.
     let cx = if x >= 160 { x.wrapping_sub(160) } else { 0 };
@@ -129,6 +131,9 @@ fn bg_scroll_speed(m: &mut Memoria, cy: u16, cx: u16) -> Result<(), ErroAbertura
         ww(m, V_BG2SCREENPOSX, cx);
         ww(m, V_BG3SCREENPOSX, cx);
     }
+    if rb(m, V_ZONE) == ID_MZ {
+        return Ok(());
+    }
     if rb(m, V_ZONE) != 0 {
         return Err(ErroAbertura::NaoImplementado("fundo de outra zona"));
     }
@@ -163,10 +168,11 @@ pub fn deform_layers(m: &mut Memoria) -> Result<(), ErroAbertura> {
     ww(m, V_SCRPOSY_VDP, y);
     let by = rw(m, V_BGSCREENPOSY);
     ww(m, V_BGSCRPOSY_VDP, by);
-    if rb(m, V_ZONE) != 0 {
-        return Err(ErroAbertura::NaoImplementado("deformação de outra zona"));
+    match rb(m, V_ZONE) {
+        0 => deform_ghz(m),
+        ID_MZ => deform_mz(m),
+        _ => return Err(ErroAbertura::NaoImplementado("deformação de outra zona")),
     }
-    deform_ghz(m);
     Ok(())
 }
 
@@ -397,19 +403,65 @@ fn ajustar_y(m: &mut Memoria, d1: u32) {
     }
 }
 
-/// `DynamicLevelEvents`: a GHZ1 move o limite de baixo, e o limite anda de 2 em 2 pixels (8 em
-/// queda no ar) até acompanhar a posição nova. Só a GHZ1, que é a fase do título e da demo.
+/// `DynamicLevelEvents`: atualiza os eventos da GHZ e aproxima o limite vertical do alvo.
 fn dynamic_level_events(m: &mut Memoria) -> Result<(), ErroAbertura> {
-    if rb(m, V_ZONE) != 0 {
+    let zona = rb(m, V_ZONE);
+    if zona == ID_MZ {
+        eventos_mz(m)?;
+    } else if zona != 0 {
         return Err(ErroAbertura::NaoImplementado("eventos de outra zona"));
-    }
-    if rb(m, V_ACT) != 0 {
-        return Err(ErroAbertura::NaoImplementado("eventos da GHZ2 e da GHZ3"));
-    }
-    // `DLE_GHZ1`: fundo em $300, e $400 a partir de $1780 de câmera.
-    ww(m, V_LIMITBTM1, 0x300);
-    if rw(m, V_SCREENPOSX) >= 0x1780 {
-        ww(m, V_LIMITBTM1, 0x400);
+    } else {
+        let x = rw(m, V_SCREENPOSX);
+        match rb(m, V_ACT) {
+            0 => ww(m, V_LIMITBTM1, if x >= 0x1780 { 0x400 } else { 0x300 }),
+            1 => {
+                let limite = if !(0xED0..0x1D60).contains(&x) {
+                    0x300
+                } else if x < 0x1600 {
+                    0x200
+                } else {
+                    0x400
+                };
+                ww(m, V_LIMITBTM1, limite);
+            }
+            2 => match rb(m, V_DLE_ROUTINE) {
+                0 => {
+                    let mut limite = if x < 0x380 { 0x300 } else { 0x310 };
+                    if x >= 0x960 {
+                        if rw(m, V_SCREENPOSY) < 0x280 || x >= 0x1700 {
+                            limite = 0x300;
+                            wb(m, V_DLE_ROUTINE, 2);
+                        } else if x < 0x1380 {
+                            limite = 0x4C0;
+                            ww(m, V_LIMITBTM2, limite);
+                        } else {
+                            limite = 0x400;
+                        }
+                    }
+                    ww(m, V_LIMITBTM1, limite);
+                }
+                2 => {
+                    if x < 0x960 {
+                        wb(m, V_DLE_ROUTINE, 0);
+                    }
+                    if x >= 0x2960 {
+                        if let Some(a) = objetos::find_free_obj(m) {
+                            wb(m, a.wrapping_add(OB_ID), 0x3D);
+                            ww(m, a.wrapping_add(OB_X), 0x2A60);
+                            ww(m, a.wrapping_add(OB_Y), 0x280);
+                        }
+                        wb(m, V_SOUNDQUEUE0, 0x8C);
+                        wb(m, F_LOCKSCREEN, 1);
+                        let rotina = rb(m, V_DLE_ROUTINE).wrapping_add(2);
+                        wb(m, V_DLE_ROUTINE, rotina);
+                        plc::add_plc(m, 0x11)?;
+                    }
+                }
+                4 => ww(m, V_LIMITLEFT2, x),
+                _ => return Err(ErroAbertura::NaoImplementado("rotina de eventos da GHZ3")),
+            },
+            _ => return Err(ErroAbertura::NaoImplementado("ato da GHZ")),
+        }
     }
     let alvo = rw(m, V_LIMITBTM1);
     let atual = rw(m, V_LIMITBTM2);
@@ -437,6 +489,92 @@ fn dynamic_level_events(m: &mut Memoria) -> Result<(), ErroAbertura> {
     Ok(())
 }
 
+/// Limites e transições dos eventos dinâmicos da Marble Zone.
+fn eventos_mz(m: &mut Memoria) -> Result<(), ErroAbertura> {
+    let x = rw(m, V_SCREENPOSX);
+    let y = rw(m, V_SCREENPOSY);
+    let rotina = rb(m, V_DLE_ROUTINE);
+    match rb(m, V_ACT) {
+        0 => match rotina {
+            0 => {
+                let limite = if x < 0x700 {
+                    0x1D0
+                } else if x < 0xD00 {
+                    0x220
+                } else {
+                    0x340
+                };
+                ww(m, V_LIMITBTM1, limite);
+                if x >= 0xD00 && y >= 0x340 {
+                    wb(m, V_DLE_ROUTINE, 2);
+                }
+            }
+            2 => {
+                if y < 0x340 {
+                    wb(m, V_DLE_ROUTINE, 0);
+                } else {
+                    ww(m, V_LIMITTOP2, if x < 0xE00 { 0x340 } else { 0 });
+                    if x < 0xE00 {
+                        ww(m, V_LIMITBTM1, if x < 0xA90 { 0x500 } else { 0x340 });
+                        if x < 0xA90 && y >= 0x370 {
+                            wb(m, V_DLE_ROUTINE, 4);
+                        }
+                    }
+                }
+            }
+            4 => {
+                if y < 0x370 {
+                    wb(m, V_DLE_ROUTINE, 2);
+                } else if y >= 0x500 && x >= 0xB80 {
+                    ww(m, V_LIMITTOP2, 0x500);
+                    wb(m, V_DLE_ROUTINE, 6);
+                }
+            }
+            6 => {
+                if x < 0xB80 {
+                    let topo = rw(m, V_LIMITTOP2);
+                    if topo != 0x340 {
+                        ww(m, V_LIMITTOP2, topo.wrapping_sub(2));
+                    }
+                } else {
+                    if rw(m, V_LIMITTOP2) != 0x500 {
+                        if y < 0x500 {
+                            return Ok(());
+                        }
+                        ww(m, V_LIMITTOP2, 0x500);
+                    }
+                    if x >= 0xE70 {
+                        ww(m, V_LIMITTOP2, 0);
+                        ww(m, V_LIMITBTM1, if x < 0x1430 { 0x500 } else { 0x210 });
+                    }
+                }
+            }
+            _ => return Err(ErroAbertura::NaoImplementado("rotina de eventos da MZ1")),
+        },
+        1 => ww(m, V_LIMITBTM1, if x < 0x1700 { 0x520 } else { 0x200 }),
+        2 => match rotina {
+            0 => {
+                ww(m, V_LIMITBTM1, if x < 0x1560 { 0x720 } else { 0x210 });
+                if x >= 0x17F0 {
+                    if let Some(a) = objetos::find_free_obj(m) {
+                        wb(m, a.wrapping_add(OB_ID), 0x73);
+                        ww(m, a.wrapping_add(OB_X), 0x19F0);
+                        ww(m, a.wrapping_add(OB_Y), 0x22C);
+                    }
+                    wb(m, V_SOUNDQUEUE0, 0x8C);
+                    wb(m, F_LOCKSCREEN, 1);
+                    wb(m, V_DLE_ROUTINE, 2);
+                    plc::add_plc(m, 0x11)?;
+                }
+            }
+            2 => ww(m, V_LIMITLEFT2, x),
+            _ => return Err(ErroAbertura::NaoImplementado("rotina de eventos da MZ3")),
+        },
+        _ => return Err(ErroAbertura::NaoImplementado("ato da MZ")),
+    }
+    Ok(())
+}
+
 /// `Deform_GHZ` (REV01): o fundo da GHZ, com as nuvens que rolam sozinhas e a água.
 fn deform_ghz(m: &mut Memoria) {
     let desloc = i32::from(com_sinal(rw(m, V_SCRSHIFTX)));
@@ -447,6 +585,7 @@ fn deform_ghz(m: &mut Memoria) {
         V_BG3_XBLOCK,
         V_BG3_SCROLL_FLAGS,
         desloc.wrapping_mul(96),
+        0,
     );
     bloco_de_fundo(
         m,
@@ -454,6 +593,7 @@ fn deform_ghz(m: &mut Memoria) {
         V_BG2_XBLOCK,
         V_BG2_SCROLL_FLAGS,
         desloc.wrapping_mul(128),
+        0,
     );
 
     // Posição vertical do fundo, limitada a zero.
@@ -529,6 +669,89 @@ fn deform_ghz(m: &mut Memoria) {
     }
 }
 
+/// `Deform_MZ`: três velocidades horizontais e faixas de fundo de 16 linhas.
+fn deform_mz(m: &mut Memoria) {
+    let desloc = i32::from(com_sinal(rw(m, V_SCRSHIFTX)));
+    for (pos, bloco, flags, fator, bit) in [
+        (V_BGSCREENPOSX, 0xFF_F74C, V_BG1_SCROLL_FLAGS, 192, 2),
+        (V_BG3SCREENPOSX, V_BG3_XBLOCK, V_BG3_SCROLL_FLAGS, 64, 6),
+        (V_BG2SCREENPOSX, V_BG2_XBLOCK, V_BG2_SCROLL_FLAGS, 128, 4),
+    ] {
+        bloco_de_fundo(m, pos, bloco, flags, desloc.wrapping_mul(fator), bit);
+    }
+    let y = rw(m, V_SCREENPOSY);
+    let fundo_y = if y < 456 {
+        512
+    } else {
+        let diferenca = y.wrapping_sub(456);
+        let triplo = diferenca.wrapping_mul(3);
+        512u16.wrapping_add(u16::from_be_bytes((com_sinal(triplo) >> 2).to_be_bytes()))
+    };
+    ww(m, V_BG2SCREENPOSY, fundo_y);
+    ww(m, V_BG3SCREENPOSY, fundo_y);
+    let anterior = rw(m, V_BGSCREENPOSY);
+    ww(m, V_BGSCREENPOSY, fundo_y);
+    let bloco = rb(m, 0xFF_F74D);
+    if bit_de_bloco(fundo_y) == bloco {
+        wb(m, 0xFF_F74D, bloco ^ 0x10);
+        bset(
+            m,
+            V_BG1_SCROLL_FLAGS,
+            if com_sinal(fundo_y.wrapping_sub(anterior)) < 0 {
+                0
+            } else {
+                1
+            },
+        );
+    }
+    ww(m, V_BGSCRPOSY_VDP, fundo_y);
+    let flags = rb(m, V_BG1_SCROLL_FLAGS) | rb(m, V_BG2_SCROLL_FLAGS) | rb(m, V_BG3_SCROLL_FLAGS);
+    wb(m, V_BG3_SCROLL_FLAGS, flags);
+    wb(m, V_BG1_SCROLL_FLAGS, 0);
+    wb(m, V_BG2_SCROLL_FLAGS, 0);
+
+    let camera = rw(m, V_SCREENPOSX);
+    let negativo = 0u16.wrapping_sub(camera);
+    let quarto = com_sinal(negativo) >> 2;
+    let delta = u16::from_be_bytes(quarto.to_be_bytes()).wrapping_sub(negativo);
+    let passo = i32::from(com_sinal(delta))
+        .wrapping_shl(3)
+        .wrapping_div(5)
+        .wrapping_shl(12);
+    let mut d3 = u32::from(u16::from_be_bytes((com_sinal(negativo) >> 1).to_be_bytes()));
+    let mut a = V_BG_SCROLL_BUFFER;
+    for _ in 0..5 {
+        ww(m, a, baixa(d3));
+        a = a.wrapping_add(2);
+        d3 = d3
+            .rotate_left(16)
+            .wrapping_add(longa_sem_sinal(passo))
+            .rotate_left(16);
+    }
+    for (pos, quantidade) in [
+        (V_BG3SCREENPOSX, 2),
+        (V_BG2SCREENPOSX, 9),
+        (V_BGSCREENPOSX, 16),
+    ] {
+        let valor = 0u16.wrapping_sub(rw(m, pos));
+        for _ in 0..quantidade {
+            ww(m, a, valor);
+            a = a.wrapping_add(2);
+        }
+    }
+    let desloc_y = fundo_y.wrapping_sub(512);
+    let indice = desloc_y.min(0x100) & 0x1F0;
+    let inicio = V_BG_SCROLL_BUFFER.wrapping_add(u32::from(indice >> 3));
+    let alta = u32::from(negativo).wrapping_shl(16);
+    let mut destino = V_HSCROLLTABLEBUFFER;
+    let linhas = 240u16.wrapping_sub(desloc_y & 15);
+    for i in 0..linhas {
+        let faixa = u32::from((i.wrapping_add(desloc_y & 15)) >> 4);
+        let valor = rw(m, inicio.wrapping_add(faixa.wrapping_mul(2)));
+        destino = linha(m, destino, alta, valor);
+    }
+}
+
 /// `addi.l #valor,(endereço)`: soma a longa da RAM.
 fn somar_longa(m: &mut Memoria, endereco: u32, valor: u32) {
     let atual = rl(m, endereco);
@@ -544,7 +767,7 @@ fn linha(m: &mut Memoria, a: u32, alta: u32, baixa_linha: u16) -> u32 {
 
 /// `BGScroll_Block2` e `BGScroll_Block3` (REV01): soma `d4` à posição do bloco de fundo e marca
 /// a direção da coluna nova quando o bit 4 do inteiro muda.
-fn bloco_de_fundo(m: &mut Memoria, posicao: u32, bloco_x: u32, flags: u32, d4: i32) {
+fn bloco_de_fundo(m: &mut Memoria, posicao: u32, bloco_x: u32, flags: u32, d4: i32, bit_base: u32) {
     let antiga = rl(m, posicao);
     let nova = antiga.wrapping_add(longa_sem_sinal(d4));
     wl(m, posicao, nova);
@@ -556,9 +779,9 @@ fn bloco_de_fundo(m: &mut Memoria, posicao: u32, bloco_x: u32, flags: u32, d4: i
     wb(m, bloco_x, bloco ^ 0x10);
     // `d6` é 0 nas duas chamadas da GHZ: o bit 0 marca a esquerda e o bit 1, a direita.
     if longa_com_sinal(nova.wrapping_sub(antiga)) >= 0 {
-        bset(m, flags, 1);
+        bset(m, flags, bit_base.wrapping_add(1));
     } else {
-        bset(m, flags, 0);
+        bset(m, flags, bit_base);
     }
 }
 
@@ -607,4 +830,99 @@ fn level_layout_load2(
         inicio_linha = inicio_linha.wrapping_add(LAYOUT_ROW);
     }
     Ok(a0)
+}
+
+#[cfg(test)]
+mod testes_eventos {
+    use super::*;
+
+    #[test]
+    fn ghz2_altera_limite_nas_fronteiras() {
+        let mut m = Memoria::nova(vec![0; 0x10000]);
+        wb(&mut m, V_ACT, 1);
+        for (x, esperado) in [
+            (0xECF, 0x300),
+            (0xED0, 0x200),
+            (0x1600, 0x400),
+            (0x1D60, 0x300),
+        ] {
+            ww(&mut m, V_SCREENPOSX, x);
+            dynamic_level_events(&mut m).unwrap();
+            assert_eq!(rw(&mut m, V_LIMITBTM1), esperado);
+        }
+    }
+
+    #[test]
+    fn ghz3_passagem_subterranea_e_retorno_da_camera() {
+        let mut m = Memoria::nova(vec![0; 0x10000]);
+        wb(&mut m, V_ACT, 2);
+        ww(&mut m, V_SCREENPOSX, 0x960);
+        ww(&mut m, V_SCREENPOSY, 0x280);
+        dynamic_level_events(&mut m).unwrap();
+        assert_eq!(rw(&mut m, V_LIMITBTM2), 0x4C0);
+        ww(&mut m, V_SCREENPOSX, 0x1700);
+        dynamic_level_events(&mut m).unwrap();
+        assert_eq!(rb(&mut m, V_DLE_ROUTINE), 2);
+        ww(&mut m, V_SCREENPOSX, 0x95F);
+        dynamic_level_events(&mut m).unwrap();
+        assert_eq!(rb(&mut m, V_DLE_ROUTINE), 0);
+    }
+
+    #[test]
+    fn ghz3_aciona_arena_e_acompanha_camera() {
+        let mut m = Memoria::nova(vec![0; 0x10000]);
+        wb(&mut m, V_ACT, 2);
+        wb(&mut m, V_DLE_ROUTINE, 2);
+        ww(&mut m, V_SCREENPOSX, 0x2960);
+        dynamic_level_events(&mut m).unwrap();
+        assert_eq!(rb(&mut m, V_LVLOBJSPACE), 0x3D);
+        assert_eq!(rw(&mut m, V_LVLOBJSPACE.wrapping_add(OB_X)), 0x2A60);
+        assert_eq!(rw(&mut m, V_LVLOBJSPACE.wrapping_add(OB_Y)), 0x280);
+        assert_eq!(rb(&mut m, F_LOCKSCREEN), 1);
+        assert_eq!(rb(&mut m, V_SOUNDQUEUE0), 0x8C);
+        assert_eq!(rb(&mut m, V_DLE_ROUTINE), 4);
+        ww(&mut m, V_SCREENPOSX, 0x2970);
+        dynamic_level_events(&mut m).unwrap();
+        assert_eq!(rw(&mut m, V_LIMITLEFT2), 0x2970);
+    }
+
+    #[test]
+    fn mz1_transita_entre_limites_subterraneos() {
+        let mut m = Memoria::nova(vec![0; 0x10000]);
+        wb(&mut m, V_ZONE, ID_MZ);
+        ww(&mut m, V_SCREENPOSX, 0xD00);
+        ww(&mut m, V_SCREENPOSY, 0x340);
+        dynamic_level_events(&mut m).unwrap();
+        assert_eq!(rw(&mut m, V_LIMITBTM1), 0x340);
+        assert_eq!(rb(&mut m, V_DLE_ROUTINE), 2);
+        ww(&mut m, V_SCREENPOSX, 0xA80);
+        ww(&mut m, V_SCREENPOSY, 0x370);
+        dynamic_level_events(&mut m).unwrap();
+        assert_eq!(rw(&mut m, V_LIMITTOP2), 0x340);
+        assert_eq!(rw(&mut m, V_LIMITBTM1), 0x500);
+        assert_eq!(rb(&mut m, V_DLE_ROUTINE), 4);
+        ww(&mut m, V_SCREENPOSX, 0xB80);
+        ww(&mut m, V_SCREENPOSY, 0x500);
+        dynamic_level_events(&mut m).unwrap();
+        assert_eq!(rw(&mut m, V_LIMITTOP2), 0x500);
+        assert_eq!(rb(&mut m, V_DLE_ROUTINE), 6);
+    }
+
+    #[test]
+    fn mz_fundo_atualiza_posicoes_e_tabela_de_rolagem() {
+        let mut m = Memoria::nova(vec![0; 0x10000]);
+        ww(&mut m, V_SCREENPOSY, 520);
+        ww(&mut m, V_SCREENPOSX, 0x100);
+        ww(&mut m, V_SCRSHIFTX, 0x100);
+        deform_mz(&mut m);
+        assert_eq!(rw(&mut m, V_BGSCREENPOSY), 560);
+        assert_eq!(rw(&mut m, V_BGSCRPOSY_VDP), 560);
+        assert_eq!(rl(&mut m, V_BGSCREENPOSX), 0xC000);
+        assert_eq!(rl(&mut m, V_BG2SCREENPOSX), 0x8000);
+        assert_eq!(rl(&mut m, V_BG3SCREENPOSX), 0x4000);
+        assert_eq!(rw(&mut m, V_HSCROLLTABLEBUFFER), 0xFF00);
+        assert_eq!(rb(&mut m, V_BG1_SCROLL_FLAGS), 0);
+        assert_eq!(rb(&mut m, V_BG2_SCROLL_FLAGS), 0);
+        assert_ne!(rb(&mut m, V_BG3_SCROLL_FLAGS), 0);
+    }
 }

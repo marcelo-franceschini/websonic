@@ -2,12 +2,14 @@
 //! cartões de título e o laço dos cartões (`Level_TtlCardLoop`). A carga do resto da fase entra
 //! nas fatias seguintes.
 
-use super::boot::{rom_b, rom_l};
+use super::boot::{rom_b, rom_l, rom_w};
 use super::objetos::{build_sprites, execute_objects};
 use super::ram::*;
 use super::sega::{clear_screen, pal_load, pal_load_para};
 use super::titulo::{loc_vram, zerar};
-use super::{ErroAbertura, cenario, desenho, hud, objpos, plc, rb, rl, rw, titulo, wb, wl, ww};
+use super::{
+    ErroAbertura, cenario, desenho, hud, objpos, paleta, plc, rb, rl, rw, titulo, wb, wl, ww,
+};
 use crate::memoria::Memoria;
 use crate::rotinas;
 
@@ -140,13 +142,10 @@ fn col_index_load(m: &mut Memoria) {
 
 /// `OscillateNumInit`: os valores iniciais da tabela de números que oscilam.
 fn oscillate_num_init(m: &mut Memoria) {
-    const BASE: [u16; 33] = [
-        0x007C, 0x80, 0, 0x80, 0, 0x80, 0, 0x80, 0, 0x80, 0, 0x80, 0, 0x80, 0, 0x80, 0, 0x80, 0,
-        0x50F0, 0x11E, 0x2080, 0xB4, 0x3080, 0x10E, 0x5080, 0x1C2, 0x7080, 0x276, 0x80, 0, 0x80, 0,
-    ];
     let mut a1 = V_OSCILLATE;
-    for w in BASE {
-        ww(m, a1, w);
+    for i in 0..33u32 {
+        let valor = rom_w(m, 0x412E_u32.wrapping_add(i.wrapping_mul(2)));
+        ww(m, a1, valor);
         a1 = a1.wrapping_add(2);
     }
 }
@@ -227,6 +226,188 @@ pub fn level_start_game(m: &mut Memoria) -> Result<(), ErroAbertura> {
     Ok(())
 }
 
+/// `MoveSonicInDemo` da REV01, inclusive o comportamento original do byte pressionado.
+pub fn move_sonic_in_demo(m: &mut Memoria) -> Result<(), ErroAbertura> {
+    let demo = rw(m, F_DEMO);
+    if demo == 0 {
+        return Ok(());
+    }
+    if demo & 0x8000 != 0 {
+        return Err(ErroAbertura::NaoImplementado("demo dos créditos"));
+    }
+    if rb(m, V_JPADHOLD1) & BTN_START != 0 {
+        wb(m, V_GAMEMODE, GM_TITLE_ID);
+    }
+    let indice = u32::from(rb(m, V_ZONE)).wrapping_mul(4);
+    let base = rom_l(m, DEMO_DATA_PTR.wrapping_add(indice));
+    let pos = base.wrapping_add(u32::from(rw(m, V_BTNPUSHTIME1)));
+    let botoes = rom_b(m, pos);
+    wb(m, V_JPADHOLD1, botoes);
+    wb(m, V_JPADPRESS1, botoes);
+    let anterior = rb(m, V_BTNPUSHTIME2);
+    wb(m, V_BTNPUSHTIME2, anterior.wrapping_sub(1));
+    if anterior == 0 {
+        wb(m, V_BTNPUSHTIME2, rom_b(m, pos.wrapping_add(3)));
+        let deslocamento = rw(m, V_BTNPUSHTIME1).wrapping_add(2);
+        ww(m, V_BTNPUSHTIME1, deslocamento);
+    }
+    Ok(())
+}
+
+/// `Level_EndDemo`: começa o escurecimento lento após o término de uma demo regular.
+pub fn demo_fade_inicio(m: &mut Memoria) {
+    wb(m, V_GAMEMODE, 0);
+    ww(m, V_GENERICTIMER, 60);
+    ww(m, V_PFADE_START, 0x003F);
+    ww(m, 0xFF_F794, 0);
+}
+
+/// `Level_FDLoop`: o VBlank já ocorreu; retorna verdadeiro quando o temporizador terminou.
+pub fn demo_fade_passo(m: &mut Memoria) -> Result<bool, ErroAbertura> {
+    move_sonic_in_demo(m)?;
+    execute_objects(m)?;
+    build_sprites(m)?;
+    objpos::obj_pos_load(m)?;
+    let intervalo = rw(m, 0xFF_F794).wrapping_sub(1);
+    ww(m, 0xFF_F794, intervalo);
+    if i16::from_be_bytes(intervalo.to_be_bytes()) < 0 {
+        ww(m, 0xFF_F794, 2);
+        super::sega::fade_out_to_black(m);
+    }
+    Ok(rw(m, V_GENERICTIMER) == 0)
+}
+
+/// `OscillateNumDo`: parâmetros lidos da ROM, na ordem e com os bits do original.
+pub fn oscillate_num_do(m: &mut Memoria) {
+    if rb(m, V_PLAYER.wrapping_add(OB_ROUTINE)) >= 6 {
+        return;
+    }
+    let mut direcao = rw(m, V_OSCILLATE);
+    for i in 0..16u32 {
+        let valor_addr = V_OSCILLATE.wrapping_add(2).wrapping_add(i.wrapping_mul(4));
+        let taxa_addr = valor_addr.wrapping_add(2);
+        let ajuste = rom_w(m, OSCILLATE_SETTINGS.wrapping_add(i.wrapping_mul(4)));
+        let limite = rom_b(
+            m,
+            OSCILLATE_SETTINGS
+                .wrapping_add(i.wrapping_mul(4))
+                .wrapping_add(3),
+        );
+        let mascara = 1u16.wrapping_shl(15u32.wrapping_sub(i));
+        let descendo = direcao & mascara != 0;
+        let taxa = if descendo {
+            rw(m, taxa_addr).wrapping_sub(ajuste)
+        } else {
+            rw(m, taxa_addr).wrapping_add(ajuste)
+        };
+        ww(m, taxa_addr, taxa);
+        let valor = rw(m, valor_addr).wrapping_add(taxa);
+        ww(m, valor_addr, valor);
+        let alto = valor.to_be_bytes()[0];
+        if descendo && alto < limite {
+            direcao &= !mascara;
+        } else if !descendo && alto >= limite {
+            direcao |= mascara;
+        }
+    }
+    ww(m, V_OSCILLATE, direcao);
+}
+
+/// `SynchroAnimate`: atualiza os quatro relógios comuns de animação.
+pub fn synchro_animate(m: &mut Memoria) {
+    for (tempo, quadro, recarga, modulo, regressiva) in [
+        (V_ANI0_TIME, V_ANI0_FRAME, 11u8, 8u8, true),
+        (V_ANI1_TIME, V_ANI1_FRAME, 7, 4, false),
+        (V_ANI2_TIME, V_ANI2_FRAME, 7, 6, false),
+    ] {
+        let t = rb(m, tempo).wrapping_sub(1);
+        wb(m, tempo, t);
+        if t & 0x80 != 0 {
+            wb(m, tempo, recarga);
+            let q = rb(m, quadro);
+            let proximo = if regressiva {
+                q.wrapping_sub(1) & 7
+            } else {
+                q.wrapping_add(1)
+            };
+            wb(m, quadro, if proximo >= modulo { 0 } else { proximo });
+        }
+    }
+    let tempo = rb(m, V_ANI3_TIME);
+    if tempo != 0 {
+        let soma = rw(m, V_ANI3_BUF).wrapping_add(u16::from(tempo));
+        ww(m, V_ANI3_BUF, soma);
+        wb(m, V_ANI3_FRAME, (soma.rotate_left(7) & 3).to_be_bytes()[1]);
+        wb(m, V_ANI3_TIME, tempo.wrapping_sub(1));
+    }
+}
+
+/// `PauseGame`: pausa o jogo quando Start e pressionado, e retoma no Start seguinte.
+pub fn pause_game(m: &mut Memoria) {
+    if rb(m, V_LIVES) == 0 {
+        ww(m, F_PAUSE, 0);
+        return;
+    }
+    if rw(m, F_PAUSE) != 0 {
+        if rb(m, V_JPADPRESS1) & BTN_START != 0 {
+            ww(m, F_PAUSE, 0);
+            wb(m, V_SOUNDQUEUE0, 0x80);
+        }
+        return;
+    }
+    if rb(m, V_JPADPRESS1) & BTN_START != 0 {
+        ww(m, F_PAUSE, 1);
+        wb(m, V_SOUNDQUEUE0, 0x7E);
+    }
+}
+
+/// Um passo de `Level_MainLoop`, depois da interrupção de VBlank.
+pub fn level_main_loop(m: &mut Memoria) -> Result<(), ErroAbertura> {
+    pause_game(m);
+    if rw(m, F_PAUSE) != 0 {
+        build_sprites(m)?;
+        return Ok(());
+    }
+    let quadros = rw(m, V_FRAMECOUNT).wrapping_add(1);
+    ww(m, V_FRAMECOUNT, quadros);
+    move_sonic_in_demo(m)?;
+    if rb(m, V_ZONE) == ID_LZ {
+        return Err(ErroAbertura::NaoImplementado("água da LZ"));
+    }
+    execute_objects(m)?;
+    if rw(m, F_RESTART) != 0 {
+        return Ok(());
+    }
+    if rw(m, V_DEBUGUSE) != 0 || rb(m, V_PLAYER.wrapping_add(OB_ROUTINE)) < 6 {
+        cenario::deform_layers(m)?;
+    }
+    build_sprites(m)?;
+    objpos::obj_pos_load(m)?;
+    paleta::palette_cycle(m)?;
+    plc::run_plc(m)?;
+    oscillate_num_do(m);
+    synchro_animate(m);
+    signpost_art_load(m);
+    Ok(())
+}
+
+/// `SignpostArtLoad`: ao se aproximar do fim do ato, trava a borda e prepara a arte.
+fn signpost_art_load(m: &mut Memoria) {
+    if rw(m, V_DEBUGUSE) != 0 || rb(m, V_ZONE_ACT.wrapping_add(1)) == 2 {
+        return;
+    }
+    let borda = rw(m, V_LIMITRIGHT2).wrapping_sub(0x100);
+    let camera = rw(m, V_SCREENPOSX);
+    if i16::from_be_bytes(camera.to_be_bytes()) < i16::from_be_bytes(borda.to_be_bytes())
+        || rb(m, F_TIMECOUNT) == 0
+        || rw(m, V_LIMITLEFT2) == borda
+    {
+        return;
+    }
+    ww(m, V_LIMITLEFT2, borda);
+    plc::new_plc(m, 0x12);
+}
+
 /// Confere antes de executar os objetos criados: os IDs sem código entram todos numa máscara
 /// (diagnóstico da rodada), em vez de parar no primeiro.
 fn objetos_faltando(m: &mut Memoria) -> Result<(), ErroAbertura> {
@@ -246,5 +427,117 @@ fn objetos_faltando(m: &mut Memoria) -> Result<(), ErroAbertura> {
         Ok(())
     } else {
         Err(ErroAbertura::ObjetosNaoImplementados(mascara))
+    }
+}
+
+#[cfg(test)]
+mod testes_laco {
+    use super::*;
+
+    #[test]
+    fn fade_da_demo_mantem_o_tempo_e_escurece_cada_tres_quadros() {
+        let mut m = Memoria::nova(vec![0; 0x10000]);
+        wb(&mut m, V_GAMEMODE, ID_DEMO);
+        ww(&mut m, V_OPL_ROUTINE, 2);
+        ww(&mut m, V_PALETTE, 0x0EEE);
+        demo_fade_inicio(&mut m);
+        assert_eq!(rb(&mut m, V_GAMEMODE), 0);
+        assert_eq!(rw(&mut m, V_GENERICTIMER), 60);
+        assert!(!demo_fade_passo(&mut m).unwrap());
+        assert_eq!(rw(&mut m, V_PALETTE), 0x0EEC);
+        demo_fade_passo(&mut m).unwrap();
+        demo_fade_passo(&mut m).unwrap();
+        assert_eq!(rw(&mut m, V_PALETTE), 0x0EEC);
+        demo_fade_passo(&mut m).unwrap();
+        assert_eq!(rw(&mut m, V_PALETTE), 0x0EEA);
+        ww(&mut m, V_GENERICTIMER, 0);
+        assert!(demo_fade_passo(&mut m).unwrap());
+    }
+
+    #[test]
+    fn demo_rev01_atualiza_botoes_e_avanca_a_lista() {
+        let mut rom = vec![0; 0x5000];
+        let ptr = usize::try_from(DEMO_DATA_PTR).unwrap();
+        rom[ptr..ptr + 4].copy_from_slice(&0x0000_4500u32.to_be_bytes());
+        rom[0x4500..0x4504].copy_from_slice(&[8, 2, 0x10, 5]);
+        let mut m = Memoria::nova(rom);
+        ww(&mut m, F_DEMO, 1);
+        wb(&mut m, V_BTNPUSHTIME2, 1);
+        move_sonic_in_demo(&mut m).unwrap();
+        assert_eq!(rb(&mut m, V_JPADHOLD1), 8);
+        assert_eq!(rb(&mut m, V_JPADPRESS1), 8);
+        assert_eq!(rb(&mut m, V_BTNPUSHTIME2), 0);
+        move_sonic_in_demo(&mut m).unwrap();
+        assert_eq!(rw(&mut m, V_BTNPUSHTIME1), 2);
+        assert_eq!(rb(&mut m, V_BTNPUSHTIME2), 5);
+        move_sonic_in_demo(&mut m).unwrap();
+        assert_eq!(rb(&mut m, V_JPADHOLD1), 0x10);
+        assert_eq!(rb(&mut m, V_JPADPRESS1), 0x10);
+    }
+
+    #[test]
+    fn oscilacao_usa_parametros_da_rom_e_inverte_direcao() {
+        let mut rom = vec![0; 0x5000];
+        let i = usize::try_from(OSCILLATE_SETTINGS).unwrap();
+        rom[i..i + 4].copy_from_slice(&[0, 2, 0, 1]);
+        let mut m = Memoria::nova(rom);
+        ww(&mut m, V_OSCILLATE + 2, 0x00FF);
+        oscillate_num_do(&mut m);
+        assert_eq!(rw(&mut m, V_OSCILLATE + 2), 0x0101);
+        assert_eq!(rw(&mut m, V_OSCILLATE + 4), 2);
+        assert_ne!(rw(&mut m, V_OSCILLATE) & 0x8000, 0);
+        oscillate_num_do(&mut m);
+        assert_eq!(rw(&mut m, V_OSCILLATE + 4), 0);
+    }
+
+    #[test]
+    fn animacoes_sincronas_respeitam_periodos_e_limites() {
+        let mut m = Memoria::nova(vec![]);
+        synchro_animate(&mut m);
+        assert_eq!(rb(&mut m, V_ANI0_FRAME), 7);
+        assert_eq!(rb(&mut m, V_ANI1_FRAME), 1);
+        assert_eq!(rb(&mut m, V_ANI2_FRAME), 1);
+        for _ in 0..7 {
+            synchro_animate(&mut m);
+        }
+        assert_eq!(rb(&mut m, V_ANI1_FRAME), 1);
+        synchro_animate(&mut m);
+        assert_eq!(rb(&mut m, V_ANI1_FRAME), 2);
+    }
+
+    #[test]
+    fn jogo_normal_preserva_botoes_do_jogador_e_permite_pausa() {
+        let mut m = Memoria::nova(vec![]);
+        ww(&mut m, F_DEMO, 0);
+        wb(&mut m, V_JPADHOLD1, 0x08);
+        wb(&mut m, V_JPADPRESS1, 0x08);
+        move_sonic_in_demo(&mut m).unwrap();
+        assert_eq!(rb(&mut m, V_JPADHOLD1), 0x08);
+        assert_eq!(rb(&mut m, V_JPADPRESS1), 0x08);
+
+        // Teste de pausa
+        wb(&mut m, V_LIVES, 3);
+        wb(&mut m, V_JPADPRESS1, BTN_START);
+        pause_game(&mut m);
+        assert_eq!(rw(&mut m, F_PAUSE), 1);
+        assert_eq!(rb(&mut m, V_SOUNDQUEUE0), 0x7E);
+
+        // Sem start continua pausado
+        wb(&mut m, V_JPADPRESS1, 0);
+        pause_game(&mut m);
+        assert_eq!(rw(&mut m, F_PAUSE), 1);
+
+        // Com start despausa
+        wb(&mut m, V_JPADPRESS1, BTN_START);
+        pause_game(&mut m);
+        assert_eq!(rw(&mut m, F_PAUSE), 0);
+        assert_eq!(rb(&mut m, V_SOUNDQUEUE0), 0x80);
+    }
+
+    #[test]
+    fn f_restart_sinaliza_reinicio_sem_falha() {
+        let mut m = Memoria::nova(vec![]);
+        ww(&mut m, F_RESTART, 1);
+        assert!(level_main_loop(&mut m).is_ok());
     }
 }
