@@ -105,6 +105,8 @@ fn rodar_objeto(m: &mut Memoria, a0: u32, id: u8) -> Result<(), ErroAbertura> {
         ID_COLLAPSE_LEDGE => super::collapse_ledge::executar(m, a0),
         ID_SIGNPOST => super::signpost::executar(m, a0),
         0x79 => super::lamppost::executar(m, a0),
+        0x08 => super::splash::executar(m, a0),
+        0x0A => super::afogamento::executar(m, a0),
         0x3E => super::capsula::executar(m, a0),
         0x3D => super::boss_ghz::executar(m, a0),
         0x48 => super::boss_ghz::bola(m, a0),
@@ -131,6 +133,11 @@ fn rodar_objeto(m: &mut Memoria, a0: u32, id: u8) -> Result<(), ErroAbertura> {
         0x31 => super::marble_stomper::executar(m, a0),
         0x1B => super::labirinto::superficie(m, a0),
         0x33 => super::marble_bloco::executar(m, a0),
+        0x32 => super::botao::executar(m, a0),
+        0x55 => super::basaran::executar(m, a0),
+        0x71 => super::barreira_invisivel::executar(m, a0),
+        0x30 => super::vidro_marble::executar(m, a0),
+        0x46 => super::tijolo_marble::executar(m, a0),
         ID_GOT_THROUGH_CARD => super::got_through::executar(m, a0),
         0x40 => super::motobug::executar(m, a0),
         0x22 => super::buzz::executar(m, a0),
@@ -166,6 +173,8 @@ pub fn objeto_existe(id: u8) -> bool {
             | ID_COLLAPSE_LEDGE
             | ID_SIGNPOST
             | 0x79
+            | 0x08
+            | 0x0A
             | 0x15
             | 0x18
             | 0x17
@@ -192,6 +201,11 @@ pub fn objeto_existe(id: u8) -> bool {
             | 0x31
             | 0x1B
             | 0x33
+            | 0x32
+            | 0x55
+            | 0x71
+            | 0x30
+            | 0x46
             | ID_GOT_THROUGH_CARD
             | 0x40
             | 0x22
@@ -1011,7 +1025,7 @@ fn aneis(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
 }
 
 /// `CollectRing`: o original permite ultrapassar 999 anéis.
-fn collect_ring(m: &mut Memoria) {
+pub(super) fn collect_ring(m: &mut Memoria) {
     let aneis = rw(m, V_RINGS).wrapping_add(1);
     ww(m, V_RINGS, aneis);
     let atualizacao = rb(m, F_RINGCOUNT) | 1;

@@ -19,6 +19,8 @@ pub const ROTINA_TITULO: u8 = 0x04;
 pub const ROTINA_CARTOES: u8 = 0x0C;
 /// Índice de `VBlank_Levels` (a fase e a demo).
 pub const ROTINA_NIVEL: u8 = 0x08;
+/// Índice de `VBlank_SpecialStage`.
+pub const ROTINA_SPECIAL: u8 = 0x0A;
 pub const ROTINA_SEGA_PCM: u8 = 0x14;
 /// Índice de `VBlank_Continue`.
 pub const ROTINA_CONTINUE: u8 = 0x16;
@@ -147,7 +149,7 @@ fn temporizador_generico(m: &mut Memoria) {
     }
 }
 
-fn vblank_continue(m: &mut Memoria) -> Result<(), ErroAbertura> {
+fn vblank_continue_ou_special(m: &mut Memoria, special: bool) -> Result<(), ErroAbertura> {
     ww(m, Z80_BUSREQ, 0x100);
     esperar_z80(m)?;
     read_joypads(m);
@@ -156,6 +158,9 @@ fn vblank_continue(m: &mut Memoria) -> Result<(), ErroAbertura> {
     dma_para_vdp(m, V_SPRITETABLEBUFFER, sprites, 0xF800, false);
     dma_para_vdp(m, V_HSCROLLTABLEBUFFER, 0x380, 0xFC00, false);
     ww(m, Z80_BUSREQ, 0);
+    if special {
+        super::special_stage::ciclo_paleta(m);
+    }
     if rb(m, F_SONFRAMECHG) != 0 {
         let tamanho = V_SGFX_BUFFER_END.wrapping_sub(V_SGFX_BUFFER);
         dma_para_vdp(
@@ -169,6 +174,10 @@ fn vblank_continue(m: &mut Memoria) -> Result<(), ErroAbertura> {
     }
     temporizador_generico(m);
     Ok(())
+}
+
+fn vblank_continue(m: &mut Memoria) -> Result<(), ErroAbertura> {
+    vblank_continue_ou_special(m, false)
 }
 
 /// `VBlank`: o tratador inteiro, da entrada até o `rte`. Roda o driver de som no fim
@@ -199,6 +208,7 @@ pub fn tratar(m: &mut Memoria) -> Result<(), ErroAbertura> {
             ROTINA_CARTOES => vblank_cartoes(m, false)?,
             ROTINA_NIVEL => vblank_cartoes(m, true)?,
             ROTINA_CONTINUE => vblank_continue(m)?,
+            ROTINA_SPECIAL => vblank_continue_ou_special(m, true)?,
             ROTINA_PALETTE_FADE => {
                 standard_transfers(m)?;
                 let h = rw(m, V_HBLANK_HREG);

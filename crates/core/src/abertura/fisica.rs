@@ -283,6 +283,30 @@ pub(super) fn obj_floor_dist(m: &mut Memoria, a0: u32) -> u16 {
     u16_de(d1)
 }
 
+/// Palavra do bloco sob os pés depois de alinhar o objeto ao piso.
+pub(super) fn obj_floor_block(m: &mut Memoria, a0: u32) -> u16 {
+    let altura = ext_w(rb(m, a0.wrapping_add(OB_HEIGHT)));
+    let y = rw(m, a0.wrapping_add(OB_Y)).wrapping_add(altura);
+    let x = rw(m, a0.wrapping_add(OB_X));
+    let endereco = find_nearest_tile(m, a0, y, x);
+    rw(m, endereco)
+}
+
+/// `ObjHitCeiling`: distância entre o topo do objeto e o teto mais próximo.
+pub(super) fn obj_hit_ceiling(m: &mut Memoria, a0: u32) -> u16 {
+    let altura = ext_w(rb(m, a0.wrapping_add(OB_HEIGHT)));
+    let y = rw(m, a0.wrapping_add(OB_Y)).wrapping_sub(altura) ^ 15;
+    let x = rw(m, a0.wrapping_add(OB_X));
+    let busca = Busca {
+        a0,
+        d5: 14,
+        d6: 0x1000,
+        a3: 0xFFF0,
+        a4: V_ANGLEBUFFER,
+    };
+    find_floor(m, busca, y, x)
+}
+
 // ---------------------------------------------------------------------------------------------
 // O modo no chão
 // ---------------------------------------------------------------------------------------------
@@ -801,7 +825,7 @@ fn sonic_move_horizontal(m: &mut Memoria, a0: u32, direita: bool) {
 }
 
 /// `CalcAngle`: quadrante e razão são inteiros; a aproximação está na ROM.
-fn calc_angle(m: &Memoria, x: u16, y: u16) -> u8 {
+pub(super) fn calc_angle(m: &Memoria, x: u16, y: u16) -> u8 {
     if x == 0 && y == 0 {
         return 0x40;
     }

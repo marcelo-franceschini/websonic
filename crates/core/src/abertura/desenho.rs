@@ -462,8 +462,12 @@ fn draw_bg_row_for_bg_index(m: &mut Memoria, a0: u32, d0: u16, y: u16, p: Plano)
 /// `LoadTilesFromStart`: desenha a frente e o fundo inteiros antes do aparecimento da fase. `a0` é
 /// o valor que o registrador tem na entrada. Só o fundo da GHZ existe (e o do final, que o reusa).
 pub fn load_tiles_from_start(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
-    draw_chunks_com_a0(m, a0, V_SCREENPOSX, V_LVLLAYOUT_FG, 0x4000);
+    let a0 = draw_chunks_com_a0(m, a0, V_SCREENPOSX, V_LVLLAYOUT_FG, 0x4000);
     let zona = rb(m, V_ZONE);
+    if zona == ID_LZ {
+        draw_chunks_com_a0(m, a0, V_BGSCREENPOSX, V_LVLLAYOUT_BG, 0x6000);
+        return Ok(());
+    }
     if zona != 0 && zona != 6 && zona != ID_MZ {
         return Err(ErroAbertura::NaoImplementado("fundo inicial de outra zona"));
     }
@@ -489,4 +493,35 @@ pub fn load_tiles_from_start(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertur
         y = y.wrapping_add(16);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod testes_lz {
+    use super::*;
+
+    #[test]
+    fn inicio_lz_desenha_os_dois_planos_com_rolagem_propria() {
+        let mut atual = Memoria::nova(vec![0; 0x20000]);
+        let mut referencia = Memoria::nova(vec![0; 0x20000]);
+        for m in [&mut atual, &mut referencia] {
+            wb(m, V_ZONE, ID_LZ);
+            super::super::ww(m, V_SCREENPOSX, 0x100);
+            super::super::ww(m, V_BGSCREENPOSX, 0x80);
+        }
+        load_tiles_from_start(&mut atual, 0).unwrap();
+        let a0 = draw_chunks_com_a0(&mut referencia, 0, V_SCREENPOSX, V_LVLLAYOUT_FG, 0x4000);
+        draw_chunks_com_a0(&mut referencia, a0, V_BGSCREENPOSX, V_LVLLAYOUT_BG, 0x6000);
+        assert!(!atual.saidas().is_empty());
+        assert_eq!(atual.saidas(), referencia.saidas());
+    }
+
+    #[test]
+    fn atualizacao_lz_consume_flag_e_desenha_faixa() {
+        let mut m = Memoria::nova(vec![0; 0x20000]);
+        wb(&mut m, V_ZONE, ID_LZ);
+        wb(&mut m, V_BG1_SCROLL_FLAGS_DUP, 8);
+        load_tiles_as_you_move(&mut m, 0).unwrap();
+        assert_eq!(rb(&mut m, V_BG1_SCROLL_FLAGS_DUP), 0);
+        assert!(!m.saidas().is_empty());
+    }
 }

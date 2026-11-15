@@ -131,6 +131,10 @@ fn bg_scroll_speed(m: &mut Memoria, cy: u16, cx: u16) -> Result<(), ErroAbertura
         ww(m, V_BG2SCREENPOSX, cx);
         ww(m, V_BG3SCREENPOSX, cx);
     }
+    if rb(m, V_ZONE) == ID_LZ {
+        super::labirinto_cenario::iniciar_fundo(m, cy);
+        return Ok(());
+    }
     if rb(m, V_ZONE) == ID_MZ {
         return Ok(());
     }
@@ -170,6 +174,7 @@ pub fn deform_layers(m: &mut Memoria) -> Result<(), ErroAbertura> {
     ww(m, V_BGSCRPOSY_VDP, by);
     match rb(m, V_ZONE) {
         0 => deform_ghz(m),
+        ID_LZ => super::labirinto_cenario::deformar(m),
         ID_MZ => deform_mz(m),
         _ => return Err(ErroAbertura::NaoImplementado("deformação de outra zona")),
     }
@@ -406,7 +411,9 @@ fn ajustar_y(m: &mut Memoria, d1: u32) {
 /// `DynamicLevelEvents`: atualiza os eventos da GHZ e aproxima o limite vertical do alvo.
 fn dynamic_level_events(m: &mut Memoria) -> Result<(), ErroAbertura> {
     let zona = rb(m, V_ZONE);
-    if zona == ID_MZ {
+    if zona == ID_LZ {
+        super::labirinto::eventos(m)?;
+    } else if zona == ID_MZ {
         eventos_mz(m)?;
     } else if zona != 0 {
         return Err(ErroAbertura::NaoImplementado("eventos de outra zona"));
@@ -835,6 +842,23 @@ fn level_layout_load2(
 #[cfg(test)]
 mod testes_eventos {
     use super::*;
+
+    #[test]
+    fn lz_inicializa_fundo_e_deforma_cenario() {
+        let mut m = Memoria::nova(vec![0; 0x20000]);
+        wb(&mut m, V_ZONE, ID_LZ);
+        bg_scroll_speed(&mut m, 0x200, 0x100).unwrap();
+        assert_eq!(rw(&mut m, V_BGSCREENPOSY), 0x100);
+        ww(&mut m, V_PLAYER.wrapping_add(OB_X), 160);
+        ww(&mut m, V_PLAYER.wrapping_add(OB_Y), 96);
+        ww(&mut m, V_LIMITBTM1, 0x300);
+        ww(&mut m, V_LIMITBTM2, 0x300);
+        ww(&mut m, 0xFF_F646, 0x200);
+        deform_layers(&mut m).unwrap();
+        assert_eq!(rw(&mut m, 0xFF_F7D8), 0x80);
+        let fundo = rw(&mut m, V_BGSCREENPOSY);
+        assert_eq!(rw(&mut m, V_BGSCRPOSY_VDP), fundo);
+    }
 
     #[test]
     fn ghz2_altera_limite_nas_fronteiras() {

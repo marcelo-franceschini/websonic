@@ -13,10 +13,14 @@
 //! Uma interrupção que chega antes dela pega o laço no meio do trecho, e o tratador roda como no
 //! original nesse caso: com a rotina zero, só o driver de som e o contador.
 
+pub mod afogamento;
 pub mod animacao;
 pub mod badniks;
+pub mod barreira_invisivel;
+pub mod basaran;
 pub mod boot;
 pub mod boss_ghz;
+pub mod botao;
 pub mod buzz;
 pub mod capsula;
 pub mod caterkiller;
@@ -34,6 +38,7 @@ pub mod ghz_extras;
 pub mod got_through;
 pub mod hud;
 pub mod labirinto;
+pub mod labirinto_cenario;
 pub mod lamppost;
 pub mod marble_bloco;
 pub mod marble_fogo;
@@ -51,10 +56,15 @@ pub mod ponte;
 pub mod ram;
 pub mod sega;
 pub mod signpost;
+pub mod sonic_agua;
+pub mod special_result;
 pub mod special_stage;
 pub mod spikes;
+pub mod splash;
+pub mod tijolo_marble;
 pub mod titulo;
 pub mod vblank;
+pub mod vidro_marble;
 
 use crate::memoria::{ClasseLeitura, ErroAcesso, Memoria, Tamanho};
 use crate::som::z80::PontoZ80;
