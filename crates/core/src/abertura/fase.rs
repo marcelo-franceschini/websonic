@@ -462,14 +462,16 @@ mod testes_laco {
         wb(&mut m, V_ZONE, ID_LZ);
         preparo_dos_cartoes(&mut m).unwrap();
         assert_eq!(rb(&mut m, 0xFF_F64C), 1);
-        assert_eq!(rw(&mut m, 0xFF_F646), rom_w(&mut m, 0x3C2C));
+        let altura = rom_w(&m, 0x3C2C);
+        assert_eq!(rw(&mut m, 0xFF_F646), altura);
         let entrada = PAL_INDEX.wrapping_add(0x0F * 8);
-        let fonte = rom_l(&mut m, entrada);
+        let fonte = rom_l(&m, entrada);
         let destino =
-            (u32::from(rom_w(&mut m, entrada.wrapping_add(4))) | 0xFFFF_0000).wrapping_sub(0x80);
+            (u32::from(rom_w(&m, entrada.wrapping_add(4))) | 0xFFFF_0000).wrapping_sub(0x80);
+        let cor = rom_l(&m, fonte.wrapping_add(4));
         assert_eq!(
             rl(&mut m, destino.wrapping_add(4)),
-            rom_l(&mut m, fonte.wrapping_add(4))
+            cor
         );
     }
 
