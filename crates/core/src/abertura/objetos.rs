@@ -11,6 +11,8 @@ use crate::memoria::Memoria;
 mod bloco_labirinto;
 #[path = "burrobot.rs"]
 mod burrobot;
+#[path = "corrente_espinhos.rs"]
+mod corrente_espinhos;
 
 const SPRITES_MAX: u8 = 80;
 const SPRITELAYER_NUM: u32 = 8;
@@ -139,6 +141,7 @@ fn rodar_objeto(m: &mut Memoria, a0: u32, id: u8) -> Result<(), ErroAbertura> {
         0x1B => super::labirinto::superficie(m, a0),
         0x61 => bloco_labirinto::executar(m, a0),
         0x2D => burrobot::executar(m, a0),
+        0x57 => corrente_espinhos::executar(m, a0),
         0x33 => super::marble_bloco::executar(m, a0),
         0x32 => super::botao::executar(m, a0),
         0x55 => super::basaran::executar(m, a0),
@@ -209,6 +212,7 @@ pub fn objeto_existe(id: u8) -> bool {
             | 0x1B
             | 0x61
             | 0x2D
+            | 0x57
             | 0x33
             | 0x32
             | 0x55
