@@ -503,6 +503,20 @@ mod testes_laco {
     }
 
     #[test]
+    #[ignore = "requer SONIC1_ROM com a ROM REV01"]
+    fn star_light_inicializa_cenario_com_rom() {
+        let caminho = std::env::var_os("SONIC1_ROM").expect("SONIC1_ROM");
+        let mut m = Memoria::nova(std::fs::read(caminho).unwrap());
+        wb(&mut m, V_ZONE, ID_SLZ);
+        cenario::level_size_load(&mut m).unwrap();
+        cenario::deform_layers(&mut m).unwrap();
+        level_data_load(&mut m).unwrap();
+        desenho::load_tiles_from_start(&mut m, 0).unwrap();
+        paleta::palette_cycle(&mut m).unwrap();
+        assert!(!m.saidas().is_empty());
+    }
+
+    #[test]
     fn fade_da_demo_mantem_o_tempo_e_escurece_cada_tres_quadros() {
         let mut m = Memoria::nova(vec![0; 0x10000]);
         wb(&mut m, V_GAMEMODE, ID_DEMO);

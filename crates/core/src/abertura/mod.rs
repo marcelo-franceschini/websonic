@@ -62,6 +62,7 @@ pub mod special_stage;
 pub mod spikes;
 pub mod splash;
 mod spring_yard_cenario;
+mod star_light_cenario;
 pub mod tijolo_marble;
 pub mod titulo;
 pub mod vblank;

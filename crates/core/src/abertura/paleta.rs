@@ -2,7 +2,7 @@
 //! `PaletteCycle` da GHZ no `GotoDemo`. Os dois usam o mesmo código (`PCycGHZ_Go`) com tabelas
 //! diferentes na ROM.
 
-use super::boot::rom_l;
+use super::boot::{rom_l, rom_w};
 use super::ram::*;
 use super::{ErroAbertura, rb, rw, wl, ww};
 use crate::memoria::Memoria;
@@ -23,6 +23,10 @@ pub fn palette_cycle(m: &mut Memoria) -> Result<(), ErroAbertura> {
             Ok(())
         }
         ID_MZ => Ok(()),
+        ID_SLZ => {
+            ciclo_slz(m);
+            Ok(())
+        }
         ID_SYZ => {
             super::spring_yard_cenario::ciclo_paleta(m);
             Ok(())
@@ -35,6 +39,24 @@ pub fn palette_cycle(m: &mut Memoria) -> Result<(), ErroAbertura> {
             "ciclo de paleta de outra zona",
         )),
     }
+}
+
+/// `PalCycle_SLZ`: três cores, em seis passos, carregadas da ROM.
+fn ciclo_slz(m: &mut Memoria) {
+    let tempo = rw(m, V_PCYC_TIME).wrapping_sub(1);
+    ww(m, V_PCYC_TIME, tempo);
+    if tempo & 0x8000 == 0 {
+        return;
+    }
+    ww(m, V_PCYC_TIME, 7);
+    let proximo = rw(m, V_PCYC_NUM).wrapping_add(1);
+    let passo = if proximo < 6 { proximo } else { 0 };
+    ww(m, V_PCYC_NUM, passo);
+    let fonte = 0x1C4A_u32.wrapping_add(u32::from(passo).wrapping_mul(6));
+    let cor = rom_w(m, fonte);
+    let outras = rom_l(m, fonte.wrapping_add(2));
+    ww(m, V_PALETTE_LINE_3.wrapping_add(22), cor);
+    wl(m, V_PALETTE_LINE_3.wrapping_add(26), outras);
 }
 
 /// `PCycGHZ_Go`: a cada seis quadros, quatro cores da tabela vão para as cores 8 a 11 da linha 3
