@@ -476,6 +476,22 @@ mod testes_laco {
     }
 
     #[test]
+    #[ignore = "requer SONIC1_ROM com a ROM REV01"]
+    fn labyrinth_carrega_primeiro_ato_com_agua() {
+        let caminho = std::env::var_os("SONIC1_ROM").expect("SONIC1_ROM");
+        let mut m = Memoria::nova(std::fs::read(caminho).unwrap());
+        wb(&mut m, V_ZONE, ID_LZ);
+        preparo_dos_cartoes(&mut m).unwrap();
+        preparo_final(&mut m).unwrap();
+        assert_eq!(rb(&mut m, 0xFF_D780), 0x1B);
+        assert_eq!(rb(&mut m, 0xFF_D7C0), 0x1B);
+        assert_eq!(rb(&mut m, V_PLAYER), ID_SONIC);
+        for _ in 0..120 {
+            level_main_loop(&mut m).unwrap();
+        }
+    }
+
+    #[test]
     fn fade_da_demo_mantem_o_tempo_e_escurece_cada_tres_quadros() {
         let mut m = Memoria::nova(vec![0; 0x10000]);
         wb(&mut m, V_GAMEMODE, ID_DEMO);
