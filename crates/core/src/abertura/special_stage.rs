@@ -1,4 +1,4 @@
-//! Preparação dos dados de Special Stage. O laço e a renderização ainda não estão ligados.
+//! Preparação e execução dos quadros da Special Stage.
 use super::boot::{rom_b, rom_l, rom_w};
 use super::ram::*;
 use super::{ErroAbertura, rb, wb, wl, ww};
@@ -700,11 +700,42 @@ pub fn executar_sonic(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
     Ok(())
 }
 
-/// Um quadro após o VBlank especial; o fundo animado ainda depende de implementação.
-pub fn passo(m: &mut Memoria) -> Result<(), ErroAbertura> {
-    if super::rw(m, F_DEMO) != 0 {
-        return Err(ErroAbertura::NaoImplementado("demo da Special Stage"));
+/// Reproduz as entradas da demo, incluindo o comportamento de botões da REV01.
+fn entrada_demo(m: &mut Memoria) -> Result<(), ErroAbertura> {
+    let demo = super::rw(m, F_DEMO);
+    if demo == 0 {
+        return Ok(());
     }
+    if demo & 0x8000 != 0 {
+        return Err(ErroAbertura::NaoImplementado("demo dos créditos"));
+    }
+    if rb(m, V_JPADHOLD1) & BTN_START != 0 {
+        wb(m, V_GAMEMODE, GM_TITLE_ID);
+    }
+    // A escolha ocorre depois de Start alterar o modo, como na REV01.
+    let indice = if rb(m, V_GAMEMODE) == ID_SPECIAL {
+        6
+    } else {
+        u32::from(rb(m, V_ZONE))
+    };
+    let base = rom_l(m, DEMO_DATA_PTR.wrapping_add(indice.wrapping_mul(4)));
+    let posicao = base.wrapping_add(u32::from(super::rw(m, V_BTNPUSHTIME1)));
+    let botoes = rom_b(m, posicao);
+    wb(m, V_JPADHOLD1, botoes);
+    wb(m, V_JPADPRESS1, botoes);
+    let tempo = rb(m, V_BTNPUSHTIME2);
+    wb(m, V_BTNPUSHTIME2, tempo.wrapping_sub(1));
+    if tempo == 0 {
+        wb(m, V_BTNPUSHTIME2, rom_b(m, posicao.wrapping_add(3)));
+        let proxima = super::rw(m, V_BTNPUSHTIME1).wrapping_add(2);
+        ww(m, V_BTNPUSHTIME1, proxima);
+    }
+    Ok(())
+}
+
+/// Executa um quadro após o VBlank especial.
+pub fn passo(m: &mut Memoria) -> Result<(), ErroAbertura> {
+    entrada_demo(m)?;
     let botoes = super::rw(m, V_JPADHOLD1);
     ww(m, V_JPADHOLD2, botoes);
     executar_sonic(m, V_PLAYER)?;
@@ -1120,6 +1151,38 @@ mod testes {
         passo(&mut m).unwrap();
         assert_eq!(rb(&mut m, V_PLAYER.wrapping_add(OB_ROUTINE)), 2);
         assert_eq!(rb(&mut m, V_PLAYER.wrapping_add(OB_ANIM)), ANIM_ROLL);
+    }
+
+    #[test]
+    fn demo_especial_reproduz_entradas_e_avanca_no_tempo() {
+        let mut rom = vec![0; 0x20000];
+        let ponteiro = usize::try_from(DEMO_DATA_PTR.wrapping_add(24)).unwrap();
+        rom[ponteiro..ponteiro.wrapping_add(4)].copy_from_slice(&0x1000u32.to_be_bytes());
+        rom[0x1000] = 0x48;
+        rom[0x1003] = 3;
+        let mut m = Memoria::nova(rom);
+        ww(&mut m, F_DEMO, 1);
+        wb(&mut m, V_GAMEMODE, ID_SPECIAL);
+        entrada_demo(&mut m).unwrap();
+        assert_eq!(rb(&mut m, V_JPADHOLD1), 0x48);
+        assert_eq!(rb(&mut m, V_JPADPRESS1), 0x48);
+        assert_eq!(rb(&mut m, V_BTNPUSHTIME2), 3);
+        assert_eq!(super::super::rw(&mut m, V_BTNPUSHTIME1), 2);
+    }
+
+    #[test]
+    fn start_na_demo_especial_altera_modo_antes_de_escolher_entrada() {
+        let mut rom = vec![0; 0x20000];
+        let ponteiro = usize::try_from(DEMO_DATA_PTR).unwrap();
+        rom[ponteiro..ponteiro.wrapping_add(4)].copy_from_slice(&0x1000u32.to_be_bytes());
+        rom[0x1000] = 4;
+        let mut m = Memoria::nova(rom);
+        ww(&mut m, F_DEMO, 1);
+        wb(&mut m, V_GAMEMODE, ID_SPECIAL);
+        wb(&mut m, V_JPADHOLD1, BTN_START);
+        entrada_demo(&mut m).unwrap();
+        assert_eq!(rb(&mut m, V_GAMEMODE), GM_TITLE_ID);
+        assert_eq!(rb(&mut m, V_JPADHOLD1), 4);
     }
 
     #[test]
