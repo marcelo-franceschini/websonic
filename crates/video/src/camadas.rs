@@ -6,8 +6,14 @@
 
 use crate::registros::{Registros, RolagemH, RolagemV, TamanhoPlano};
 
-/// Largura da área ativa.
+/// Largura nominal da área ativa.
 pub const LARGURA: usize = 320;
+/// Largura expandida para widescreen 16:9 (426x224).
+pub const LARGURA_WIDESCREEN: usize = 426;
+/// Altura nominal da área ativa.
+pub const ALTURA: usize = 224;
+/// Altura expandida para 240 linhas.
+pub const ALTURA_EXPANDIDA: usize = 240;
 /// Colunas de 16 pontos na área ativa.
 const COLUNAS: i32 = 20;
 /// Início da área de exibição dos sprites (coordenada de sprite que cai no ponto 0).
@@ -19,6 +25,54 @@ pub struct PontoDeTile {
     pub cor: u8,
     pub paleta: u8,
     pub prioridade: bool,
+}
+
+/// Byte bruto da VRAM e atributos usados pelo compositor gráfico.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct FonteDeTile {
+    pub byte: u8,
+    pub atributos: u8,
+}
+
+impl FonteDeTile {
+    pub fn decodificar(self) -> PontoDeTile {
+        PontoDeTile {
+            cor: if self.atributos & 0x80 != 0 {
+                self.byte >> 4
+            } else {
+                self.byte & 15
+            },
+            paleta: (self.atributos >> 4) & 3,
+            prioridade: self.atributos & 0x40 != 0,
+        }
+    }
+}
+
+fn fonte_do_tile(
+    vram: &[u8],
+    padrao: u16,
+    linha: u16,
+    v_flip: bool,
+    h_flip: bool,
+    k: usize,
+    atributos: (u8, bool),
+) -> FonteDeTile {
+    let l = if v_flip {
+        7u16.saturating_sub(linha & 7)
+    } else {
+        linha & 7
+    };
+    let pos = if h_flip { 7usize.saturating_sub(k) } else { k };
+    let base = 32u16
+        .wrapping_mul(padrao)
+        .wrapping_add(4u16.wrapping_mul(l));
+    let endereco = base.wrapping_add(u16::try_from(pos / 2).unwrap_or(0));
+    FonteDeTile {
+        byte: vram.get(usize::from(endereco)).copied().unwrap_or(0),
+        atributos: (atributos.0 << 4)
+            | (u8::from(atributos.1) << 6)
+            | (u8::from(pos.is_multiple_of(2)) << 7),
+    }
 }
 
 /// Os dois planos de rolagem.
@@ -78,7 +132,12 @@ fn rolagem_v(
                     .saturating_add(desloc);
                 vsram.get(i).copied().unwrap_or(0)
             } else {
-                0
+                let col = usize::try_from(coluna).unwrap_or(0);
+                let modulo = usize::try_from(COLUNAS).unwrap_or(20);
+                let col_efetiva = col.checked_rem(modulo).unwrap_or(0);
+                let desloc = usize::from(plano == Plano::B);
+                let i = col_efetiva.saturating_mul(2).saturating_add(desloc);
+                vsram.get(i).copied().unwrap_or(0)
             }
         }
     };
@@ -187,7 +246,12 @@ pub fn desenhar_planos(
         let grosso = h_scroll & !15;
         let fino = i32::from(h_scroll & 15);
         let primeira: i32 = if fino != 0 { -1 } else { 0 };
-        for coluna in primeira..COLUNAS {
+        let ultima_coluna = fim
+            .saturating_add(15)
+            .checked_div(16)
+            .unwrap_or(COLUNAS)
+            .max(COLUNAS);
+        for coluna in primeira..ultima_coluna {
             let v = rolagem_v(vsram, reg, plano, coluna, v_tela_cheia);
             let linha_rolada = linha.wrapping_add(v) & mascara_v;
             let celula_v = linha_rolada >> 3;
@@ -215,7 +279,7 @@ pub fn desenhar_planos(
                     prioridade: nome.prioridade,
                 };
                 // Caminho comum: a célula inteira cabe no que vai ser desenhado.
-                if col_fb >= ini.max(0) && col_fb.wrapping_add(8) <= fim.min(320) {
+                if col_fb >= ini.max(0) && col_fb.wrapping_add(8) <= fim {
                     let inicio = usize::try_from(col_fb).unwrap_or(0);
                     if let Some(dest) = buf.get_mut(inicio..inicio.saturating_add(8)) {
                         for (d, c) in dest.iter_mut().zip(cores.iter()) {
@@ -231,6 +295,80 @@ pub fn desenhar_planos(
                     }
                     if let Some(p) = usize::try_from(x).ok().and_then(|i| buf.get_mut(i)) {
                         *p = ponto(*cor);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Captura as leituras de VRAM dos planos, antes da decodificação dos pixels.
+pub fn fontes_planos(
+    p: &ParametrosDosPlanos<'_>,
+    buf_a: &mut [FonteDeTile],
+    buf_b: &mut [FonteDeTile],
+) {
+    let (larg, alt) = (p.reg.largura_do_plano(), p.reg.altura_do_plano());
+    let px = |t: TamanhoPlano| t.celulas().wrapping_mul(8);
+    let (h_px, v_px) = match (larg, alt) {
+        (TamanhoPlano::Invalido, _) => (256u16, 8u16),
+        (_, TamanhoPlano::Invalido) => (px(larg), 256),
+        _ => (px(larg), px(alt)),
+    };
+    let h_celulas = h_px / 8;
+    let largura_nome = if larg == TamanhoPlano::Invalido {
+        1
+    } else {
+        larg.celulas()
+    };
+    for plano in [Plano::A, Plano::B] {
+        let (base, h_scroll, buf) = match plano {
+            Plano::A => (p.reg.nome_a(), p.rolagem_h.0, &mut *buf_a),
+            Plano::B => (p.reg.nome_b(), p.rolagem_h.1, &mut *buf_b),
+        };
+        let grosso = h_scroll & !15;
+        let fino = i32::from(h_scroll & 15);
+        let primeira = if fino != 0 { -1 } else { 0 };
+        let ultima_coluna = p
+            .fim
+            .saturating_add(15)
+            .checked_div(16)
+            .unwrap_or(COLUNAS)
+            .max(COLUNAS);
+        for coluna in primeira..ultima_coluna {
+            let v = rolagem_v(p.vsram, p.reg, plano, coluna, p.v_tela_cheia);
+            let linha_rolada = p.linha.wrapping_add(v) & v_px.wrapping_sub(1);
+            let celula_v = linha_rolada >> 3;
+            let pixel_rolado = u16::try_from((coluna.wrapping_mul(16)) & 0xffff)
+                .unwrap_or(0)
+                .wrapping_sub(grosso);
+            let celula_h_base = pixel_rolado / 8;
+            for desloc in 0..2i32 {
+                let col_fb = coluna
+                    .wrapping_mul(16)
+                    .wrapping_add(desloc.wrapping_mul(8))
+                    .wrapping_add(fino);
+                if col_fb.wrapping_add(8) <= p.ini || col_fb >= p.fim {
+                    continue;
+                }
+                let celula_h = celula_h_base.wrapping_add(u16::try_from(desloc).unwrap_or(0))
+                    & h_celulas.wrapping_sub(1);
+                let nome = ler_nome(p.vram, base, largura_nome, celula_v, celula_h);
+                for k in 0..8usize {
+                    let x = col_fb.wrapping_add(i32::try_from(k).unwrap_or(0));
+                    if x < p.ini || x >= p.fim {
+                        continue;
+                    }
+                    if let Some(d) = usize::try_from(x).ok().and_then(|i| buf.get_mut(i)) {
+                        *d = fonte_do_tile(
+                            p.vram,
+                            nome.padrao,
+                            linha_rolada,
+                            nome.v_flip,
+                            nome.h_flip,
+                            k,
+                            (nome.paleta, nome.prioridade),
+                        );
                     }
                 }
             }
@@ -347,7 +485,8 @@ pub fn desenhar_sprites(
     let mut achou_nao_zero = estouro_anterior;
     let mut mascara = false;
     let inicio = INICIO_SPRITES;
-    let fim = INICIO_SPRITES.wrapping_add(320);
+    let largura = pontos.len().max(1);
+    let fim = INICIO_SPRITES.wrapping_add(u16::try_from(largura).unwrap_or(320));
     'fora: for s in sprites {
         if s.h_pos == 0 && achou_nao_zero {
             mascara = true;
@@ -399,6 +538,84 @@ pub fn desenhar_sprites(
                         paleta: s.paleta,
                         prioridade: s.prioridade,
                     };
+                }
+            }
+        }
+    }
+    estouro
+}
+
+/// Captura os pixels candidatos de cada sprite na ordem da tabela. O shader decide
+/// qual candidato é o primeiro opaco, depois de ler os nibbles dos bytes da VRAM.
+pub fn fontes_sprites(
+    vram: &[u8],
+    sprites: &[Sprite],
+    linha: u16,
+    pular_tiles: u16,
+    estouro_anterior: bool,
+    fontes: &mut [FonteDeTile],
+) -> bool {
+    fontes.fill(FonteDeTile::default());
+    let max_tiles = 40u16.saturating_sub(pular_tiles);
+    let linha_sprite = INICIO_SPRITES.wrapping_add(linha);
+    let mut buscados = 0u16;
+    let mut achou_nao_zero = estouro_anterior;
+    let mut mascara = false;
+    let mut estouro = false;
+    let inicio = INICIO_SPRITES;
+    let largura = fontes.len().checked_div(20).unwrap_or(LARGURA).max(1);
+    let fim = INICIO_SPRITES.wrapping_add(u16::try_from(largura).unwrap_or(320));
+    'fora: for (indice, s) in sprites.iter().enumerate().take(20) {
+        if s.h_pos == 0 && achou_nao_zero {
+            mascara = true;
+        } else if s.h_pos != 0 {
+            achou_nao_zero = true;
+        }
+        let alt = u16::from(s.alt);
+        let larg = u16::from(s.larg);
+        let pos = linha_sprite.wrapping_sub(s.v_pos & 0x1ff) & 0x1f;
+        let pos = if s.v_flip {
+            ((alt << 3).wrapping_sub(1)).wrapping_sub(pos) & 0x1f
+        } else {
+            pos
+        };
+        for h in 0..larg {
+            if buscados == max_tiles {
+                estouro = true;
+                break 'fora;
+            }
+            let coluna = if s.h_flip {
+                larg.wrapping_sub(1).wrapping_sub(h)
+            } else {
+                h
+            };
+            let offset = coluna.wrapping_mul(alt).wrapping_add(pos >> 3);
+            let padrao = s.padrao.wrapping_add(offset);
+            buscados = buscados.wrapping_add(1);
+            if mascara {
+                continue;
+            }
+            let esq = s.h_pos.wrapping_add(h.wrapping_mul(8));
+            if esq >= fim || esq.wrapping_add(8) <= inicio {
+                continue;
+            }
+            for k in 0..8usize {
+                let h_pos = esq.wrapping_add(u16::try_from(k).unwrap_or(0));
+                if h_pos < inicio || h_pos >= fim {
+                    continue;
+                }
+                let x = usize::from(h_pos.wrapping_sub(inicio));
+                let i = indice.saturating_mul(largura).saturating_add(x);
+                if let Some(d) = fontes.get_mut(i) {
+                    *d = fonte_do_tile(
+                        vram,
+                        padrao,
+                        pos & 7,
+                        false,
+                        s.h_flip,
+                        k,
+                        (s.paleta, s.prioridade),
+                    );
                 }
             }
         }

@@ -45,3 +45,34 @@ fn console_reage_a_escrita_de_som() {
     assert!(nao_zeros1 > 0, "Quadro 1 deveria ter tom");
     assert!(nao_zeros2 > 0, "Quadro 2 deveria continuar tocando o tom");
 }
+#[test]
+fn taxa_do_dispositivo_controla_quantidade_de_amostras() {
+    let contar = |taxa| {
+        let mut console = sonic1_console::Console::com_taxa_audio(vec![0; 0x4000], taxa);
+        (0..12)
+            .map(|_| {
+                console.executar_quadro();
+                console.extrair_audio().len()
+            })
+            .sum::<usize>()
+    };
+    let a = contar(44_100.0);
+    let b = contar(48_000.0);
+    assert!(a > 0 && b > a);
+    assert!((a as f64 / b as f64 - 44_100.0 / 48_000.0).abs() < 0.02);
+}
+
+#[test]
+fn fila_cheia_reduz_a_quantidade_de_audio_produzido() {
+    let contar = |ocupacao| {
+        let mut console = Console::com_taxa_audio(vec![0; 0x4000], 48_000.0);
+        console.definir_ocupacao_audio(ocupacao);
+        (0..30)
+            .map(|_| {
+                console.executar_quadro();
+                console.extrair_audio().len()
+            })
+            .sum::<usize>()
+    };
+    assert!(contar(0) > contar(16_000));
+}

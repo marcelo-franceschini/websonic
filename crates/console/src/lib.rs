@@ -236,6 +236,11 @@ pub struct Console {
 
 impl Console {
     pub fn novo(rom: Vec<u8>) -> Self {
+        Self::com_taxa_audio(rom, 48_000.0)
+    }
+
+    /// Cria o console usando a taxa efetiva do dispositivo de áudio.
+    pub fn com_taxa_audio(rom: Vec<u8>, taxa_audio: f64) -> Self {
         Self {
             ab: Abertura::nova_nominal(rom),
             ponte: Ponte::nova(),
@@ -243,7 +248,7 @@ impl Console {
             quadros_na_espera: 0,
             escritas_no_quadro: 0,
             sint: Sintetizador::novo(),
-            misturador: MisturadorSaida::novo(48_000.0),
+            misturador: MisturadorSaida::novo(taxa_audio),
             quadro_num: 0,
             buffer_audio_quadro: Vec::new(),
             amostras_fm: Vec::new(),
@@ -279,8 +284,47 @@ impl Console {
         self.ab.mem.definir_botoes(mascara);
     }
 
+    /// Ativa a captura das camadas para composição gráfica.
+    pub fn ativar_gpu(&mut self) {
+        self.ponte.rend.ativar_gpu();
+    }
+
+    pub fn ativar_gpu_sem_referencia(&mut self) {
+        self.ponte.rend.ativar_gpu_sem_referencia();
+    }
+
+    pub fn ativar_gpu_com_dimensoes(&mut self, largura: usize, altura: usize) {
+        self.ponte.rend.ativar_gpu_com_dimensoes(largura, altura);
+    }
+
+    pub fn ativar_gpu_widescreen(&mut self) {
+        self.ponte.rend.ativar_gpu_widescreen();
+    }
+
+    pub fn desativar_gpu(&mut self) {
+        self.ponte.rend.desativar_gpu();
+    }
+
+    pub fn quadro_gpu(&self) -> Option<&sonic1_video::quadro_gpu::QuadroGpu> {
+        self.ponte.rend.quadro_gpu()
+    }
+
+    /// Informa a ocupação da fila de áudio do navegador em pares estéreo.
+    pub fn definir_ocupacao_audio(&mut self, pares: usize) {
+        self.misturador.definir_ocupacao_externa(pares);
+    }
+
     /// Roda um quadro e devolve a imagem em RGBA (320 por 224).
     pub fn executar_quadro(&mut self) -> Vec<u8> {
+        self.executar_quadro_interno(true)
+    }
+
+    /// Avança a simulação sem construir uma imagem RGBA na CPU.
+    pub fn simular_quadro(&mut self) {
+        self.executar_quadro_interno(false);
+    }
+
+    fn executar_quadro_interno(&mut self, imagem: bool) -> Vec<u8> {
         let eventos = self.eventos_nominais();
         let teve_vblank = eventos
             .iter()
@@ -340,7 +384,12 @@ impl Console {
             self.buffer_audio_quadro = bloco;
         }
 
-        self.ponte.fechar_quadro()
+        if imagem {
+            self.ponte.fechar_quadro()
+        } else {
+            self.ponte.rend.fechar_quadro();
+            Vec::new()
+        }
     }
 
     /// Devolve as amostras de áudio estereo geradas no último quadro (intercaladas: L, R, L, R...).

@@ -6,6 +6,7 @@
 use crate::analogico::FiltroAnalogico;
 use crate::reamostrador::Reamostrador;
 use sonic1_audio::{AmostraFm, AmostraPsg};
+use std::collections::VecDeque;
 
 /// Frequencias de amostragem nativas do Mega Drive NTSC (mclk = 53 693 175 Hz).
 pub const TAXA_FM_NATIVA: f64 = 53_693_175.0 / 1008.0; // ~53 267.0387 Hz
@@ -29,6 +30,9 @@ pub struct MisturadorSaida {
     ganho_psg: f32,
 
     buffer_audio: Vec<(f32, f32)>,
+    pendentes_fm: VecDeque<(f32, f32)>,
+    pendentes_psg: VecDeque<(f32, f32)>,
+    ocupacao_externa: Option<usize>,
     tamanho_alvo_buffer: usize,
 
     cont_fm_in: u64,
@@ -55,6 +59,9 @@ impl MisturadorSaida {
             ganho_fm: 0.75,
             ganho_psg: 0.50,
             buffer_audio: Vec::with_capacity(tamanho_alvo_buffer * 4),
+            pendentes_fm: VecDeque::new(),
+            pendentes_psg: VecDeque::new(),
+            ocupacao_externa: None,
             tamanho_alvo_buffer,
             cont_fm_in: 0,
             cont_psg_in: 0,
@@ -117,10 +124,11 @@ impl MisturadorSaida {
         self.reamostrador_psg.processar(&mut saida_psg);
 
         // Combina as saidas interpoladas e passa pelo filtro analogico
-        let n = saida_fm.len().min(saida_psg.len());
-        for i in 0..n {
-            let (fml, fmr) = saida_fm[i];
-            let (psgl, psgr) = saida_psg[i];
+        self.pendentes_fm.extend(saida_fm);
+        self.pendentes_psg.extend(saida_psg);
+        while !self.pendentes_fm.is_empty() && !self.pendentes_psg.is_empty() {
+            let (fml, fmr) = self.pendentes_fm.pop_front().expect("FM disponível");
+            let (psgl, psgr) = self.pendentes_psg.pop_front().expect("PSG disponível");
 
             let mist_l = (fml + psgl).clamp(-1.0, 1.0);
             let mist_r = (fmr + psgr).clamp(-1.0, 1.0);
@@ -142,7 +150,7 @@ impl MisturadorSaida {
     }
 
     fn atualizar_controlador_taxa(&mut self) {
-        let ocupacao = self.buffer_audio.len();
+        let ocupacao = self.ocupacao_externa.unwrap_or(self.buffer_audio.len());
         let erro = (ocupacao as f64) - (self.tamanho_alvo_buffer as f64);
 
         // Ganho proporcional suave: ~0.1% a cada 500 amostras de desvio
@@ -150,8 +158,13 @@ impl MisturadorSaida {
         let ajuste = (erro * kp).clamp(-0.005, 0.005);
 
         // Se o buffer esta crescendo, aceleramos a saida (ou aumentamos razao)
-        self.reamostrador_fm.definir_ajuste_fino(-ajuste);
-        self.reamostrador_psg.definir_ajuste_fino(-ajuste);
+        self.reamostrador_fm.definir_ajuste_fino(ajuste);
+        self.reamostrador_psg.definir_ajuste_fino(ajuste);
+    }
+
+    /// Atualiza a ocupação da fila consumida pelo dispositivo, em pares estéreo.
+    pub fn definir_ocupacao_externa(&mut self, pares: usize) {
+        self.ocupacao_externa = Some(pares);
     }
 
     /// Retira um bloco de amostras estereo intercaladas (L, R, L, R...) para o AudioWorklet.
@@ -210,6 +223,9 @@ impl MisturadorSaida {
         self.reamostrador_psg.reset();
         self.filtro_analogico.reset();
         self.buffer_audio.clear();
+        self.pendentes_fm.clear();
+        self.pendentes_psg.clear();
+        self.ocupacao_externa = None;
         self.cont_fm_in = 0;
         self.cont_psg_in = 0;
         self.cont_saida = 0;

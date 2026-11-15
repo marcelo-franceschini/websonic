@@ -18,6 +18,11 @@ pub struct TabelaFiltro {
 impl TabelaFiltro {
     /// Gera a tabela de sinc janelada por Blackman-Harris normalizada.
     pub fn gerar() -> Self {
+        Self::gerar_com_corte(1.0)
+    }
+
+    /// O corte é relativo ao Nyquist da entrada. Reduzi-lo evita aliasing ao reduzir a taxa.
+    fn gerar_com_corte(corte: f32) -> Self {
         let mut coefs = [[0.0f32; TAPS_POLIFASICO]; FASES_POLIFASICO];
         let metade_taps = (TAPS_POLIFASICO as f32) / 2.0;
 
@@ -28,10 +33,10 @@ impl TabelaFiltro {
             for (k, c) in linha.iter_mut().enumerate() {
                 let x = (k as f32) - metade_taps + delta;
                 let sinc = if x.abs() < 1e-6 {
-                    1.0
+                    corte
                 } else {
                     let px = PI * x;
-                    px.sin() / px
+                    (px * corte).sin() / px
                 };
 
                 // Janela de Blackman-Harris de 4 termos
@@ -80,7 +85,8 @@ pub struct Reamostrador {
 
 impl Reamostrador {
     pub fn novo(taxa_entrada: f64, taxa_saida: f64) -> Self {
-        let tabela = TabelaFiltro::gerar();
+        let corte = (taxa_saida / taxa_entrada).min(1.0) as f32;
+        let tabela = TabelaFiltro::gerar_com_corte(corte);
         let passo_base = taxa_entrada / taxa_saida;
         let mut buffer_in_l = Vec::with_capacity(8192);
         let mut buffer_in_r = Vec::with_capacity(8192);

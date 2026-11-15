@@ -41,9 +41,10 @@ fn main() -> std::process::ExitCode {
                 eprintln!("nao gravei o ppm");
             }
         }
-    }
-    if let Some(e) = c.erro() {
-        println!("erro_do_nucleo {e}");
+        if let Some(e) = c.erro() {
+            println!("erro_do_nucleo quadro={q} {e}");
+            return std::process::ExitCode::FAILURE;
+        }
     }
     std::process::ExitCode::SUCCESS
 }
