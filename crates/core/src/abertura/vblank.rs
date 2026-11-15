@@ -103,7 +103,11 @@ fn copiar_longas(m: &mut Memoria, origem: u32, destino: u32, longas: u32) {
 /// dos sprites e a arte do Sonic quando ela mudou. Depois copia as posições da tela e as flags de
 /// rolagem para os `_dup`, desenha as faixas novas, anima os tiles, atualiza o HUD e anda a fila
 /// de arte.
-fn vblank_cartoes(m: &mut Memoria, nivel: bool) -> Result<(), ErroAbertura> {
+fn vblank_cartoes(
+    m: &mut Memoria,
+    nivel: bool,
+    hblank_disponivel: bool,
+) -> Result<bool, ErroAbertura> {
     ww(m, Z80_BUSREQ, 0x100);
     esperar_z80(m)?;
     read_joypads(m);
@@ -127,6 +131,10 @@ fn vblank_cartoes(m: &mut Memoria, nivel: bool) -> Result<(), ErroAbertura> {
     // `movem.l` de `v_screenposx` até `v_bg3screenposy` (oito longas) e das quatro flags.
     copiar_longas(m, V_SCREENPOSX, V_SCREENPOSX_DUP, 8);
     copiar_longas(m, V_FG_SCROLL_FLAGS, V_FG_SCROLL_FLAGS_DUP, 2);
+    if nivel && hblank_disponivel && rb(m, V_HBLANK_HREG.wrapping_add(1)) < 96 {
+        wb(m, 0xFF_F64F, 1);
+        return Ok(true);
+    }
     // `ReadJoypads` deixa `a0` em `v_jpadhold1 + 4`; nada depois dele o muda (D7.26).
     super::desenho::load_tiles_as_you_move(m, V_JPADHOLD1.wrapping_add(4))?;
     super::animacao::animate_level_gfx(m)?;
@@ -137,6 +145,32 @@ fn vblank_cartoes(m: &mut Memoria, nivel: bool) -> Result<(), ErroAbertura> {
         temporizador_generico(m);
     } else {
         super::plc::process_plc_9(m);
+    }
+    Ok(false)
+}
+
+/// `HBlank`: troca a CRAM pela paleta submersa uma vez por quadro.
+/// A entrega da interrupção horizontal é responsabilidade do laço de quadro.
+pub fn tratar_hblank(m: &mut Memoria) -> Result<(), ErroAbertura> {
+    if rw(m, F_HBLANK_PAL) == 0 {
+        return Ok(());
+    }
+    ww(m, F_HBLANK_PAL, 0);
+    wl(m, VDP_CONTROLE, 0xC000_0000);
+    for i in 0..32u32 {
+        let cores = rl(m, V_PALETTE_WATER.wrapping_add(i.wrapping_mul(4)));
+        wl(m, VDP_DADOS, cores);
+    }
+    ww(m, VDP_CONTROLE, 0x8ADF);
+    const F_DOUPDATESINHBLANK: u32 = 0xFF_F64F;
+    if rb(m, F_DOUPDATESINHBLANK) != 0 {
+        wb(m, F_DOUPDATESINHBLANK, 0);
+        super::desenho::load_tiles_as_you_move(m, V_JPADHOLD1.wrapping_add(4))?;
+        super::animacao::animate_level_gfx(m)?;
+        super::hud::hud_update(m)?;
+        super::plc::process_plc_3(m);
+        temporizador_generico(m);
+        Driver::novo(m).update_music();
     }
     Ok(())
 }
@@ -183,6 +217,15 @@ fn vblank_continue(m: &mut Memoria) -> Result<(), ErroAbertura> {
 /// `VBlank`: o tratador inteiro, da entrada até o `rte`. Roda o driver de som no fim
 /// (`VBlank_Music`) e conta o VBlank.
 pub fn tratar(m: &mut Memoria) -> Result<(), ErroAbertura> {
+    tratar_com_hblank(m, false)
+}
+
+/// Executa VBlank com a entrega de HBlank confirmada no mesmo lote de eventos.
+pub(super) fn tratar_com_hblank(
+    m: &mut Memoria,
+    hblank_disponivel: bool,
+) -> Result<(), ErroAbertura> {
+    let mut som_adiado = false;
     let rotina = rb(m, V_VBLANK_ROUTINE);
     if rotina != 0 {
         let _ = rw(m, VDP_CONTROLE);
@@ -205,8 +248,10 @@ pub fn tratar(m: &mut Memoria) -> Result<(), ErroAbertura> {
                 super::plc::process_plc_9(m);
                 temporizador_generico(m);
             }
-            ROTINA_CARTOES => vblank_cartoes(m, false)?,
-            ROTINA_NIVEL => vblank_cartoes(m, true)?,
+            ROTINA_CARTOES => {
+                vblank_cartoes(m, false, false)?;
+            }
+            ROTINA_NIVEL => som_adiado = vblank_cartoes(m, true, hblank_disponivel)?,
             ROTINA_CONTINUE => vblank_continue(m)?,
             ROTINA_SPECIAL => vblank_continue_ou_special(m, true)?,
             ROTINA_PALETTE_FADE => {
@@ -220,7 +265,9 @@ pub fn tratar(m: &mut Memoria) -> Result<(), ErroAbertura> {
         }
     }
     // `VBlank_Lag` fora de fase: só o driver de som.
-    Driver::novo(m).update_music();
+    if !som_adiado {
+        Driver::novo(m).update_music();
+    }
     let c = rl(m, V_VBLANK_COUNT).wrapping_add(1);
     wl(m, V_VBLANK_COUNT, c);
     let _ = Tamanho::Byte;
@@ -230,6 +277,67 @@ pub fn tratar(m: &mut Memoria) -> Result<(), ErroAbertura> {
 #[cfg(test)]
 mod testes_continue {
     use super::*;
+
+    #[test]
+    fn superficie_proxima_adia_atualizacoes_ate_hblank_disponivel() {
+        let mut m = Memoria::nova(vec![0; 0x10000]);
+        ww(&mut m, V_HBLANK_HREG, 0x8A5F);
+        ww(&mut m, V_GENERICTIMER, 2);
+        ww(&mut m, F_HBLANK_PAL, 1);
+        assert!(vblank_cartoes(&mut m, true, true).unwrap());
+        assert_eq!(rb(&mut m, 0xFF_F64F), 1);
+        assert_eq!(rw(&mut m, V_GENERICTIMER), 2);
+        tratar_hblank(&mut m).unwrap();
+        assert_eq!(rb(&mut m, 0xFF_F64F), 0);
+        assert_eq!(rw(&mut m, V_GENERICTIMER), 1);
+    }
+
+    #[test]
+    fn hblank_troca_paleta_uma_vez_e_restaura_contador() {
+        use crate::memoria::{PortaVdp, Saida};
+        let mut m = Memoria::nova(vec![0; 0x100]);
+        for i in 0..64u32 {
+            ww(
+                &mut m,
+                V_PALETTE_WATER.wrapping_add(i.wrapping_mul(2)),
+                u16::try_from(i).unwrap(),
+            );
+        }
+        ww(&mut m, F_HBLANK_PAL, 1);
+        tratar_hblank(&mut m).unwrap();
+        assert_eq!(rw(&mut m, F_HBLANK_PAL), 0);
+        let saidas = m.saidas();
+        assert_eq!(saidas.len(), 67);
+        assert_eq!(
+            saidas[0],
+            Saida::Vdp {
+                porta: PortaVdp::Controle,
+                valor: 0xC000,
+                tamanho: Tamanho::Word
+            }
+        );
+        for i in 0..64usize {
+            assert_eq!(
+                saidas[i + 2],
+                Saida::Vdp {
+                    porta: PortaVdp::Dados,
+                    valor: u16::try_from(i).unwrap(),
+                    tamanho: Tamanho::Word
+                }
+            );
+        }
+        assert_eq!(
+            saidas[66],
+            Saida::Vdp {
+                porta: PortaVdp::Controle,
+                valor: 0x8ADF,
+                tamanho: Tamanho::Word
+            }
+        );
+        m.tirar_saidas();
+        tratar_hblank(&mut m).unwrap();
+        assert!(m.saidas().is_empty());
+    }
 
     #[test]
     fn transfere_arte_do_sonic_e_decrementa_o_temporizador() {

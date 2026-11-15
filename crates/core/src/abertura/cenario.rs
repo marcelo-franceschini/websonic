@@ -135,6 +135,10 @@ fn bg_scroll_speed(m: &mut Memoria, cy: u16, cx: u16) -> Result<(), ErroAbertura
         super::labirinto_cenario::iniciar_fundo(m, cy);
         return Ok(());
     }
+    if rb(m, V_ZONE) == ID_SYZ {
+        super::spring_yard_cenario::iniciar_fundo(m, cy);
+        return Ok(());
+    }
     if rb(m, V_ZONE) == ID_MZ {
         return Ok(());
     }
@@ -176,6 +180,7 @@ pub fn deform_layers(m: &mut Memoria) -> Result<(), ErroAbertura> {
         0 => deform_ghz(m),
         ID_LZ => super::labirinto_cenario::deformar(m),
         ID_MZ => deform_mz(m),
+        ID_SYZ => super::spring_yard_cenario::deformar(m),
         _ => return Err(ErroAbertura::NaoImplementado("deformação de outra zona")),
     }
     Ok(())
@@ -415,6 +420,8 @@ fn dynamic_level_events(m: &mut Memoria) -> Result<(), ErroAbertura> {
         super::labirinto::eventos(m)?;
     } else if zona == ID_MZ {
         eventos_mz(m)?;
+    } else if zona == ID_SYZ {
+        super::spring_yard_cenario::eventos(m)?;
     } else if zona != 0 {
         return Err(ErroAbertura::NaoImplementado("eventos de outra zona"));
     } else {

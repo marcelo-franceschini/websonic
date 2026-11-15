@@ -469,10 +469,7 @@ mod testes_laco {
         let destino =
             (u32::from(rom_w(&m, entrada.wrapping_add(4))) | 0xFFFF_0000).wrapping_sub(0x80);
         let cor = rom_l(&m, fonte.wrapping_add(4));
-        assert_eq!(
-            rl(&mut m, destino.wrapping_add(4)),
-            cor
-        );
+        assert_eq!(rl(&mut m, destino.wrapping_add(4)), cor);
     }
 
     #[test]
@@ -489,6 +486,20 @@ mod testes_laco {
         for _ in 0..120 {
             level_main_loop(&mut m).unwrap();
         }
+    }
+
+    #[test]
+    #[ignore = "requer SONIC1_ROM com a ROM REV01"]
+    fn spring_yard_inicializa_cenario_com_rom() {
+        let caminho = std::env::var_os("SONIC1_ROM").expect("SONIC1_ROM");
+        let mut m = Memoria::nova(std::fs::read(caminho).unwrap());
+        wb(&mut m, V_ZONE, ID_SYZ);
+        cenario::level_size_load(&mut m).unwrap();
+        cenario::deform_layers(&mut m).unwrap();
+        level_data_load(&mut m).unwrap();
+        desenho::load_tiles_from_start(&mut m, 0).unwrap();
+        paleta::palette_cycle(&mut m).unwrap();
+        assert!(!m.saidas().is_empty());
     }
 
     #[test]

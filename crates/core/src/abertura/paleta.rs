@@ -23,6 +23,10 @@ pub fn palette_cycle(m: &mut Memoria) -> Result<(), ErroAbertura> {
             Ok(())
         }
         ID_MZ => Ok(()),
+        ID_SYZ => {
+            super::spring_yard_cenario::ciclo_paleta(m);
+            Ok(())
+        }
         ID_LZ => {
             super::labirinto_cenario::ciclo_paleta(m);
             Ok(())

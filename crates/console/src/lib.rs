@@ -5,9 +5,12 @@
 //! No navegador a posição é nominal (sem tempo gravado, D7.5). No comparador a posição vem do
 //! oráculo (D7.3).
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use sonic1_audio::{AmostraFm, AmostraPsg, Chip, MCLK_POR_QUADRO_NTSC, Sintetizador};
 use sonic1_audio_saida::MisturadorSaida;
-use sonic1_core::abertura::{Abertura, Espera, EventoQuadro, Marca};
+use sonic1_core::abertura::{Abertura, Espera, EventoQuadro, Marca, MomentoSaida};
 use sonic1_core::memoria::{Memoria, PortaVdp, Saida, Tamanho};
 use sonic1_video::quadro::{ALTURA, LARGURA};
 use sonic1_video::renderizador::{Escrita, Renderizador};
@@ -219,10 +222,43 @@ impl Ponte {
     }
 }
 
+/// Captura DMA antes de o laço principal alterar a memória de origem.
+struct CapturasEventos {
+    ponte: Ponte,
+    saidas: Vec<(Saida, Option<Capturada>, MomentoSaida, Option<u8>)>,
+    linha_hblank: Option<u8>,
+}
+
+impl CapturasEventos {
+    fn nova() -> Self {
+        Self {
+            ponte: Ponte::nova(),
+            saidas: Vec::new(),
+            linha_hblank: None,
+        }
+    }
+
+    fn recolher(&mut self, mem: &mut Memoria, momento: MomentoSaida, novas: &[Saida]) {
+        for &saida in novas {
+            let capturada = self.ponte.capturar(mem, &saida);
+            let linha = if momento == MomentoSaida::HBlank {
+                self.linha_hblank
+            } else {
+                None
+            };
+            self.saidas.push((saida, capturada, momento, linha));
+        }
+        if momento == MomentoSaida::VBlank {
+            self.linha_hblank = Some(self.ponte.regs[10]);
+        }
+    }
+}
+
 /// O console completo no navegador: núcleo com tempo nominal mais a ponte e o sintetizador de som.
 pub struct Console {
     pub ab: Abertura,
     ponte: Ponte,
+    capturas: Rc<RefCell<CapturasEventos>>,
     espera_atual: Option<Espera>,
     quadros_na_espera: u32,
     escritas_no_quadro: usize,
@@ -241,9 +277,16 @@ impl Console {
 
     /// Cria o console usando a taxa efetiva do dispositivo de áudio.
     pub fn com_taxa_audio(rom: Vec<u8>, taxa_audio: f64) -> Self {
+        let capturas = Rc::new(RefCell::new(CapturasEventos::nova()));
+        let observadas = Rc::clone(&capturas);
+        let mut ab = Abertura::nova_nominal(rom);
+        ab.definir_observador_temporal(Box::new(move |mem, momento, novas| {
+            observadas.borrow_mut().recolher(mem, momento, novas)
+        }));
         Self {
-            ab: Abertura::nova_nominal(rom),
+            ab,
             ponte: Ponte::nova(),
+            capturas,
             espera_atual: None,
             quadros_na_espera: 0,
             escritas_no_quadro: 0,
@@ -340,11 +383,12 @@ impl Console {
 
         // Posição nominal: o tratador de VBlank escreve na linha 224; o resto, na linha 0.
         let linha = if teve_vblank { LINHA_VBLANK } else { 0 };
-        let saidas = self.ab.mem.tirar_saidas();
+        self.ab.mem.tirar_saidas();
+        let saidas = std::mem::take(&mut self.capturas.borrow_mut().saidas);
         self.escritas_no_quadro = saidas.len();
 
         let n_saidas = saidas.len();
-        for (i, s) in saidas.iter().enumerate() {
+        for (i, (s, capturada, _momento, _linha_hblank)) in saidas.iter().enumerate() {
             let delta = if n_saidas > 0 {
                 (MCLK_POR_QUADRO_NTSC.wrapping_mul(i as u64)) / (n_saidas as u64)
             } else {
@@ -354,7 +398,9 @@ impl Console {
 
             match s {
                 Saida::Vdp { .. } => {
-                    self.ponte.aplicar(&mut self.ab.mem, s, linha, 0);
+                    if let Some(c) = capturada {
+                        self.ponte.aplicar_capturada(c, linha, 0);
+                    }
                 }
                 Saida::Ym { porta, valor } | Saida::YmZ80 { porta, valor } => {
                     self.sint
@@ -418,5 +464,89 @@ impl Console {
 
     pub fn erro(&self) -> Option<String> {
         self.ab.erro.map(|e| format!("{e:?}"))
+    }
+}
+
+#[cfg(test)]
+mod testes_captura_eventos {
+    use super::*;
+
+    #[test]
+    fn observadores_veem_as_mesmas_saidas_em_eventos_consecutivos() {
+        let mut abertura = Abertura::nova_nominal(vec![0; 0x10000]);
+        let temporal = Rc::new(RefCell::new(Vec::new()));
+        let legado = Rc::new(RefCell::new(Vec::new()));
+        let t = Rc::clone(&temporal);
+        let l = Rc::clone(&legado);
+        abertura.definir_observador_temporal(Box::new(move |_, _, novas| {
+            t.borrow_mut().extend_from_slice(novas);
+        }));
+        abertura.definir_observador(Box::new(move |mem| {
+            l.borrow_mut().extend(mem.tirar_saidas());
+        }));
+        for _ in 0..2 {
+            abertura.mem.escrever(0xFF_F644, Tamanho::Word, 1).unwrap();
+            abertura.executar_quadro(&[EventoQuadro::Interrupcao { nivel: 4, pc: 0 }]);
+        }
+        assert!(!temporal.borrow().is_empty());
+        assert_eq!(*temporal.borrow(), *legado.borrow());
+        assert_eq!(temporal.borrow().len(), 134);
+    }
+
+    #[test]
+    fn evento_hblank_e_identificado_pelo_observador_do_nucleo() {
+        let capturas = Rc::new(RefCell::new(CapturasEventos::nova()));
+        let observadas = Rc::clone(&capturas);
+        let mut abertura = Abertura::nova_nominal(vec![0; 0x10000]);
+        abertura.definir_observador_temporal(Box::new(move |mem, momento, novas| {
+            observadas.borrow_mut().recolher(mem, momento, novas);
+        }));
+        abertura.mem.escrever(0xFF_F644, Tamanho::Word, 1).unwrap();
+        abertura.executar_quadro(&[EventoQuadro::Interrupcao { nivel: 4, pc: 0 }]);
+        assert!(abertura.erro.is_none());
+        assert!(
+            capturas
+                .borrow()
+                .saidas
+                .iter()
+                .any(|saida| saida.2 == MomentoSaida::HBlank)
+        );
+    }
+
+    #[test]
+    fn identifica_hblank_pela_linha_programada_no_vblank() {
+        let mut mem = Memoria::nova(vec![0; 0x100]);
+        let mut capturas = CapturasEventos::nova();
+        mem.escrever(0xC0_0004, Tamanho::Word, 0x8A37).unwrap();
+        let saidas = mem.tirar_saidas();
+        capturas.recolher(&mut mem, MomentoSaida::VBlank, &saidas);
+        mem.escrever(0xC0_0004, Tamanho::Word, 0x8ADF).unwrap();
+        let saidas = mem.tirar_saidas();
+        capturas.recolher(&mut mem, MomentoSaida::HBlank, &saidas);
+        assert_eq!(capturas.saidas[1].2, MomentoSaida::HBlank);
+        assert_eq!(capturas.saidas[1].3, Some(0x37));
+    }
+
+    #[test]
+    fn captura_dma_antes_de_alterar_a_origem() {
+        let mut mem = Memoria::nova(vec![0; 0x100]);
+        mem.ram_mut()[0xFB02..0xFB04].copy_from_slice(&0x0EEEu16.to_be_bytes());
+        for comando in [
+            0x8174, 0x8F02, 0x9340, 0x9400, 0x96FD, 0x9580, 0x977F, 0xC000, 0x0080,
+        ] {
+            mem.escrever(0xC0_0004, Tamanho::Word, comando).unwrap();
+        }
+        let mut capturas = CapturasEventos::nova();
+        let saidas = mem.tirar_saidas();
+        capturas.recolher(&mut mem, MomentoSaida::VBlank, &saidas);
+        mem.ram_mut()[0xFB02..0xFB04].copy_from_slice(&0x000Eu16.to_be_bytes());
+        let mut ponte = Ponte::nova();
+        for (_, captura, _, _) in &capturas.saidas {
+            if let Some(c) = captura {
+                ponte.aplicar_capturada(c, 224, 0);
+            }
+        }
+        ponte.fechar_quadro();
+        assert_eq!(ponte.renderizador().vdp().cram()[1], 0x0EEE);
     }
 }

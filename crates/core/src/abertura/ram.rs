@@ -278,6 +278,8 @@ pub const V_SOUNDQUEUE0: u32 = 0xFF_F00A;
 pub const V_AIR: u32 = 0xFF_FE14;
 pub const ID_LZ: u8 = 1;
 pub const ID_MZ: u8 = 2;
+pub const ID_SLZ: u8 = 3;
+pub const ID_SYZ: u8 = 4;
 pub const ID_LZ_ACT4: u16 = 0x103;
 pub const ID_FZ: u16 = 0x502;
 /// Intervalos que `Level_ClrRam` limpa.

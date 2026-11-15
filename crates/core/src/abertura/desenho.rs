@@ -460,11 +460,11 @@ fn draw_bg_row_for_bg_index(m: &mut Memoria, a0: u32, d0: u16, y: u16, p: Plano)
 }
 
 /// `LoadTilesFromStart`: desenha a frente e o fundo inteiros antes do aparecimento da fase. `a0` é
-/// o valor que o registrador tem na entrada. Só o fundo da GHZ existe (e o do final, que o reusa).
+/// o valor que o registrador tem na entrada.
 pub fn load_tiles_from_start(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
     let a0 = draw_chunks_com_a0(m, a0, V_SCREENPOSX, V_LVLLAYOUT_FG, 0x4000);
     let zona = rb(m, V_ZONE);
-    if zona == ID_LZ {
+    if zona == ID_LZ || zona == ID_SLZ || zona == ID_SYZ {
         draw_chunks_com_a0(m, a0, V_BGSCREENPOSX, V_LVLLAYOUT_BG, 0x6000);
         return Ok(());
     }
