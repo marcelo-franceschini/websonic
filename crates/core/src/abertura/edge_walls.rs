@@ -140,9 +140,10 @@ fn edge_wall_solid_wall(m: &mut Memoria, a0: u32, d1: i16, d2: i16) {
 }
 
 fn edge_no_collision(m: &mut Memoria, a0: u32, a1: u32) {
-    if rb(m, a0.wrapping_add(OB_STATUS)) & STATUS_PUSHING != 0 {
-        ww(m, a1.wrapping_add(OB_ANIM), u16::from(ANIM_RUN));
+    if rb(m, a0.wrapping_add(OB_STATUS)) & STATUS_PUSHING == 0 {
+        return;
     }
+    ww(m, a1.wrapping_add(OB_ANIM), u16::from(ANIM_RUN));
     let s0 = rb(m, a0.wrapping_add(OB_STATUS)) & !STATUS_PUSHING;
     wb(m, a0.wrapping_add(OB_STATUS), s0);
     let s1 = rb(m, a1.wrapping_add(OB_STATUS)) & !STATUS_PUSHING;
@@ -157,6 +158,20 @@ mod testes {
 
     fn memoria() -> Memoria {
         Memoria::nova(vec![0; 0x10000])
+    }
+
+    #[test]
+    fn parede_sem_contato_nao_interrompe_empurrao_de_outro_objeto() {
+        let mut m = memoria();
+        let parede = V_LVLOBJSPACE;
+        wb(&mut m, V_PLAYER + OB_STATUS, STATUS_PUSHING);
+        edge_no_collision(&mut m, parede, V_PLAYER);
+        assert_ne!(rb(&mut m, V_PLAYER + OB_STATUS) & STATUS_PUSHING, 0);
+
+        wb(&mut m, parede + OB_STATUS, STATUS_PUSHING);
+        edge_no_collision(&mut m, parede, V_PLAYER);
+        assert_eq!(rb(&mut m, V_PLAYER + OB_STATUS) & STATUS_PUSHING, 0);
+        assert_eq!(rb(&mut m, parede + OB_STATUS) & STATUS_PUSHING, 0);
     }
 
     #[test]
