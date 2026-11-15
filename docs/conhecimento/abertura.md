@@ -315,3 +315,9 @@ Escrita, sem prova com a ROM ainda. Rodada pendente: `sh scripts/etapa7-bloco2.s
 - A comparação de abertura com o oráculo solicitada para 2849 quadros confrontou somente 1166 imagens. O modo usado para no início da fase e deixou os quadros seguintes pendentes. O veredito geral não prova a demo.
 - Comparação no Chrome entre composição GPU e renderizador CPU: 2849 quadros executados, 49 imagens amostradas e nenhuma diferença de pixel. Não é comparação com o oráculo.
 - O relógio calcula a fração temporal, mas o renderizador ainda não a usa para interpolar posições. O seletor do site não anuncia interpolação até que ela esteja conectada.
+
+## Verificação de continuidade (15/11/2026)
+
+- Comparador de abertura, com 1170 quadros solicitados e ROM REV01: `IGUAL`, com 1166 imagens, VRAM, CRAM e VSRAM comparadas sem divergências. O comparador parou no início da fase, deixando quatro quadros pendentes.
+- `SONIC1_ROM=<ROM REV01> cargo test -p sonic1-core --lib -- --ignored`: dez testes passaram, incluindo inicialização de Labyrinth, colisão GOAL da Special Stage e transição para resultados. A posição de Sonic no GOAL é preparada pelo teste; isso não valida o percurso completo.
+- O console nominal ainda não agenda HBlank na linha da água. A troca de paleta no navegador e sua temporização permanecem sem validação contra o oráculo.
