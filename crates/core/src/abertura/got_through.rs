@@ -75,19 +75,20 @@ fn got_move_in(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
     let target_x = s16(rw(m, a0.wrapping_add(CARD_MAINX)));
     let mut cur_x = s16(rw(m, a0.wrapping_add(OB_X)));
 
-    if cur_x < target_x {
-        cur_x = (cur_x.wrapping_add(16)).min(target_x);
-    } else if cur_x > target_x {
-        cur_x = (cur_x.wrapping_sub(16)).max(target_x);
-    }
-    ww(m, a0.wrapping_add(OB_X), u16_de(cur_x));
-
     if cur_x == target_x {
-        // Apenas o elemento de Ring Bonus (frame 4) comanda a transicao para espera
+        // Ao chegar, o elemento de Ring Bonus entra imediatamente em Got_Wait.
         if rb(m, a0.wrapping_add(OB_FRAME)) == 4 {
             wb(m, a0.wrapping_add(OB_ROUTINE), 4);
-            ww(m, a0.wrapping_add(OB_TIME_FRAME), 180); // 3 segundos (3 * 60)
+            ww(m, a0.wrapping_add(OB_TIME_FRAME), 180);
+            return got_wait(m, a0);
         }
+    } else {
+        cur_x = if cur_x < target_x {
+            cur_x.wrapping_add(16)
+        } else {
+            cur_x.wrapping_sub(16)
+        };
+        ww(m, a0.wrapping_add(OB_X), u16_de(cur_x));
     }
 
     if (0..0x80 + 320 + 64).contains(&cur_x) {
@@ -128,7 +129,7 @@ fn got_bonus(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
 
     if d0 != 0 {
         super::fisica::add_points(m, d0);
-        let quadro = rb(m, V_FRAMEBYTE);
+        let quadro = rb(m, V_VBLANK_BYTE);
         if quadro & 3 == 0 {
             wb(m, V_SOUNDQUEUE1, SFX_SWITCH);
         }
@@ -197,6 +198,35 @@ mod testes_got_through {
         // Elemento 5: Ring bonus (frame 4)
         let a5 = a0.wrapping_add(5 * OBJECT_SIZE);
         assert_eq!(rb(&mut m, a5.wrapping_add(OB_FRAME)), 4);
+    }
+
+    #[test]
+    fn cartao_espera_um_quadro_apos_chegar_ao_alvo() {
+        let mut m = memoria_teste();
+        let a0 = V_ENDCARD;
+        wb(&mut m, a0.wrapping_add(OB_ROUTINE), 2);
+        wb(&mut m, a0.wrapping_add(OB_FRAME), 4);
+        ww(&mut m, a0.wrapping_add(OB_X), 0x100);
+        ww(&mut m, a0.wrapping_add(CARD_MAINX), 0x110);
+        got_move_in(&mut m, a0).unwrap();
+        assert_eq!(rw(&mut m, a0.wrapping_add(OB_X)), 0x110);
+        assert_eq!(rb(&mut m, a0.wrapping_add(OB_ROUTINE)), 2);
+        got_move_in(&mut m, a0).unwrap();
+        assert_eq!(rb(&mut m, a0.wrapping_add(OB_ROUTINE)), 4);
+        assert_eq!(rw(&mut m, a0.wrapping_add(OB_TIME_FRAME)), 179);
+    }
+
+    #[test]
+    fn som_do_bonus_usa_contador_de_vblank() {
+        let mut m = memoria_teste();
+        ww(&mut m, V_TIMEBONUS, 20);
+        wb(&mut m, V_FRAMEBYTE, 0);
+        wb(&mut m, V_VBLANK_BYTE, 1);
+        got_bonus(&mut m, V_ENDCARD).unwrap();
+        assert_eq!(rb(&mut m, V_SOUNDQUEUE1), 0);
+        wb(&mut m, V_VBLANK_BYTE, 4);
+        got_bonus(&mut m, V_ENDCARD).unwrap();
+        assert_eq!(rb(&mut m, V_SOUNDQUEUE1), SFX_SWITCH);
     }
 
     #[test]
