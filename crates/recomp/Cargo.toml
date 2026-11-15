@@ -1,0 +1,23 @@
+[package]
+name = "sonic1-recomp"
+description = "Ferramentas de recompilação antecipada do 68000 para Rust"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[features]
+default = ["gerador"]
+gerador = ["dep:sonic1-rom"]
+
+[dependencies]
+sonic1-core = { path = "../core" }
+sonic1-rom = { path = "../rom", optional = true }
+
+[[bin]]
+name = "sonic1-recomp"
+path = "src/main.rs"
+required-features = ["gerador"]
+
+[lints]
+workspace = true

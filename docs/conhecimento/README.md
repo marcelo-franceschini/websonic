@@ -14,5 +14,6 @@
 - [oraculos.md](oraculos.md): segundo oraculo (Genesis Plus GX) e as diferencas D1a, D1b e D1c, com a decisao.
 - [oraculo.md](oraculo.md): oráculo (jgenesis modificado), formato do trace e dos eventos, mapa de rótulos, com evidência.
 - [nucleo.md](nucleo.md): memoria espelhada, operacoes do 68000, tempo gravado, pontos de checagem, teste por rotina, cobertura, bugs injetados e bugs conhecidos (Etapa 5), com evidencia.
+- [recomp.md](recomp.md): referências de recompilação, limites de reaproveitamento e decisões para a geração de Rust.
 - [som.md](som.md): pontos do Z80 no tempo gravado, como o Z80 do oráculo avança, IDs e inventário do som (Etapa 6), com evidência.
 - [abertura.md](abertura.md): do boot à primeira demo (Etapa 7): medidas do oráculo, decisões D7.9 a D7.34, provas com a ROM (veredito IGUAL do quadro 0 ao 1166, com imagem, VRAM, CRAM e VSRAM), navegador e experimento do nível 2.
