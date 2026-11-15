@@ -29,7 +29,7 @@ pub fn gm_level_inicio(m: &mut Memoria) {
 /// Do fim do `PaletteFadeOut` de `GM_Level` até o laço dos cartões de título: a arte dos cartões,
 /// as filas de arte da zona, a limpeza da RAM (`Level_ClrRam`), os registradores da VDP, a paleta
 /// do Sonic, a música da fase e o objeto dos cartões. Roda de uma vez na marca
-/// `Level_TtlCardLoop` (D7.10). A demo do final e a LZ (água) devolvem `NaoImplementado`.
+/// `Level_TtlCardLoop` (D7.10). A demo do final devolve `NaoImplementado`.
 pub fn preparo_dos_cartoes(m: &mut Memoria) -> Result<(), ErroAbertura> {
     if rw(m, F_DEMO) & 0x8000 != 0 {
         return Err(ErroAbertura::NaoImplementado("demo do final"));
@@ -65,11 +65,19 @@ pub fn preparo_dos_cartoes(m: &mut Memoria) -> Result<(), ErroAbertura> {
     let h = rw(m, V_HBLANK_HREG);
     ww(m, VDP_CONTROLE, h);
     if zona == ID_LZ {
-        return Err(ErroAbertura::NaoImplementado("água da LZ"));
+        super::labirinto::iniciar_agua(m);
     }
     // `Level_LoadPal`: 30 segundos de ar e a paleta do Sonic (para os cartões).
     ww(m, V_AIR, 30);
     pal_load(m, PALID_SONIC);
+    if zona == ID_LZ {
+        let id = if rb(m, V_ACT) == 3 { 0x10 } else { 0x0F };
+        pal_load_para(m, id, 0xFFFF_FF80);
+        if rb(m, V_LASTLAMP) != 0 {
+            let estado = rb(m, 0xFF_FE53);
+            wb(m, F_WTR_STATE, estado);
+        }
+    }
     // `Level_GetBgm`: a música da zona pela `MusicList` (SBZ3 usa a da SBZ; a FZ, a sétima).
     let zona_e_ato = rw(m, V_ZONE_ACT);
     let indice = if zona_e_ato == ID_FZ {
@@ -173,9 +181,7 @@ pub fn preparo_final(m: &mut Memoria) -> Result<(), ErroAbertura> {
     let a0 = level_data_load(m)?;
     desenho::load_tiles_from_start(m, a0)?;
     col_index_load(m);
-    if rb(m, V_ZONE) == ID_LZ {
-        return Err(ErroAbertura::NaoImplementado("água da LZ"));
-    }
+    super::labirinto::efeitos(m);
     wb(m, V_PLAYER.wrapping_add(OB_ID), ID_SONIC);
     wb(m, V_HUD.wrapping_add(OB_ID), ID_HUD);
     if rb(m, F_DEBUGCHEAT) != 0 && rb(m, V_JPADHOLD1) & 0x40 != 0 {
@@ -183,6 +189,12 @@ pub fn preparo_final(m: &mut Memoria) -> Result<(), ErroAbertura> {
     }
     ww(m, V_JPADHOLD2, 0);
     ww(m, V_JPADHOLD1, 0);
+    if rb(m, V_ZONE) == ID_LZ {
+        for (objeto, x) in [(0xFF_D780, 0x60), (0xFF_D7C0, 0x120)] {
+            wb(m, objeto, 0x1B);
+            ww(m, objeto.wrapping_add(OB_X), x);
+        }
+    }
     objpos::obj_pos_load(m)?;
     objetos_faltando(m)?;
     execute_objects(m)?;
@@ -209,6 +221,10 @@ pub fn preparo_final(m: &mut Memoria) -> Result<(), ErroAbertura> {
     let duracao = rom_b(m, demo.wrapping_add(1)).wrapping_sub(1);
     wb(m, V_BTNPUSHTIME2, duracao);
     ww(m, V_GENERICTIMER, 1800);
+    if rb(m, V_ZONE) == ID_LZ {
+        let id = if rb(m, V_ACT) == 3 { 0x0D } else { 0x0B };
+        pal_load_para(m, id, 0xFFFF_FF00);
+    }
     Ok(())
 }
 
@@ -377,9 +393,7 @@ pub fn level_main_loop(m: &mut Memoria) -> Result<(), ErroAbertura> {
     let quadros = rw(m, V_FRAMECOUNT).wrapping_add(1);
     ww(m, V_FRAMECOUNT, quadros);
     move_sonic_in_demo(m)?;
-    if rb(m, V_ZONE) == ID_LZ {
-        return Err(ErroAbertura::NaoImplementado("água da LZ"));
-    }
+    super::labirinto::efeitos(m);
     execute_objects(m)?;
     if rw(m, F_RESTART) != 0 {
         return Ok(());
@@ -439,6 +453,25 @@ fn objetos_faltando(m: &mut Memoria) -> Result<(), ErroAbertura> {
 #[cfg(test)]
 mod testes_laco {
     use super::*;
+
+    #[test]
+    #[ignore = "requer SONIC1_ROM com a ROM REV01"]
+    fn cartoes_labyrinth_inicializam_agua_e_paleta() {
+        let caminho = std::env::var_os("SONIC1_ROM").expect("SONIC1_ROM");
+        let mut m = Memoria::nova(std::fs::read(caminho).unwrap());
+        wb(&mut m, V_ZONE, ID_LZ);
+        preparo_dos_cartoes(&mut m).unwrap();
+        assert_eq!(rb(&mut m, 0xFF_F64C), 1);
+        assert_eq!(rw(&mut m, 0xFF_F646), rom_w(&mut m, 0x3C2C));
+        let entrada = PAL_INDEX.wrapping_add(0x0F * 8);
+        let fonte = rom_l(&mut m, entrada);
+        let destino =
+            (u32::from(rom_w(&mut m, entrada.wrapping_add(4))) | 0xFFFF_0000).wrapping_sub(0x80);
+        assert_eq!(
+            rl(&mut m, destino.wrapping_add(4)),
+            rom_l(&mut m, fonte.wrapping_add(4))
+        );
+    }
 
     #[test]
     fn fade_da_demo_mantem_o_tempo_e_escurece_cada_tres_quadros() {
