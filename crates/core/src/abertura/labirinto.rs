@@ -213,7 +213,13 @@ fn tunel(m: &mut Memoria) {
             return;
         }
         wb(m, F_WTUNNELMODE, 1);
-        let d0 = (x & 0xFF00) | u16::from(frame);
+        // QueueSound2 recebe o efeito em d0 no quadro de som, substituindo
+        // também o byte alto da posição que a rotina original reutiliza.
+        let d0 = if frame == 0 {
+            0xD0
+        } else {
+            (x & 0xFF00) | u16::from(frame)
+        };
         let mut novo_y = y;
         if d0.wrapping_sub(128) < esquerda {
             novo_y = if ato == 1 {
@@ -377,6 +383,29 @@ pub fn superficie(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    #[test]
+    fn tunel_reutiliza_codigo_do_som_na_succao() {
+        let mut rom = vec![0; 0x10000];
+        // Limites sintéticos para o primeiro túnel do ato 1.
+        for (i, valor) in [0x0A80u16, 0x0300, 0x0C10, 0x0380].iter().enumerate() {
+            let pos = usize::try_from(WIND_DATA).unwrap() + i * 2;
+            rom[pos..pos + 2].copy_from_slice(&valor.to_be_bytes());
+        }
+        let mut m = Memoria::nova(rom);
+        ww(&mut m, V_PLAYER.wrapping_add(OB_X), 0x0B00);
+        ww(&mut m, V_PLAYER.wrapping_add(OB_Y), 0x0340);
+        wb(&mut m, V_VBLANK_BYTE, 0);
+        tunel(&mut m);
+        assert_eq!(rw(&mut m, V_PLAYER.wrapping_add(OB_Y)), 0x0342);
+        assert_eq!(rb(&mut m, V_SOUNDQUEUE1), 0xD0);
+
+        ww(&mut m, V_PLAYER.wrapping_add(OB_X), 0x0B00);
+        ww(&mut m, V_PLAYER.wrapping_add(OB_Y), 0x0340);
+        wb(&mut m, V_VBLANK_BYTE, 1);
+        tunel(&mut m);
+        assert_eq!(rw(&mut m, V_PLAYER.wrapping_add(OB_Y)), 0x0340);
+    }
 
     #[test]
     fn agua_lz1_segue_caminho_baixo_e_nao_regride() {
