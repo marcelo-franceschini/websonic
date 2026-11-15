@@ -50,15 +50,14 @@ fn sign_main(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
     wb(m, a0.wrapping_add(OB_RENDER), RENDER_CAM_FIELD);
     wb(m, a0.wrapping_add(OB_ACTWID), 24); // 48 / 2
     wb(m, a0.wrapping_add(OB_PRIORITY), 4);
-    Ok(())
+    // Sign_Main continua diretamente em Sign_Touch no mesmo quadro.
+    sign_touch(m, a0)
 }
 
 fn sign_touch(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
     let sonic_x = rw(m, V_PLAYER.wrapping_add(OB_X));
     let sign_x = rw(m, a0.wrapping_add(OB_X));
-    let diff = sonic_x.wrapping_sub(sign_x);
-    let diff_i16 = s16(diff);
-    if !(0..32).contains(&diff_i16) {
+    if sonic_x < sign_x || sonic_x.wrapping_sub(sign_x) >= 32 {
         return Ok(());
     }
 
@@ -181,6 +180,7 @@ mod testes_signpost {
         let mut m = Memoria::nova(vec![0; 0x10000]);
         let a0 = V_LVLOBJSPACE;
         wb(&mut m, a0.wrapping_add(OB_ID), ID_SIGNPOST);
+        ww(&mut m, a0.wrapping_add(OB_X), 0x100);
         sign_main(&mut m, a0).unwrap();
         assert_eq!(rb(&mut m, a0.wrapping_add(OB_ROUTINE)), 2);
         assert_eq!(rl(&mut m, a0.wrapping_add(OB_MAP)), MAP_SIGN);
@@ -188,6 +188,30 @@ mod testes_signpost {
         assert_eq!(rb(&mut m, a0.wrapping_add(OB_RENDER)), RENDER_CAM_FIELD);
         assert_eq!(rb(&mut m, a0.wrapping_add(OB_ACTWID)), 24);
         assert_eq!(rb(&mut m, a0.wrapping_add(OB_PRIORITY)), 4);
+    }
+
+    #[test]
+    fn signpost_detecta_toque_ao_inicializar() {
+        let mut m = Memoria::nova(vec![0; 0x10000]);
+        let a0 = V_LVLOBJSPACE;
+        ww(&mut m, a0.wrapping_add(OB_X), 0x1000);
+        ww(&mut m, V_PLAYER.wrapping_add(OB_X), 0x1000);
+        wb(&mut m, F_TIMECOUNT, 1);
+        sign_main(&mut m, a0).unwrap();
+        assert_eq!(rb(&mut m, a0.wrapping_add(OB_ROUTINE)), 4);
+        assert_eq!(rb(&mut m, F_TIMECOUNT), 0);
+        assert_eq!(rb(&mut m, V_SOUNDQUEUE0), SFX_SIGNPOST);
+    }
+
+    #[test]
+    fn signpost_nao_detecta_toque_com_subtracao_transbordada() {
+        let mut m = Memoria::nova(vec![0; 0x10000]);
+        let a0 = V_LVLOBJSPACE;
+        ww(&mut m, a0.wrapping_add(OB_X), 0xffff);
+        ww(&mut m, V_PLAYER.wrapping_add(OB_X), 0);
+        sign_touch(&mut m, a0).unwrap();
+        assert_eq!(rb(&mut m, a0.wrapping_add(OB_ROUTINE)), 0);
+        assert_eq!(rb(&mut m, V_SOUNDQUEUE0), 0);
     }
 
     #[test]
