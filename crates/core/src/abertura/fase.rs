@@ -121,16 +121,22 @@ fn level_data_load(m: &mut Memoria) -> Result<u32, ErroAbertura> {
     rotinas::kos_dec(m, chunks, V_256X256).map_err(ErroAbertura::Rotina)?;
     let a0 = cenario::level_layout_load(m)?;
     let zona_e_ato = rw(m, V_ZONE_ACT);
-    if zona_e_ato == ID_LZ_ACT4 || zona_e_ato == ID_SBZ_ACT2 || zona_e_ato == ID_FZ {
-        return Err(ErroAbertura::NaoImplementado("paleta especial da fase"));
-    }
-    let paleta = rom_b(m, cabecalho.wrapping_add(15));
+    let paleta = paleta_da_fase(zona_e_ato, rom_b(m, cabecalho.wrapping_add(15)));
     pal_load_para(m, u32::from(paleta), 0x80);
     let plc2 = rom_b(m, cabecalho.wrapping_add(4));
     if plc2 != 0 {
         plc::add_plc(m, u16::from(plc2))?;
     }
     Ok(a0)
+}
+
+/// Seleciona as exceções de paleta do `LevelDataLoad`.
+fn paleta_da_fase(zona_e_ato: u16, padrao: u8) -> u8 {
+    match zona_e_ato {
+        ID_LZ_ACT4 => 0x0C,
+        ID_SBZ_ACT2 | ID_FZ => 0x0E,
+        _ => padrao,
+    }
 }
 
 /// `ColIndexLoad`: o ponteiro do índice de colisão da zona.
