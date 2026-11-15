@@ -1695,8 +1695,38 @@ fn sonic_display(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
     if deve_desenhar {
         display_sprite(m, a0);
     }
-    if rb(m, V_INVINC) != 0 || rb(m, V_SHOES) != 0 {
-        return Err(ErroAbertura::NaoImplementado("invencibilidade e tênis"));
+    if rb(m, V_INVINC) != 0 {
+        let tempo = rw(m, a0.wrapping_add(0x32));
+        if tempo != 0 {
+            let restante = tempo.wrapping_sub(1);
+            ww(m, a0.wrapping_add(0x32), restante);
+            if restante == 0 {
+                if rb(m, F_LOCKSCREEN) == 0 && rw(m, V_AIR) >= 12 {
+                    let zona = if rw(m, V_ZONE_ACT) == ID_LZ_ACT4 {
+                        5
+                    } else {
+                        u32::from(rb(m, V_ZONE))
+                    };
+                    let musica = rom_b(m, 0x1_339C_u32.wrapping_add(zona));
+                    wb(m, V_SOUNDQUEUE0, musica);
+                }
+                wb(m, V_INVINC, 0);
+            }
+        }
+    }
+    if rb(m, V_SHOES) != 0 {
+        let tempo = rw(m, a0.wrapping_add(0x34));
+        if tempo != 0 {
+            let restante = tempo.wrapping_sub(1);
+            ww(m, a0.wrapping_add(0x34), restante);
+            if restante == 0 {
+                ww(m, V_SONSPEEDMAX, SON_MAXSPEED);
+                ww(m, V_SONSPEEDACC, SON_ACCELERATION);
+                ww(m, V_SONSPEEDDEC, SON_DECELERATION);
+                wb(m, V_SHOES, 0);
+                wb(m, V_SOUNDQUEUE0, 0xE3);
+            }
+        }
     }
     Ok(())
 }
@@ -2227,6 +2257,25 @@ pub(super) fn sonic_load_gfx(m: &mut Memoria, a0: u32) {
 #[cfg(test)]
 mod testes_contato {
     use super::*;
+
+    #[test]
+    fn fim_dos_poderes_restaura_musica_e_velocidade() {
+        let mut rom = vec![0; 0x20000];
+        rom[0x1339C] = 0x81;
+        let mut m = Memoria::nova(rom);
+        wb(&mut m, V_INVINC, 1);
+        ww(&mut m, V_PLAYER + 0x32, 1);
+        ww(&mut m, V_AIR, 30);
+        sonic_display(&mut m, V_PLAYER).unwrap();
+        assert_eq!(rb(&mut m, V_INVINC), 0);
+        assert_eq!(rb(&mut m, V_SOUNDQUEUE0), 0x81);
+        wb(&mut m, V_SHOES, 1);
+        ww(&mut m, V_PLAYER + 0x34, 1);
+        sonic_display(&mut m, V_PLAYER).unwrap();
+        assert_eq!(rb(&mut m, V_SHOES), 0);
+        assert_eq!(rw(&mut m, V_SONSPEEDMAX), SON_MAXSPEED);
+        assert_eq!(rb(&mut m, V_SOUNDQUEUE0), 0xE3);
+    }
 
     #[test]
     fn morte_respeita_limite_e_abre_game_over_ou_time_over() {
