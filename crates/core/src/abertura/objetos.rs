@@ -9,6 +9,8 @@ use crate::memoria::Memoria;
 
 #[path = "bloco_labirinto.rs"]
 mod bloco_labirinto;
+#[path = "burrobot.rs"]
+mod burrobot;
 
 const SPRITES_MAX: u8 = 80;
 const SPRITELAYER_NUM: u32 = 8;
@@ -136,6 +138,7 @@ fn rodar_objeto(m: &mut Memoria, a0: u32, id: u8) -> Result<(), ErroAbertura> {
         0x31 => super::marble_stomper::executar(m, a0),
         0x1B => super::labirinto::superficie(m, a0),
         0x61 => bloco_labirinto::executar(m, a0),
+        0x2D => burrobot::executar(m, a0),
         0x33 => super::marble_bloco::executar(m, a0),
         0x32 => super::botao::executar(m, a0),
         0x55 => super::basaran::executar(m, a0),
@@ -205,6 +208,7 @@ pub fn objeto_existe(id: u8) -> bool {
             | 0x31
             | 0x1B
             | 0x61
+            | 0x2D
             | 0x33
             | 0x32
             | 0x55
