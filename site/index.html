@@ -13,18 +13,111 @@
     #resultado { margin-top: 1rem; padding: 1rem; border: 2px solid #888; border-radius: .5rem; }
     #resultado.ok { border-color: #1a7f37; }
     #resultado.erro { border-color: #b3261e; }
-    /* Imagem de 320x224 em escala inteira, sem suavizar os pontos. */
-    #tela { display: block; margin: 1rem 0; background: #000; image-rendering: pixelated; cursor: pointer; }
-    #aviso { color: #555; font-size: .9rem; margin: 0.5rem 0; }
-    .btn { padding: 0.5rem 1rem; font-size: 0.95rem; font-weight: bold; cursor: pointer; border: none; border-radius: 4px; }
+    #container-tela {
+      position: relative;
+      display: inline-block;
+      margin: 1rem 0;
+      background: #000;
+      border-radius: 4px;
+      overflow: hidden;
+      line-height: 0;
+    }
+    #container-tela:fullscreen {
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: #000;
+      border-radius: 0;
+      margin: 0;
+    }
+    #tela {
+      display: block;
+      background: #000;
+      image-rendering: pixelated;
+      cursor: pointer;
+    }
+    #barra-controles {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      margin: 0.8rem 0;
+      padding: 0.6rem 0.8rem;
+      background: #f6f8fa;
+      border: 1px solid #d0d7de;
+      border-radius: 6px;
+    }
+    .grupo-controle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.85rem;
+    }
+    .select-controle {
+      padding: 4px 8px;
+      font-size: 0.85rem;
+      border: 1px solid #d0d7de;
+      border-radius: 4px;
+      background: #fff;
+      cursor: pointer;
+    }
+    .btn {
+      padding: 0.5rem 1rem;
+      font-size: 0.95rem;
+      font-weight: bold;
+      cursor: pointer;
+      border: none;
+      border-radius: 4px;
+    }
     .btn-verde { background: #1a7f37; color: white; }
     .btn-verde:hover { background: #14622b; }
     .btn-azul { background: #0969da; color: white; }
     .btn-azul:hover { background: #0856b3; }
-    #painel-diag { margin-top: 1.5rem; padding: 1rem; background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 6px; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.85rem; }
+    .btn-cinza {
+      background: #eaeef2;
+      color: #24292f;
+      border: 1px solid #d0d7de;
+      padding: 4px 10px;
+      font-size: 0.85rem;
+    }
+    .btn-cinza:hover { background: #d0d7de; }
+    #painel-teclas {
+      margin: 0.5rem 0;
+      padding: 0.6rem 0.8rem;
+      background: #f1f8ff;
+      border: 1px solid #c8e1ff;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      color: #032f62;
+      line-height: 1.4;
+    }
+    #aviso { color: #555; font-size: .9rem; margin: 0.5rem 0; }
+    #painel-diag {
+      margin-top: 1.5rem;
+      padding: 1rem;
+      background: #f6f8fa;
+      border: 1px solid #d0d7de;
+      border-radius: 6px;
+      font-family: ui-monospace, SFMono-Regular, monospace;
+      font-size: 0.85rem;
+    }
     #tabela-diag td { padding: 3px 6px; }
-    #barra-volume-container { width: 100%; height: 12px; background: #e1e4e8; border-radius: 6px; overflow: hidden; margin-top: 4px; }
-    #barra-volume { width: 0%; height: 100%; background: #2ea44f; transition: width 0.05s ease; }
+    #barra-volume-container {
+      width: 100%;
+      height: 12px;
+      background: #e1e4e8;
+      border-radius: 6px;
+      overflow: hidden;
+      margin-top: 4px;
+    }
+    #barra-volume {
+      width: 0%;
+      height: 100%;
+      background: #2ea44f;
+      transition: width 0.05s ease;
+    }
   </style>
 </head>
 <body>
@@ -38,8 +131,32 @@
     <p>Tamanho: <span id="tamanho"></span> bytes</p>
   </div>
 
-  <canvas id="tela" width="320" height="224" hidden></canvas>
-  <p id="aviso" hidden>Síntese de áudio ativa. Teclas: setas, Z (A), X (B), C (C), Enter (Start).</p>
+  <div id="barra-controles" hidden>
+    <div class="grupo-controle">
+      <label for="seletor-proporcao"><b>Formato de Tela:</b></label>
+      <select id="seletor-proporcao" class="select-controle">
+        <option value="4:3">4:3 Clássico (320x224)</option>
+        <option value="16:9">16:9 Widescreen (426x224)</option>
+      </select>
+    </div>
+    <div class="grupo-controle">
+      <label for="seletor-fps"><b>Taxa de Atualização:</b></label>
+      <select id="seletor-fps" class="select-controle">
+        <option value="60">60 FPS (Fiel ao NTSC)</option>
+        <option value="desbloqueado">Desbloqueado</option>
+      </select>
+    </div>
+    <button id="btn-fullscreen" type="button" class="btn btn-cinza" title="Alternar modo tela cheia">⛶ Tela Cheia</button>
+  </div>
+
+  <div id="painel-teclas" hidden>
+    <b>Controles do Teclado:</b> Setas direcionais (mover, abaixar, olhar), Z (Pulo A), X (Pulo B), C (Pulo C), Enter ou Espaço (Start / Iniciar / Pausa).
+  </div>
+
+  <div id="container-tela">
+    <canvas id="tela" width="320" height="224" hidden></canvas>
+  </div>
+  <p id="aviso" hidden>Síntese de áudio ativa. Pressione Start (Enter ou Espaço) na tela de título para iniciar.</p>
   <p id="erro-jogo" hidden></p>
 
   <div id="painel-diag">
@@ -68,7 +185,7 @@
       <tr><td><b>Comunicação com AudioWorklet:</b></td><td id="diag-worklet">Aguardando...</td></tr>
     </table>
     <div style="margin-top: 0.8rem; font-size: 0.8rem; color: #555; border-top: 1px solid #eaecef; padding-top: 0.5rem;">
-      💡 <b>Dica:</b> Nos primeiros ~5 segundos (tela da SEGA), o som é propositalmente silencioso (voz dependia do Z80). A música clássica (FM/PSG) começa a tocar na <b>tela de título</b>.
+      O navegador pode exigir uma interação para ativar o áudio.
     </div>
   </div>
 

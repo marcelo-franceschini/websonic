@@ -23,6 +23,7 @@ mod anti_rom;
 mod bugs_conhecidos;
 mod corpus;
 mod descompressao;
+mod gpu_comparar;
 mod ids_som;
 mod inventario;
 mod inventario_memoria;
@@ -58,6 +59,7 @@ fn main() -> ExitCode {
     let resto = || std::env::args().skip(2).collect::<Vec<_>>();
     let resultado = match comando.as_deref() {
         Some("site") => site::montar(),
+        Some("gpu-comparar") => gpu_comparar::executar(&resto()),
         Some("anti-rom") => anti_rom::executar(),
         Some("rotulos") => rotulos::executar(&resto()),
         Some("descompressao-relatorio") => descompressao::executar(&resto()),

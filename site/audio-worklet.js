@@ -13,12 +13,23 @@ class SonicAudioProcessor extends AudioWorkletProcessor {
     this.escrita = 0;
     this.disponiveis = 0;
     this.falhas = 0;
+    this.descartadas = 0;
+    this.iniciado = false;
+    this.preenchimentoInicial = Math.ceil(sampleRate * 3 * 896040 / 53693175);
     this.ultimoL = 0;
     this.ultimoR = 0;
     this.chamadasProcess = 0;
 
     this.port.onmessage = (e) => {
       if (!e.data) return;
+      if (e.data.tipo === "reset") {
+        this.leitura = this.escrita = this.disponiveis = 0;
+        this.ultimoL = this.ultimoR = 0;
+        this.falhas = 0;
+        this.descartadas = 0;
+        this.iniciado = false;
+        return;
+      }
       const dados = e.data instanceof Float32Array ? e.data : new Float32Array(e.data);
       const pares = dados.length >> 1;
       for (let i = 0; i < pares; i++) {
@@ -27,6 +38,8 @@ class SonicAudioProcessor extends AudioWorkletProcessor {
           this.bufR[this.escrita] = dados[i * 2 + 1];
           this.escrita = (this.escrita + 1) % this.tam;
           this.disponiveis++;
+        } else {
+          this.descartadas++;
         }
       }
     };
@@ -41,8 +54,15 @@ class SonicAudioProcessor extends AudioWorkletProcessor {
     const outR = out.length > 1 ? out[1] : null;
     const n = outL.length; // Normalmente 128 amostras
 
+    if (!this.iniciado && this.disponiveis >= this.preenchimentoInicial) {
+      this.iniciado = true;
+    }
+
     for (let i = 0; i < n; i++) {
-      if (this.disponiveis > 0) {
+      if (!this.iniciado) {
+        this.ultimoL *= 0.95;
+        this.ultimoR *= 0.95;
+      } else if (this.disponiveis > 0) {
         this.ultimoL = this.bufL[this.leitura];
         this.ultimoR = this.bufR[this.leitura];
         this.leitura = (this.leitura + 1) % this.tam;
@@ -50,6 +70,7 @@ class SonicAudioProcessor extends AudioWorkletProcessor {
       } else {
         // Falta de dado: decaimento suave para evitar estalidos
         this.falhas++;
+        this.iniciado = false;
         this.ultimoL *= 0.95;
         this.ultimoR *= 0.95;
       }
@@ -68,6 +89,7 @@ class SonicAudioProcessor extends AudioWorkletProcessor {
         tipo: "status",
         disponiveis: this.disponiveis,
         falhas: this.falhas,
+        descartadas: this.descartadas,
         processados: this.chamadasProcess * n,
       });
     }

@@ -87,9 +87,103 @@ impl Jogo {
         }
     }
 
+    /// Cria o jogo com a taxa de amostragem do AudioContext.
+    pub fn criar_com_audio(dados: &[u8], taxa_audio: f64) -> Result<Jogo, String> {
+        if !taxa_audio.is_finite() || !(3_000.0..=768_000.0).contains(&taxa_audio) {
+            return Err("Taxa de áudio inválida".into());
+        }
+        let id = identificar_rom(dados);
+        match id.veredito {
+            Veredito::Rev01 => Ok(Self {
+                console: Console::com_taxa_audio(dados.to_vec(), taxa_audio),
+            }),
+            Veredito::Recusada(m) => Err(m.descricao()),
+        }
+    }
+
     /// Botões apertados: bits 0 a 7 = cima, baixo, esquerda, direita, B, C, A, Start.
     pub fn botoes(&mut self, mascara: u8) {
         self.console.definir_botoes(mascara);
+    }
+
+    /// Coleta os candidatos de vídeo para o compositor WebGL2.
+    pub fn ativar_gpu(&mut self) {
+        self.console.ativar_gpu();
+    }
+
+    /// Ativa o compositor gráfico com dimensões configuradas.
+    pub fn ativar_gpu_com_dimensoes(&mut self, largura: usize, altura: usize) {
+        self.console.ativar_gpu_com_dimensoes(largura, altura);
+    }
+
+    /// Ativa o compositor gráfico em modo widescreen 16:9 (426x224).
+    pub fn ativar_gpu_widescreen(&mut self) {
+        self.console.ativar_gpu_widescreen();
+    }
+
+    /// Usa somente a composição gráfica, sem rasterizar uma imagem CPU.
+    pub fn ativar_gpu_sem_referencia(&mut self) {
+        self.console.ativar_gpu_sem_referencia();
+    }
+
+    pub fn largura_gpu(&self) -> usize {
+        self.console
+            .quadro_gpu()
+            .map(|q| q.largura())
+            .unwrap_or(320)
+    }
+
+    pub fn altura_gpu(&self) -> usize {
+        self.console.quadro_gpu().map(|q| q.altura()).unwrap_or(224)
+    }
+
+    pub fn desativar_gpu(&mut self) {
+        self.console.desativar_gpu();
+    }
+
+    /// Avança simulação e áudio; a apresentação usa as camadas separadamente.
+    pub fn simular_quadro(&mut self) {
+        self.console.simular_quadro();
+    }
+
+    pub fn camadas_gpu(&self) -> Vec<u8> {
+        self.console
+            .quadro_gpu()
+            .map(|q| q.camadas().to_vec())
+            .unwrap_or_default()
+    }
+
+    pub fn seletores_gpu(&self) -> Vec<u16> {
+        self.console
+            .quadro_gpu()
+            .map(|q| q.seletores().to_vec())
+            .unwrap_or_default()
+    }
+
+    pub fn sprites_gpu(&self) -> Vec<u8> {
+        self.console
+            .quadro_gpu()
+            .map(|q| q.sprites_compactos())
+            .unwrap_or_default()
+    }
+
+    pub fn fundos_gpu(&self) -> Vec<u8> {
+        self.console
+            .quadro_gpu()
+            .map(|q| q.fundos().to_vec())
+            .unwrap_or_default()
+    }
+
+    pub fn paletas_gpu(&self) -> Vec<u16> {
+        self.console
+            .quadro_gpu()
+            .map(|q| q.paletas().to_vec())
+            .unwrap_or_default()
+    }
+
+    /// Informa quantos pares estéreo ainda aguardam reprodução.
+    pub fn ocupacao_audio(&mut self, pares: usize) {
+        self.console.definir_ocupacao_audio(pares);
     }
 
     /// Roda um quadro e devolve a imagem de 320 por 224 em RGBA.

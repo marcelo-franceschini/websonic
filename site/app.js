@@ -1,5 +1,7 @@
 // Cola mínima entre a página e o WebAssembly. A lógica fica em Rust (crate sonic1-rom).
 import init, { identificar, Jogo } from "./pkg/sonic1_web.js";
+import { Relogio, PERIODO_QUADRO } from "./relogio.js";
+import { criarRenderizadorGPU } from "./gpu.js";
 
 const LIMITE_BYTES = 16 * 1024 * 1024;
 
@@ -7,6 +9,13 @@ const entrada = document.getElementById("arquivo");
 const caixa = document.getElementById("resultado");
 const btnAudio = document.getElementById("btn-audio");
 const btnBipe = document.getElementById("btn-bipe");
+
+const containerTela = document.getElementById("container-tela");
+const barraControles = document.getElementById("barra-controles");
+const seletorProporcao = document.getElementById("seletor-proporcao");
+const seletorFps = document.getElementById("seletor-fps");
+const btnFullscreen = document.getElementById("btn-fullscreen");
+const painelTeclas = document.getElementById("painel-teclas");
 
 // Elementos de Diagnóstico
 const elDiagEstado = document.getElementById("diag-estado");
@@ -27,6 +36,9 @@ let fallbackNode = null;
 let quadroNum = 0;
 let picoHistorico = 0;
 let quadrosComSom = 0;
+
+let modoWidescreen = false;
+let fpsDesbloqueado = false;
 
 function mostrar(valida, veredito, sha1, tamanho) {
   caixa.hidden = false;
@@ -117,7 +129,8 @@ async function iniciarAudio() {
       }
       workletNode.port.onmessage = (e) => {
         if (e.data && e.data.tipo === "status") {
-          elDiagWorklet.textContent = `Fila: ${e.data.disponiveis} amostras | Falhas: ${e.data.falhas}`;
+          elDiagWorklet.textContent = `Fila: ${e.data.disponiveis} amostras | Falhas: ${e.data.falhas} | Descartadas: ${e.data.descartadas}`;
+          if (jogo) jogo.ocupacao_audio(e.data.disponiveis);
         }
       };
       workletNode.onprocessorerror = (e) => {
@@ -125,7 +138,7 @@ async function iniciarAudio() {
         console.warn("AudioWorklet erro:", e);
       };
       workletNode.connect(audioCtx.destination);
-      elDiagPipeline.innerHTML = `<span style="color:#1a7f37; font-weight:bold;">AudioWorklet (Zero latência)</span>`;
+      elDiagPipeline.innerHTML = `<span style="color:#1a7f37; font-weight:bold;">AudioWorklet</span>`;
     } catch (eWorklet) {
       console.warn("AudioWorklet indisponível, usando ScriptProcessor:", eWorklet);
       const spNode = audioCtx.createScriptProcessor(2048, 0, 2);
@@ -154,6 +167,8 @@ async function iniciarAudio() {
       };
       spNode.connect(audioCtx.destination);
       fallbackNode = {
+        reset: () => { rIdx = wIdx = disp = 0; },
+        ocupacao: () => disp,
         enviar: (dados) => {
           const pares = dados.length >> 1;
           for (let i = 0; i < pares; i++) {
@@ -199,19 +214,155 @@ entrada.addEventListener("change", async () => {
 });
 
 // ---- Jogo ----
-const tela = document.getElementById("tela");
-const ctx = tela.getContext("2d");
-const imagem = ctx.createImageData(320, 224);
 let jogo = null;
+let tela = document.getElementById("tela");
+let compositor = null;
+let ctx = null;
+const imagem = new ImageData(320, 224);
+let contextoPerdido = false;
+
+function usarCpu(motivo) {
+  // Um canvas que já teve contexto WebGL não pode receber um contexto 2D.
+  const nova = tela.cloneNode(false);
+  tela.replaceWith(nova);
+  tela = nova;
+  tela.addEventListener("click", desbloquearAudio);
+  compositor = null;
+  ctx = tela.getContext("2d");
+  contextoPerdido = false;
+  if (jogo) jogo.desativar_gpu();
+  const erro = document.getElementById("erro-jogo");
+  erro.hidden = false;
+  erro.textContent = `Vídeo por software: ${motivo}`;
+}
+
+try {
+  compositor = criarRenderizadorGPU(tela);
+  if (!compositor) usarCpu("WebGL2 indisponível.");
+} catch (erro) {
+  usarCpu(`falha ao iniciar WebGL2 (${erro.message}).`);
+}
+
+tela.addEventListener("webglcontextlost", (e) => {
+  e.preventDefault();
+  contextoPerdido = true;
+  cancelAnimationFrame(animacao);
+  animacao = 0;
+  if (audioCtx && audioCtx.state === "running") {
+    audioCtx.suspend().then(() => {
+      if (!contextoPerdido && !document.hidden) desbloquearAudio();
+    }).catch(() => {});
+  }
+  document.getElementById("erro-jogo").textContent = "Contexto gráfico perdido. Aguardando recuperação.";
+  document.getElementById("erro-jogo").hidden = false;
+});
+
+tela.addEventListener("webglcontextrestored", () => {
+  try {
+    compositor = criarRenderizadorGPU(tela);
+    if (!compositor) throw new Error("WebGL2 indisponível");
+    contextoPerdido = false;
+    document.getElementById("erro-jogo").hidden = true;
+  } catch (erro) {
+    usarCpu(`falha ao restaurar WebGL2 (${erro.message}).`);
+  }
+  if (jogo && !document.hidden && !animacao) {
+    relogio.iniciar(performance.now());
+    desbloquearAudio();
+    animacao = requestAnimationFrame((t) => laco(t, geracao));
+  }
+});
+
+function aplicarProporcao(widescreen) {
+  modoWidescreen = Boolean(widescreen);
+  if (seletorProporcao && seletorProporcao.value !== (modoWidescreen ? "16:9" : "4:3")) {
+    seletorProporcao.value = modoWidescreen ? "16:9" : "4:3";
+  }
+  const larguraBase = modoWidescreen ? 426 : 320;
+  const alturaBase = 224;
+  tela.width = larguraBase;
+  tela.height = alturaBase;
+  if (compositor) {
+    compositor.redimensionar(larguraBase, alturaBase);
+  }
+  if (jogo) {
+    if (modoWidescreen) {
+      if (typeof jogo.ativar_gpu_widescreen === "function") {
+        jogo.ativar_gpu_widescreen();
+      } else if (typeof jogo.ativar_gpu_com_dimensoes === "function") {
+        jogo.ativar_gpu_com_dimensoes(426, 224);
+      }
+    } else {
+      jogo.ativar_gpu_sem_referencia();
+    }
+  }
+  ajustarEscala();
+  apresentar();
+}
+
+if (seletorProporcao) {
+  seletorProporcao.addEventListener("change", () => {
+    aplicarProporcao(seletorProporcao.value === "16:9");
+  });
+}
+
+if (seletorFps) {
+  seletorFps.addEventListener("change", () => {
+    fpsDesbloqueado = seletorFps.value === "desbloqueado";
+  });
+}
+
+if (btnFullscreen) {
+  btnFullscreen.addEventListener("click", () => {
+    const alvo = containerTela || tela;
+    if (!document.fullscreenElement) {
+      if (alvo.requestFullscreen) {
+        alvo.requestFullscreen().catch(() => {});
+      } else if (alvo.webkitRequestFullscreen) {
+        alvo.webkitRequestFullscreen();
+      }
+    } else if (document.exitFullscreen) {
+      document.exitFullscreen().catch(() => {});
+    }
+  });
+}
+
+function apresentar() {
+  if (contextoPerdido || !jogo) return;
+  const larguraBase = modoWidescreen ? 426 : 320;
+  const alturaBase = 224;
+  if (compositor) {
+    try {
+      compositor.renderizar(
+        jogo.camadas_gpu(),
+        jogo.sprites_gpu(),
+        jogo.fundos_gpu(),
+        jogo.seletores_gpu(),
+        jogo.paletas_gpu(),
+        larguraBase,
+        alturaBase
+      );
+    } catch (erro) {
+      usarCpu(`falha de WebGL2 (${erro.message}).`);
+    }
+  } else {
+    ctx.putImageData(imagem, 0, 0);
+  }
+}
+
 let apertadas = 0;
-let ultimo = 0;
-let acumulado = 0;
-const PASSO = 1000 / 60;
+const relogio = new Relogio();
+let geracao = 0;
+let animacao = 0;
 
 const TECLAS = {
   ArrowUp: 0x01, ArrowDown: 0x02, ArrowLeft: 0x04, ArrowRight: 0x08,
-  x: 0x10, c: 0x20, z: 0x40, Enter: 0x80,
+  x: 0x10, X: 0x10,
+  c: 0x20, C: 0x20,
+  z: 0x40, Z: 0x40,
+  Enter: 0x80, " ": 0x80, Spacebar: 0x80,
 };
+
 window.addEventListener("keydown", (e) => {
   const b = TECLAS[e.key];
   if (b) {
@@ -220,6 +371,7 @@ window.addEventListener("keydown", (e) => {
     e.preventDefault();
   }
 });
+
 window.addEventListener("keyup", (e) => {
   const b = TECLAS[e.key];
   if (b) {
@@ -228,24 +380,60 @@ window.addEventListener("keyup", (e) => {
   }
 });
 
-function ajustarEscala() {
-  const f = Math.max(1, Math.floor(Math.min((window.innerWidth - 32) / 320, (window.innerHeight * 0.7) / 224)));
-  tela.style.width = 320 * f + "px";
-  tela.style.height = 224 * f + "px";
-}
-window.addEventListener("resize", ajustarEscala);
+window.addEventListener("blur", () => { apertadas = 0; });
 
-function laco(agora) {
-  if (!jogo) return;
-  acumulado += Math.min(agora - ultimo, 100);
-  ultimo = agora;
-  if (acumulado >= PASSO) {
-    acumulado -= PASSO;
+// Gamepad padrão: direcional ou analógico esquerdo, A/B/X e Start.
+function botoesDoControle() {
+  if (!navigator.getGamepads) return 0;
+  const controle = Array.from(navigator.getGamepads()).find((p) => p && p.connected);
+  if (!controle) return 0;
+  const botao = (i) => controle.buttons[i]?.pressed;
+  const x = controle.axes[0] || 0;
+  const y = controle.axes[1] || 0;
+  let mascara = 0;
+  if (botao(12) || y < -0.5) mascara |= 0x01;
+  if (botao(13) || y > 0.5) mascara |= 0x02;
+  if (botao(14) || x < -0.5) mascara |= 0x04;
+  if (botao(15) || x > 0.5) mascara |= 0x08;
+  if (botao(0)) mascara |= 0x10;
+  if (botao(1)) mascara |= 0x20;
+  if (botao(2)) mascara |= 0x40;
+  if (botao(9)) mascara |= 0x80;
+  return mascara;
+}
+
+function ajustarEscala() {
+  const larguraBase = modoWidescreen ? 426 : 320;
+  const alturaBase = 224;
+  const emTelaCheia = Boolean(document.fullscreenElement);
+  let f;
+  if (emTelaCheia) {
+    f = Math.max(1, Math.floor(Math.min(window.innerWidth / larguraBase, window.innerHeight / alturaBase)));
+  } else {
+    f = Math.max(1, Math.floor(Math.min((window.innerWidth - 32) / larguraBase, (window.innerHeight * 0.7) / alturaBase)));
+  }
+  tela.style.width = (larguraBase * f) + "px";
+  tela.style.height = (alturaBase * f) + "px";
+}
+
+window.addEventListener("resize", ajustarEscala);
+document.addEventListener("fullscreenchange", ajustarEscala);
+document.addEventListener("webkitfullscreenchange", ajustarEscala);
+
+function laco(agora, sessao) {
+  animacao = 0;
+  if (!jogo || sessao !== geracao || document.hidden) return;
+  // Recupera atrasos sem descartar tempo, mantendo a página responsiva.
+  const passos = relogio.avancar(agora);
+  let atualizou = false;
+  for (let passo = 0; passo < passos; passo++) {
     quadroNum++;
 
-    jogo.botoes(apertadas);
-    imagem.data.set(jogo.quadro());
-    ctx.putImageData(imagem, 0, 0);
+    jogo.botoes(apertadas | botoesDoControle());
+    if (fallbackNode) jogo.ocupacao_audio(fallbackNode.ocupacao());
+    if (compositor) jogo.simular_quadro();
+    else imagem.data.set(jogo.quadro());
+    atualizou = true;
 
     const audio = jogo.audio();
     let picoQuadro = 0;
@@ -266,7 +454,7 @@ function laco(agora) {
 
     // Atualiza Painel de Diagnóstico a cada 6 quadros (~10 vezes por segundo)
     if (quadroNum % 6 === 0) {
-      const seg = (quadroNum / 60).toFixed(1);
+      const seg = (quadroNum * PERIODO_QUADRO / 1000).toFixed(1);
       elDiagQuadro.textContent = `${quadroNum} (${seg}s de jogo)`;
       elDiagAmostras.textContent = String(audio.length);
       elDiagPico.textContent = picoQuadro.toFixed(4);
@@ -281,22 +469,71 @@ function laco(agora) {
       const p = document.getElementById("erro-jogo");
       p.hidden = false;
       p.textContent = "O núcleo parou: " + erro;
+      if (atualizou) apresentar();
+      return;
     }
   }
-  requestAnimationFrame(laco);
+
+  if (fpsDesbloqueado) {
+    // Apresenta a cada quadro de animação da taxa nativa do monitor
+    apresentar();
+  } else if (atualizou) {
+    // Apresenta estritamente no ritmo fixo NTSC de 60Hz
+    apresentar();
+  }
+
+  animacao = requestAnimationFrame((t) => laco(t, sessao));
 }
 
 async function iniciar(bytes) {
+  const sessao = ++geracao;
+  cancelAnimationFrame(animacao);
+  animacao = 0;
+  await iniciarAudio();
+  if (sessao !== geracao) return;
+  if (workletNode) workletNode.port.postMessage({ tipo: "reset" });
+  if (fallbackNode) fallbackNode.reset();
   try {
-    jogo = Jogo.criar(bytes);
+    const anterior = jogo;
+    jogo = Jogo.criar_com_audio(bytes, audioCtx ? audioCtx.sampleRate : 48000);
+    if (compositor) {
+      if (modoWidescreen) {
+        if (typeof jogo.ativar_gpu_widescreen === "function") {
+          jogo.ativar_gpu_widescreen();
+        } else if (typeof jogo.ativar_gpu_com_dimensoes === "function") {
+          jogo.ativar_gpu_com_dimensoes(426, 224);
+        }
+      } else {
+        jogo.ativar_gpu_sem_referencia();
+      }
+    }
+    if (anterior) anterior.free();
   } catch (e) {
     jogo = null;
     return;
   }
   tela.hidden = false;
+  if (barraControles) barraControles.hidden = false;
+  if (painelTeclas) painelTeclas.hidden = false;
   document.getElementById("aviso").hidden = false;
   ajustarEscala();
-  await iniciarAudio();
-  ultimo = performance.now();
-  requestAnimationFrame(laco);
+  quadroNum = 0;
+  relogio.iniciar(performance.now());
+  if (!document.hidden) animacao = requestAnimationFrame((t) => laco(t, sessao));
 }
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    cancelAnimationFrame(animacao);
+    animacao = 0;
+    if (audioCtx && audioCtx.state === "running") {
+      audioCtx.suspend().then(() => {
+        if (!document.hidden && !contextoPerdido) desbloquearAudio();
+      }).catch(() => {});
+    }
+  } else if (jogo && !animacao && !contextoPerdido) {
+    desbloquearAudio();
+    relogio.retomar(performance.now());
+    animacao = requestAnimationFrame((t) => laco(t, geracao));
+  }
+});
