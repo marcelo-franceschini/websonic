@@ -1587,16 +1587,14 @@ fn sonic_control(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
     }
     sonic_display(m, a0)?;
     sonic_record_position(m, a0);
-    // `Sonic_Water` só faz algo na LZ.
-    if rb(m, V_ZONE) == ID_LZ {
-        return Err(ErroAbertura::NaoImplementado("Sonic na água"));
-    }
+    super::sonic_agua::atualizar(m, a0);
     let direita = rb(m, V_ANGLEBUFFER);
     let esquerda = rb(m, V_ANGLEBUFFER2);
     wb(m, a0.wrapping_add(SON_ANGLERIGHT), direita);
     wb(m, a0.wrapping_add(SON_ANGLELEFT), esquerda);
-    if rb(m, F_WTUNNELMODE) != 0 {
-        return Err(ErroAbertura::NaoImplementado("túnel de vento"));
+    if rb(m, F_WTUNNELMODE) != 0 && rb(m, a0.wrapping_add(OB_ANIM)) == ANIM_WALK {
+        let anterior = rb(m, a0.wrapping_add(OB_PREV_ANI));
+        wb(m, a0.wrapping_add(OB_ANIM), anterior);
     }
     sonic_animate(m, a0)?;
     if rb(m, F_PLAYERCTRL) & 0x80 == 0 {
@@ -2281,6 +2279,45 @@ pub(super) fn sonic_load_gfx(m: &mut Memoria, a0: u32) {
 #[cfg(test)]
 mod testes_contato {
     use super::*;
+
+    #[test]
+    fn tunel_preserva_animacao_anterior_somente_quando_andando() {
+        for (tunel, animacao, esperado) in
+            [(1, ANIM_WALK, 0x0F), (1, 2, 2), (0, ANIM_WALK, ANIM_WALK)]
+        {
+            let mut m = Memoria::nova(vec![0; 0x20000]);
+            wb(&mut m, V_PLAYER + OB_ROUTINE, 2);
+            wb(&mut m, V_ZONE, ID_LZ);
+            ww(&mut m, 0xFF_F646, 100);
+            wb(&mut m, F_PLAYERCTRL, 0x81);
+            wb(&mut m, F_WTUNNELMODE, tunel);
+            wb(&mut m, V_PLAYER + OB_ANIM, animacao);
+            wb(&mut m, V_PLAYER + OB_PREV_ANI, 0x0F);
+            sonic_player(&mut m, V_PLAYER).unwrap();
+            assert_eq!(rb(&mut m, V_PLAYER + OB_ANIM), esperado);
+        }
+    }
+
+    #[test]
+    fn controle_normal_aplica_entrada_e_saida_da_agua() {
+        let mut m = Memoria::nova(vec![0; 0x20000]);
+        wb(&mut m, V_ZONE, ID_LZ);
+        wb(&mut m, V_PLAYER + OB_ROUTINE, 2);
+        wb(&mut m, F_PLAYERCTRL, 0x81);
+        ww(&mut m, 0xFF_F646, 100);
+        ww(&mut m, V_PLAYER + OB_Y, 101);
+        ww(&mut m, V_PLAYER + OB_VELY, 0x400);
+        sonic_player(&mut m, V_PLAYER).unwrap();
+        assert_ne!(rb(&mut m, V_PLAYER + OB_STATUS) & STATUS_UNDERWATER, 0);
+        assert_eq!(rw(&mut m, V_PLAYER + OB_VELY), 0x100);
+        assert_eq!(rw(&mut m, V_SONSPEEDMAX), 0x300);
+
+        ww(&mut m, V_PLAYER + OB_Y, 100);
+        sonic_player(&mut m, V_PLAYER).unwrap();
+        assert_eq!(rb(&mut m, V_PLAYER + OB_STATUS) & STATUS_UNDERWATER, 0);
+        assert_eq!(rw(&mut m, V_PLAYER + OB_VELY), 0x200);
+        assert_eq!(rw(&mut m, V_SONSPEEDMAX), 0x600);
+    }
 
     #[test]
     fn fim_dos_poderes_restaura_musica_e_velocidade() {
