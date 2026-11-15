@@ -1,6 +1,6 @@
 //! Geradores e bolas de lava (objetos 13 e 14).
 use super::boot::{rom_b, rom_w};
-use super::fisica::speed_to_pos;
+use super::fisica::{obj_floor_dist, obj_hit_ceiling, obj_hit_wall, speed_to_pos};
 use super::objetos::{
     animate_sprite, delete_object, display_sprite, find_free_obj, fora_da_janela,
 };
@@ -104,6 +104,36 @@ pub fn bola(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
                 },
             );
         }
+        4..=7 => {
+            let horizontal = tipo >= 6;
+            let bit = if horizontal { 1 } else { 2 };
+            let status = rb(m, a.wrapping_add(OB_STATUS)) & !bit;
+            wb(
+                m,
+                a.wrapping_add(OB_STATUS),
+                if tipo == 4 || tipo == 6 {
+                    status | bit
+                } else {
+                    status
+                },
+            );
+            let distancia = match tipo {
+                4 => obj_hit_ceiling(m, a),
+                5 => obj_floor_dist(m, a),
+                6 => obj_hit_wall(m, a, 0xFFF8, true),
+                7 => obj_hit_wall(m, a, 8, false),
+                _ => unreachable!(),
+            };
+            if distancia & 0x8000 != 0 {
+                wb(m, a.wrapping_add(OB_SUBTYPE), 8);
+                wb(m, a.wrapping_add(OB_ANIM), if horizontal { 3 } else { 1 });
+                ww(
+                    m,
+                    a.wrapping_add(if horizontal { OB_VELX } else { OB_VELY }),
+                    0,
+                );
+            }
+        }
         8 => {}
         _ => {
             return Err(ErroAbertura::NaoImplementado(
@@ -141,5 +171,87 @@ mod testes {
         let b = a.wrapping_add(OBJECT_SIZE);
         assert_eq!(rb(&mut m, b.wrapping_add(OB_ID)), 0x14);
         assert_eq!(rw(&mut m, b.wrapping_add(OB_Y)), 100);
+    }
+
+    #[test]
+    fn bolas_param_ao_atingir_superficies() {
+        for tipo in 4..=7u8 {
+            let mut rom = vec![0; 0x64000];
+            for i in 0..16usize {
+                rom[usize::try_from(COLLARRAY1).unwrap() + 16 + i] = 8;
+                rom[usize::try_from(COLLARRAY2).unwrap() + 16 + i] = 8;
+            }
+            let mut m = Memoria::nova(rom);
+            let a = V_LVLOBJSPACE;
+            wb(&mut m, a.wrapping_add(OB_ID), 0x14);
+            wb(&mut m, a.wrapping_add(OB_ROUTINE), 2);
+            wb(&mut m, a.wrapping_add(OB_SUBTYPE), tipo);
+            wb(&mut m, a.wrapping_add(OB_HEIGHT), 8);
+            ww(&mut m, a.wrapping_add(OB_X), 7);
+            ww(&mut m, a.wrapping_add(OB_Y), if tipo == 4 { 8 } else { 7 });
+            ww(&mut m, a.wrapping_add(OB_VELX), 0x200);
+            ww(&mut m, a.wrapping_add(OB_VELY), 0x200);
+            wl(&mut m, V_COLLINDEX, 0xFF_8000);
+            wb(&mut m, 0xFF_8001, 1);
+            let bloco = match tipo {
+                4 => 0x5001,
+                5 => 0x2001,
+                6 => 0x4801,
+                _ => 0x4001,
+            };
+            ww(&mut m, 0xFF_FF00, bloco);
+            bola(&mut m, a).unwrap();
+            assert_eq!(rb(&mut m, a.wrapping_add(OB_SUBTYPE)), 8, "tipo {tipo}");
+            assert_eq!(
+                rb(&mut m, a.wrapping_add(OB_ANIM)),
+                if tipo >= 6 { 3 } else { 1 }
+            );
+            assert_eq!(
+                rw(
+                    &mut m,
+                    a.wrapping_add(if tipo >= 6 { OB_VELX } else { OB_VELY })
+                ),
+                0
+            );
+            assert_eq!(
+                rb(&mut m, a.wrapping_add(OB_STATUS)) & 3,
+                if tipo == 4 {
+                    2
+                } else if tipo == 6 {
+                    1
+                } else {
+                    0
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn bolas_continuam_em_movimento_sem_colisao() {
+        for tipo in 4..=7u8 {
+            let mut m = Memoria::nova(vec![0; 0x64000]);
+            let a = V_LVLOBJSPACE;
+            wb(&mut m, a.wrapping_add(OB_ID), 0x14);
+            wb(&mut m, a.wrapping_add(OB_ROUTINE), 2);
+            wb(&mut m, a.wrapping_add(OB_SUBTYPE), tipo);
+            wb(&mut m, a.wrapping_add(OB_HEIGHT), 8);
+            ww(&mut m, a.wrapping_add(OB_X), 100);
+            ww(&mut m, a.wrapping_add(OB_Y), 100);
+            let velocidade = if tipo >= 6 { OB_VELX } else { OB_VELY };
+            ww(&mut m, a.wrapping_add(velocidade), 0x200);
+            bola(&mut m, a).unwrap();
+            assert_eq!(rb(&mut m, a.wrapping_add(OB_SUBTYPE)), tipo);
+            assert_eq!(rw(&mut m, a.wrapping_add(velocidade)), 0x200);
+            assert_eq!(
+                rb(&mut m, a.wrapping_add(OB_STATUS)) & 3,
+                if tipo == 4 {
+                    2
+                } else if tipo == 6 {
+                    1
+                } else {
+                    0
+                }
+            );
+        }
     }
 }
