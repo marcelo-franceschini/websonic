@@ -1,5 +1,5 @@
 //! HUD (`_inc/HUD Update.asm`): os números de pontos, anéis, tempo e vidas na VRAM. O modo de
-//! depuração, o fim do tempo e os bônus do fim da fase devolvem `NaoImplementado`.
+//! depuração ainda devolve `NaoImplementado`.
 
 use super::boot::{rom_b, rom_l};
 use super::ram::*;
@@ -136,25 +136,35 @@ pub fn hud_update(m: &mut Memoria) -> Result<(), ErroAbertura> {
         let aneis = u32::from(rw(m, V_RINGS));
         escrever_8x16(m, loc_vram(ARTTILE_HUDRINGS), aneis, 3, false);
     }
-    atualizar_tempo(m)?;
+    if atualizar_tempo(m) {
+        return Ok(());
+    }
     if rb(m, F_LIFECOUNT) != 0 {
         wb(m, F_LIFECOUNT, 0);
         hud_lives(m);
     }
     if rb(m, F_ENDACTBONUS) != 0 {
-        return Err(ErroAbertura::NaoImplementado("bônus do fim da fase"));
+        wb(m, F_ENDACTBONUS, 0);
+        wl(m, VDP_CONTROLE, loc_vram(0x570));
+        let tempo = u32::from(rw(m, V_TIMEBONUS));
+        escrever_bonus(m, tempo);
+        let aneis = u32::from(rw(m, V_RINGBONUS));
+        escrever_bonus(m, aneis);
     }
     Ok(())
 }
 
 /// A parte do tempo de `HUD_Update`: um quadro soma 1/60 s, e os números só se escrevem quando
 /// os segundos mudam.
-fn atualizar_tempo(m: &mut Memoria) -> Result<(), ErroAbertura> {
+fn atualizar_tempo(m: &mut Memoria) -> bool {
     if rb(m, F_TIMECOUNT) == 0 || rw(m, F_PAUSE) != 0 {
-        return Ok(());
+        return false;
     }
     if rl(m, V_TIME) == (9 * 0x10000) + (59 * 0x100) + 59 {
-        return Err(ErroAbertura::NaoImplementado("fim do tempo (9:59:59)"));
+        wb(m, F_TIMECOUNT, 0);
+        super::fisica::kill_sonic(m);
+        wb(m, F_TIMEOVER, 1);
+        return true;
     }
     let centesimos = V_TIME.wrapping_add(3);
     let segundos = V_TIME.wrapping_add(2);
@@ -162,7 +172,7 @@ fn atualizar_tempo(m: &mut Memoria) -> Result<(), ErroAbertura> {
     let c = rb(m, centesimos).wrapping_add(1);
     wb(m, centesimos, c);
     if c < 60 {
-        return Ok(());
+        return false;
     }
     wb(m, centesimos, 0);
     let s = rb(m, segundos).wrapping_add(1);
@@ -179,5 +189,69 @@ fn atualizar_tempo(m: &mut Memoria) -> Result<(), ErroAbertura> {
     escrever_8x16(m, loc_vram(ARTTILE_HUDTIMEMINS), mi, 1, true);
     let sec = u32::from(rb(m, segundos));
     escrever_8x16(m, loc_vram(ARTTILE_HUDTIMESECS), sec, 2, true);
-    Ok(())
+    false
+}
+
+/// `Hud_TimeRingBonus`: quatro dígitos contíguos, limpando zeros à esquerda.
+fn escrever_bonus(m: &mut Memoria, mut valor: u32) {
+    let mut escrevendo = false;
+    for divisor in [1000, 100, 10, 1] {
+        let (digito, resto) = digito(valor, divisor);
+        valor = resto;
+        escrevendo |= digito != 0;
+        if escrevendo {
+            escrever_longas(
+                m,
+                ART_HUD.wrapping_add(u32::from(digito).wrapping_mul(0x40)),
+                16,
+            );
+        } else {
+            for _ in 0..16 {
+                wl(m, VDP_DADOS, 0);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod testes {
+    use super::*;
+    use crate::memoria::{PortaVdp, Saida};
+
+    #[test]
+    fn tempo_esgotado_mata_sonic_e_interrompe_o_hud() {
+        let mut m = Memoria::nova(vec![]);
+        wb(&mut m, F_TIMECOUNT, 1);
+        wl(&mut m, V_TIME, 0x0009_3B3B);
+        wb(&mut m, F_LIFECOUNT, 1);
+        hud_update(&mut m).unwrap();
+        assert_eq!(rb(&mut m, F_TIMECOUNT), 0);
+        assert_eq!(rb(&mut m, F_TIMEOVER), 1);
+        assert_eq!(rb(&mut m, V_PLAYER.wrapping_add(OB_ROUTINE)), 6);
+        assert_eq!(rb(&mut m, F_LIFECOUNT), 1);
+    }
+
+    #[test]
+    fn bonus_escreve_oito_digitos_e_limpa_flag() {
+        let mut m = Memoria::nova(vec![0; 0x20000]);
+        wb(&mut m, F_ENDACTBONUS, 1);
+        super::super::ww(&mut m, V_TIMEBONUS, 123);
+        super::super::ww(&mut m, V_RINGBONUS, 45);
+        hud_update(&mut m).unwrap();
+        assert_eq!(rb(&mut m, F_ENDACTBONUS), 0);
+        let dados = m
+            .saidas()
+            .iter()
+            .filter(|s| {
+                matches!(
+                    s,
+                    Saida::Vdp {
+                        porta: PortaVdp::Dados,
+                        ..
+                    }
+                )
+            })
+            .count();
+        assert_eq!(dados, 8 * 16 * 2);
+    }
 }
