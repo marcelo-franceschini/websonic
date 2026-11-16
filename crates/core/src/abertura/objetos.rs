@@ -17,10 +17,10 @@ mod boss_syz;
 mod burrobot;
 #[path = "corrente_espinhos.rs"]
 mod corrente_espinhos;
-#[path = "jaws.rs"]
-mod jaws;
 #[path = "jangada_labirinto.rs"]
 mod jangada_labirinto;
+#[path = "jaws.rs"]
+mod jaws;
 #[path = "portas_labirinto.rs"]
 mod portas_labirinto;
 
@@ -972,27 +972,94 @@ fn monitor(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
     }
 }
 
-/// `Mon_Solid` (rotina normal): o Sonic não pode estar tocando o monitor.
+/// `Mon_Solid`: contato lateral e plataforma sobre o monitor.
 fn monitor_solido(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
-    if rb(m, a0.wrapping_add(OB_ROUTINE_2)) != 0 {
-        return Err(ErroAbertura::NaoImplementado("monitor com o Sonic em cima"));
-    }
-    if mon_solid_sides(m, a0) || rb(m, a0.wrapping_add(OB_STATUS)) & 0x20 != 0 {
-        return Err(ErroAbertura::NaoImplementado("Sonic tocando o monitor"));
+    match rb(m, a0.wrapping_add(OB_ROUTINE_2)) {
+        0 => {
+            if let Some((dx, dy, topo)) = mon_solid_sides(m, a0) {
+                let vy = com_sinal(rw(m, V_PLAYER.wrapping_add(OB_VELY)));
+                if vy < 0 || rb(m, V_PLAYER.wrapping_add(OB_ANIM)) != 2 {
+                    if topo {
+                        let y = rw(m, V_PLAYER.wrapping_add(OB_Y)).wrapping_sub(dy);
+                        ww(m, V_PLAYER.wrapping_add(OB_Y), y);
+                        super::plataforma_oscilante::assentar(m, a0);
+                        wb(m, a0.wrapping_add(OB_ROUTINE_2), 2);
+                    } else {
+                        let vx = com_sinal(rw(m, V_PLAYER.wrapping_add(OB_VELX)));
+                        if (com_sinal(dx) > 0 && vx >= 0) || (com_sinal(dx) < 0 && vx < 0) {
+                            let x = rw(m, V_PLAYER.wrapping_add(OB_X)).wrapping_sub(dx);
+                            ww(m, V_PLAYER.wrapping_add(OB_X), x);
+                            ww(m, V_PLAYER.wrapping_add(OB_INERTIA), 0);
+                            ww(m, V_PLAYER.wrapping_add(OB_VELX), 0);
+                        }
+                        if rb(m, V_PLAYER.wrapping_add(OB_STATUS)) & STATUS_IN_AIR == 0 {
+                            for objeto in [a0, V_PLAYER] {
+                                let status = rb(m, objeto.wrapping_add(OB_STATUS));
+                                wb(m, objeto.wrapping_add(OB_STATUS), status | 0x20);
+                            }
+                        }
+                    }
+                }
+            } else if rb(m, a0.wrapping_add(OB_STATUS)) & 0x20 != 0 {
+                ww(m, V_PLAYER.wrapping_add(OB_ANIM), 1);
+                for objeto in [a0, V_PLAYER] {
+                    let status = rb(m, objeto.wrapping_add(OB_STATUS));
+                    wb(m, objeto.wrapping_add(OB_STATUS), status & !0x20);
+                }
+            }
+        }
+        2 => {
+            let x = rw(m, a0.wrapping_add(OB_X));
+            let distancia = rw(m, V_PLAYER.wrapping_add(OB_X))
+                .wrapping_sub(x)
+                .wrapping_add(26);
+            let status = rb(m, V_PLAYER.wrapping_add(OB_STATUS));
+            if status & STATUS_IN_AIR != 0 || com_sinal(distancia) < 0 || distancia >= 52 {
+                wb(
+                    m,
+                    V_PLAYER.wrapping_add(OB_STATUS),
+                    status & !STATUS_ON_OBJECT,
+                );
+                let estado = rb(m, a0.wrapping_add(OB_STATUS));
+                wb(m, a0.wrapping_add(OB_STATUS), estado & !STATUS_ON_OBJECT);
+            }
+            if rb(m, V_PLAYER.wrapping_add(OB_STATUS)) & STATUS_ON_OBJECT == 0 {
+                wb(m, a0.wrapping_add(OB_ROUTINE_2), 0);
+            } else {
+                super::plataforma_oscilante::mover_sonic_altura(m, a0, x, 16);
+            }
+        }
+        4 => {
+            super::fisica::speed_to_pos(m, a0);
+            let vy = rw(m, a0.wrapping_add(OB_VELY)).wrapping_add(0x38);
+            ww(m, a0.wrapping_add(OB_VELY), vy);
+            let distancia = super::fisica::obj_floor_dist(m, a0);
+            if com_sinal(distancia) < 0 {
+                let y = rw(m, a0.wrapping_add(OB_Y)).wrapping_add(distancia);
+                ww(m, a0.wrapping_add(OB_Y), y);
+                ww(m, a0.wrapping_add(OB_VELY), 0);
+                wb(m, a0.wrapping_add(OB_ROUTINE_2), 0);
+            }
+        }
+        _ => {
+            return Err(ErroAbertura::NaoImplementado(
+                "rotina secundaria do monitor",
+            ));
+        }
     }
     animate_sprite(m, a0, ANI_MONITOR)?;
     mon_display(m, a0)
 }
 
 /// `Mon_SolidSides`: o Sonic está dentro da caixa do monitor?
-fn mon_solid_sides(m: &mut Memoria, a0: u32) -> bool {
+fn mon_solid_sides(m: &mut Memoria, a0: u32) -> Option<(u16, u16, bool)> {
     let d1 = 15u16.wrapping_add(11);
     let sx = rw(m, V_PLAYER.wrapping_add(OB_X));
     let d0 = sx
         .wrapping_sub(rw(m, a0.wrapping_add(OB_X)))
         .wrapping_add(d1);
     if com_sinal(d0) < 0 || d0 > d1.wrapping_mul(2) {
-        return false;
+        return None;
     }
     let altura = u16::from_be_bytes(
         i16::from(i8::from_be_bytes([rb(m, V_PLAYER.wrapping_add(OB_HEIGHT))])).to_be_bytes(),
@@ -1003,11 +1070,71 @@ fn mon_solid_sides(m: &mut Memoria, a0: u32) -> bool {
         .wrapping_sub(rw(m, a0.wrapping_add(OB_Y)))
         .wrapping_add(d2);
     if com_sinal(d3) < 0 || d3 >= d2.wrapping_mul(2) {
-        return false;
+        return None;
     }
-    rb(m, F_PLAYERCTRL) & 0x80 == 0
-        && rb(m, V_PLAYER.wrapping_add(OB_ROUTINE)) < 6
-        && rw(m, V_DEBUGUSE) == 0
+    if rb(m, F_PLAYERCTRL) & 0x80 != 0
+        || rb(m, V_PLAYER.wrapping_add(OB_ROUTINE)) >= 6
+        || rw(m, V_DEBUGUSE) != 0
+    {
+        return None;
+    }
+    let dx = if d0 > d1 {
+        d0.wrapping_sub(d1.wrapping_mul(2))
+    } else {
+        d0
+    };
+    let largura = u16::from(rb(m, a0.wrapping_add(OB_ACTWID))).wrapping_add(4);
+    let x_topo = sx
+        .wrapping_add(largura)
+        .wrapping_sub(rw(m, a0.wrapping_add(OB_X)));
+    let topo = d3 < 16 && com_sinal(x_topo) >= 0 && x_topo < largura.wrapping_mul(2);
+    Some((dx, d3, topo))
+}
+
+#[cfg(test)]
+mod testes_monitor_contato {
+    use super::*;
+
+    #[test]
+    fn contato_lateral_empurra_e_libera_ao_afastar() {
+        let mut m = Memoria::nova(vec![0; 0x20000]);
+        let a = V_LVLOBJSPACE;
+        wb(&mut m, a.wrapping_add(OB_ACTWID), 15);
+        ww(&mut m, a.wrapping_add(OB_X), 100);
+        ww(&mut m, a.wrapping_add(OB_Y), 100);
+        ww(&mut m, V_PLAYER.wrapping_add(OB_X), 80);
+        ww(&mut m, V_PLAYER.wrapping_add(OB_Y), 100);
+        wb(&mut m, V_PLAYER.wrapping_add(OB_HEIGHT), 19);
+        ww(&mut m, V_PLAYER.wrapping_add(OB_VELX), 0x100);
+        monitor_solido(&mut m, a).unwrap();
+        assert_eq!(rw(&mut m, V_PLAYER.wrapping_add(OB_X)), 74);
+        assert_eq!(rw(&mut m, V_PLAYER.wrapping_add(OB_VELX)), 0);
+        assert_ne!(rb(&mut m, V_PLAYER.wrapping_add(OB_STATUS)) & 0x20, 0);
+        ww(&mut m, V_PLAYER.wrapping_add(OB_X), 20);
+        monitor_solido(&mut m, a).unwrap();
+        assert_eq!(rb(&mut m, V_PLAYER.wrapping_add(OB_STATUS)) & 0x20, 0);
+    }
+
+    #[test]
+    fn contato_superior_assenta_sonic_no_monitor() {
+        let mut m = Memoria::nova(vec![0; 0x20000]);
+        let a = V_LVLOBJSPACE;
+        wb(&mut m, a.wrapping_add(OB_ROUTINE), 2);
+        wb(&mut m, a.wrapping_add(OB_ACTWID), 15);
+        ww(&mut m, a.wrapping_add(OB_X), 100);
+        ww(&mut m, a.wrapping_add(OB_Y), 100);
+        ww(&mut m, V_PLAYER.wrapping_add(OB_X), 100);
+        ww(&mut m, V_PLAYER.wrapping_add(OB_Y), 70);
+        wb(&mut m, V_PLAYER.wrapping_add(OB_HEIGHT), 19);
+        wb(&mut m, V_PLAYER.wrapping_add(OB_STATUS), STATUS_IN_AIR);
+        monitor_solido(&mut m, a).unwrap();
+        assert_eq!(rw(&mut m, V_PLAYER.wrapping_add(OB_Y)), 66);
+        assert_eq!(rb(&mut m, a.wrapping_add(OB_ROUTINE_2)), 2);
+        assert_ne!(
+            rb(&mut m, V_PLAYER.wrapping_add(OB_STATUS)) & STATUS_ON_OBJECT,
+            0
+        );
+    }
 }
 
 /// `Mon_Display` (FixBugs = 0): mostra e some fora da janela.

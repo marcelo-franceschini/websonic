@@ -172,6 +172,11 @@ pub(super) fn detectar_altura(m: &mut Memoria, a: u32, altura: u16) {
         py.wrapping_add(distancia).wrapping_add(3),
     );
     wb(m, a.wrapping_add(OB_ROUTINE), 4);
+    assentar(m, a);
+}
+
+/// `Plat_NoCheck`: associa Sonic à plataforma após a colisão já ter sido verificada.
+pub(super) fn assentar(m: &mut Memoria, a: u32) {
     let status = rb(m, V_PLAYER.wrapping_add(OB_STATUS));
     if status & STATUS_ON_OBJECT != 0 {
         let indice = u32::from(rb(m, V_PLAYER.wrapping_add(SON_STANDONOBJECT)));
