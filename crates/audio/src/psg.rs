@@ -183,9 +183,9 @@ impl Psg {
         let em_reset = (self.ic_atraso & 2) != 0;
         let canal_sel = if em_reset { 0 } else { self.canal_sel };
         let mut periodo: u16 = 0;
-        for i in 0..3 {
+        for (i, frequencia) in self.frequencia.iter().enumerate() {
             if (canal_sel >> i) & 1 != 0 {
-                periodo |= self.frequencia[i];
+                periodo |= frequencia;
             }
         }
         if canal_sel & 8 != 0 {
