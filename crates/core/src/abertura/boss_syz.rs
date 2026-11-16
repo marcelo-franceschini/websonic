@@ -77,7 +77,7 @@ fn atualizar_estado(m: &mut Memoria, a: u32) {
     wb(
         m,
         a.wrapping_add(PAI),
-        u8::try_from(x.wrapping_sub(0x2C00) >> 5).unwrap_or(0),
+        x.wrapping_sub(0x2C00).wrapping_shr(5).to_be_bytes()[1],
     );
     if rb(m, a.wrapping_add(OB_STATUS)) & 0x80 != 0 {
         fisica::add_points(m, 100);
@@ -318,7 +318,16 @@ pub fn chefe(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
             let status = rb(m, pai.wrapping_add(OB_STATUS));
             wb(m, a.wrapping_add(OB_STATUS), status);
             let fase = rb(m, pai.wrapping_add(OB_ROUTINE_2));
-            if rb(m, a.wrapping_add(OB_ROUTINE)) == 8 {
+            let rotina = rb(m, a.wrapping_add(OB_ROUTINE));
+            // Na fuga, chama e espinho desaparecem ao sair da tela.
+            if fase == 10
+                && (rotina == 6 || rotina == 8)
+                && rb(m, a.wrapping_add(OB_RENDER)) & 0x80 == 0
+            {
+                objetos::delete_object(m, a);
+                return Ok(());
+            }
+            if rotina == 8 {
                 wl(m, a.wrapping_add(OB_MAP), MAP_BOSS_ITEMS);
                 ww(m, a.wrapping_add(OB_GFX), 0x246C);
                 wb(m, a.wrapping_add(OB_FRAME), 5);
@@ -589,6 +598,34 @@ mod testes {
         chefe(&mut m, a).unwrap();
         assert_eq!(rw(&mut m, V_LIMITRIGHT2), 0x2D02);
     }
+    #[test]
+    fn indice_do_bloco_preserva_byte_baixo_ao_ultrapassar_limite_esquerdo() {
+        let mut m = Memoria::nova(vec![]);
+        let boss = V_LVLOBJSPACE;
+        ww(&mut m, boss.wrapping_add(OB_X), 0x2BF0);
+        wb(&mut m, boss.wrapping_add(OB_COLTYPE), 0x0F);
+        atualizar_estado(&mut m, boss);
+        // `subi.w` e `lsr.w` produzem $07FF; `move.b` guarda $FF.
+        assert_eq!(rb(&mut m, boss.wrapping_add(PAI)), 0xFF);
+    }
+
+    #[test]
+    fn componentes_da_fuga_sao_removidos_ao_sair_da_tela() {
+        for rotina in [6, 8] {
+            let mut m = Memoria::nova(vec![0; 0x20000]);
+            let pai = V_LVLOBJSPACE;
+            let filho = pai.wrapping_add(OBJECT_SIZE);
+            wb(&mut m, pai.wrapping_add(OB_ID), 0x75);
+            wb(&mut m, pai.wrapping_add(OB_ROUTINE_2), 10);
+            wb(&mut m, filho.wrapping_add(OB_ID), 0x75);
+            wb(&mut m, filho.wrapping_add(OB_ROUTINE), rotina);
+            wl(&mut m, filho.wrapping_add(PAI), pai);
+            wb(&mut m, filho.wrapping_add(OB_RENDER), 4);
+            chefe(&mut m, filho).unwrap();
+            assert_eq!(rb(&mut m, filho.wrapping_add(OB_ID)), 0);
+        }
+    }
+
     #[test]
     fn chefe_cria_componentes_e_inicia_aproximacao() {
         let mut m = Memoria::nova(vec![0; 0x20000]);
