@@ -9,6 +9,8 @@ use crate::memoria::Memoria;
 
 #[path = "bloco_labirinto.rs"]
 mod bloco_labirinto;
+#[path = "arpao_labirinto.rs"]
+mod arpao_labirinto;
 #[path = "bolhas_labirinto.rs"]
 mod bolhas_labirinto;
 #[path = "boss_syz.rs"]
@@ -159,6 +161,7 @@ fn rodar_objeto(m: &mut Memoria, a0: u32, id: u8) -> Result<(), ErroAbertura> {
         0x56 => portas_labirinto::executar(m, a0),
         0x64 => bolhas_labirinto::executar(m, a0),
         0x65 => cascata_labirinto::executar(m, a0),
+        0x16 => arpao_labirinto::executar(m, a0),
         0x2C => jaws::executar(m, a0),
         0x2E => power_up(m, a0),
         0x38 => escudo_estrelas(m, a0),
@@ -237,6 +240,7 @@ pub fn objeto_existe(id: u8) -> bool {
             | 0x56
             | 0x64
             | 0x65
+            | 0x16
             | 0x2C
             | 0x2E
             | 0x38
