@@ -9,16 +9,18 @@ use crate::memoria::Memoria;
 
 #[path = "bloco_labirinto.rs"]
 mod bloco_labirinto;
-#[path = "jaws.rs"]
-mod jaws;
 #[path = "bolhas_labirinto.rs"]
 mod bolhas_labirinto;
+#[path = "boss_syz.rs"]
+mod boss_syz;
 #[path = "burrobot.rs"]
 mod burrobot;
-#[path = "portas_labirinto.rs"]
-mod portas_labirinto;
 #[path = "corrente_espinhos.rs"]
 mod corrente_espinhos;
+#[path = "jaws.rs"]
+mod jaws;
+#[path = "portas_labirinto.rs"]
+mod portas_labirinto;
 
 const SPRITES_MAX: u8 = 80;
 const SPRITELAYER_NUM: u32 = 8;
@@ -123,6 +125,8 @@ fn rodar_objeto(m: &mut Memoria, a0: u32, id: u8) -> Result<(), ErroAbertura> {
         0x3E => super::capsula::executar(m, a0),
         0x3D => super::boss_ghz::executar(m, a0),
         0x48 => super::boss_ghz::bola(m, a0),
+        0x75 => boss_syz::chefe(m, a0),
+        0x76 => boss_syz::bloco(m, a0),
         0x3C => super::parede_quebravel::executar(m, a0),
         0x15 => super::plataforma_oscilante::executar(m, a0),
         0x18 => super::plataforma_basica::executar(m, a0),
@@ -225,6 +229,8 @@ pub fn objeto_existe(id: u8) -> bool {
             | 0x56
             | 0x64
             | 0x2C
+            | 0x76
+            | 0x75
             | 0x33
             | 0x32
             | 0x55

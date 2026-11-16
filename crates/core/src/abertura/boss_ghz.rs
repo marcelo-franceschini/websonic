@@ -68,7 +68,7 @@ fn preparar(m: &mut Memoria, a: u32) {
     wb(m, a.wrapping_add(OB_COLTYPE), 0x0F);
     wb(m, a.wrapping_add(0x21), 8);
 }
-fn explosao(m: &mut Memoria, a: u32) {
+pub(super) fn explosao(m: &mut Memoria, a: u32) {
     if rb(m, V_VBLANK_BYTE) & 7 != 0 {
         return;
     }
