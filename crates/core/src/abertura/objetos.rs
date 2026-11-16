@@ -19,6 +19,8 @@ mod burrobot;
 mod corrente_espinhos;
 #[path = "jaws.rs"]
 mod jaws;
+#[path = "jangada_labirinto.rs"]
+mod jangada_labirinto;
 #[path = "portas_labirinto.rs"]
 mod portas_labirinto;
 
@@ -155,6 +157,7 @@ fn rodar_objeto(m: &mut Memoria, a0: u32, id: u8) -> Result<(), ErroAbertura> {
         0x56 => portas_labirinto::executar(m, a0),
         0x64 => bolhas_labirinto::executar(m, a0),
         0x2C => jaws::executar(m, a0),
+        0x52 => jangada_labirinto::executar(m, a0),
         0x33 => super::marble_bloco::executar(m, a0),
         0x32 => super::botao::executar(m, a0),
         0x55 => super::basaran::executar(m, a0),
@@ -229,6 +232,7 @@ pub fn objeto_existe(id: u8) -> bool {
             | 0x56
             | 0x64
             | 0x2C
+            | 0x52
             | 0x76
             | 0x75
             | 0x33
