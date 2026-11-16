@@ -27,6 +27,8 @@ mod cascata_labirinto;
 mod esteira_labirinto;
 #[path = "gargula_labirinto.rs"]
 mod gargula_labirinto;
+#[path = "gangorra_slz.rs"]
+mod gangorra_slz;
 #[path = "corrente_espinhos.rs"]
 mod corrente_espinhos;
 #[path = "jangada_labirinto.rs"]
@@ -175,6 +177,7 @@ fn rodar_objeto(m: &mut Memoria, a0: u32, id: u8) -> Result<(), ErroAbertura> {
         0x65 => cascata_labirinto::executar(m, a0),
         0x63 => esteira_labirinto::executar(m, a0),
         0x62 => gargula_labirinto::executar(m, a0),
+        0x5E => gangorra_slz::executar(m, a0),
         0x60 => orbinaut::executar(m, a0),
         0x16 => arpao_labirinto::executar(m, a0),
         0x2C => jaws::executar(m, a0),
@@ -257,6 +260,7 @@ pub fn objeto_existe(id: u8) -> bool {
             | 0x65
             | 0x63
             | 0x62
+            | 0x5E
             | 0x60
             | 0x16
             | 0x2C
