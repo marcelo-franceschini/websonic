@@ -1040,7 +1040,7 @@ fn power_up(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
             MAP_MONITOR.wrapping_add(u32::from(quadro).wrapping_mul(2)),
         );
         let mapa = MAP_MONITOR
-            .wrapping_add(u32::from(deslocamento))
+            .wrapping_add_signed(i32::from(i16::from_be_bytes(deslocamento.to_be_bytes())))
             .wrapping_add(1);
         wl(m, a.wrapping_add(OB_MAP), mapa);
     }
@@ -1175,15 +1175,19 @@ fn escudo_estrelas(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
                 .wrapping_mul(24)
                 .wrapping_add(4);
             let atraso = rb(m, a.wrapping_add(0x30));
-            let pos = rb(m, V_TRACKBYTE).wrapping_sub(indice).wrapping_sub(atraso);
+            let alto = rw(m, V_TRACKPOS) & 0xFF00;
+            let baixo = rb(m, V_TRACKBYTE).wrapping_sub(indice).wrapping_sub(atraso);
+            let pos = alto | u16::from(baixo);
             let proximo = atraso.wrapping_add(4);
             wb(
                 m,
                 a.wrapping_add(0x30),
                 if proximo >= 24 { 0 } else { proximo },
             );
-            let x = rw(m, V_TRACKSONIC.wrapping_add(u32::from(pos)));
-            let y = rw(m, V_TRACKSONIC.wrapping_add(u32::from(pos)).wrapping_add(2));
+            let deslocamento = i32::from(i16::from_be_bytes(pos.to_be_bytes()));
+            let endereco = V_TRACKSONIC.wrapping_add_signed(deslocamento);
+            let x = rw(m, endereco);
+            let y = rw(m, endereco.wrapping_add(2));
             ww(m, a.wrapping_add(OB_X), x);
             ww(m, a.wrapping_add(OB_Y), y);
         }
