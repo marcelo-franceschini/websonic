@@ -15,6 +15,10 @@ mod arpao_labirinto;
 mod bolhas_labirinto;
 #[path = "boss_syz.rs"]
 mod boss_syz;
+#[path = "boss_slz.rs"]
+mod boss_slz;
+#[path = "boss_slz_bola.rs"]
+mod boss_slz_bola;
 #[path = "burrobot.rs"]
 mod burrobot;
 #[path = "cascata_labirinto.rs"]
@@ -137,6 +141,8 @@ fn rodar_objeto(m: &mut Memoria, a0: u32, id: u8) -> Result<(), ErroAbertura> {
         0x48 => super::boss_ghz::bola(m, a0),
         0x75 => boss_syz::chefe(m, a0),
         0x76 => boss_syz::bloco(m, a0),
+        0x7A => boss_slz::executar(m, a0),
+        0x7B => boss_slz_bola::executar(m, a0),
         0x3C => super::parede_quebravel::executar(m, a0),
         0x15 => super::plataforma_oscilante::executar(m, a0),
         0x18 => super::plataforma_basica::executar(m, a0),
@@ -255,6 +261,8 @@ pub fn objeto_existe(id: u8) -> bool {
             | 0x52
             | 0x76
             | 0x75
+            | 0x7A
+            | 0x7B
             | 0x33
             | 0x32
             | 0x55
