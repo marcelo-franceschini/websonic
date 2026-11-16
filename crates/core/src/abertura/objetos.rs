@@ -15,6 +15,8 @@ mod bolhas_labirinto;
 mod boss_syz;
 #[path = "burrobot.rs"]
 mod burrobot;
+#[path = "cascata_labirinto.rs"]
+mod cascata_labirinto;
 #[path = "corrente_espinhos.rs"]
 mod corrente_espinhos;
 #[path = "jangada_labirinto.rs"]
@@ -156,6 +158,7 @@ fn rodar_objeto(m: &mut Memoria, a0: u32, id: u8) -> Result<(), ErroAbertura> {
         0x57 => corrente_espinhos::executar(m, a0),
         0x56 => portas_labirinto::executar(m, a0),
         0x64 => bolhas_labirinto::executar(m, a0),
+        0x65 => cascata_labirinto::executar(m, a0),
         0x2C => jaws::executar(m, a0),
         0x2E => power_up(m, a0),
         0x38 => escudo_estrelas(m, a0),
@@ -233,6 +236,7 @@ pub fn objeto_existe(id: u8) -> bool {
             | 0x57
             | 0x56
             | 0x64
+            | 0x65
             | 0x2C
             | 0x2E
             | 0x38
