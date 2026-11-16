@@ -368,6 +368,13 @@ impl Console {
     }
 
     fn executar_quadro_interno(&mut self, imagem: bool) -> Vec<u8> {
+        // Saídas externas podem ser inseridas antes de qualquer evento do núcleo.
+        let anteriores = self.ab.mem.tirar_saidas();
+        self.capturas.borrow_mut().recolher(
+            &mut self.ab.mem,
+            MomentoSaida::Principal,
+            &anteriores,
+        );
         let eventos = self.eventos_nominais();
         let teve_vblank = eventos
             .iter()
