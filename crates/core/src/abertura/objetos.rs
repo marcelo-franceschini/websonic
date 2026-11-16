@@ -19,6 +19,8 @@ mod boss_syz;
 mod burrobot;
 #[path = "cascata_labirinto.rs"]
 mod cascata_labirinto;
+#[path = "esteira_labirinto.rs"]
+mod esteira_labirinto;
 #[path = "corrente_espinhos.rs"]
 mod corrente_espinhos;
 #[path = "jangada_labirinto.rs"]
@@ -161,6 +163,7 @@ fn rodar_objeto(m: &mut Memoria, a0: u32, id: u8) -> Result<(), ErroAbertura> {
         0x56 => portas_labirinto::executar(m, a0),
         0x64 => bolhas_labirinto::executar(m, a0),
         0x65 => cascata_labirinto::executar(m, a0),
+        0x63 => esteira_labirinto::executar(m, a0),
         0x16 => arpao_labirinto::executar(m, a0),
         0x2C => jaws::executar(m, a0),
         0x2E => power_up(m, a0),
@@ -240,6 +243,7 @@ pub fn objeto_existe(id: u8) -> bool {
             | 0x56
             | 0x64
             | 0x65
+            | 0x63
             | 0x16
             | 0x2C
             | 0x2E
