@@ -157,6 +157,8 @@ fn rodar_objeto(m: &mut Memoria, a0: u32, id: u8) -> Result<(), ErroAbertura> {
         0x56 => portas_labirinto::executar(m, a0),
         0x64 => bolhas_labirinto::executar(m, a0),
         0x2C => jaws::executar(m, a0),
+        0x2E => power_up(m, a0),
+        0x38 => escudo_estrelas(m, a0),
         0x52 => jangada_labirinto::executar(m, a0),
         0x33 => super::marble_bloco::executar(m, a0),
         0x32 => super::botao::executar(m, a0),
@@ -232,6 +234,8 @@ pub fn objeto_existe(id: u8) -> bool {
             | 0x56
             | 0x64
             | 0x2C
+            | 0x2E
+            | 0x38
             | 0x52
             | 0x76
             | 0x75
@@ -967,9 +971,213 @@ fn monitor(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
             monitor_solido(m, a0)
         }
         2 => monitor_solido(m, a0),
+        4 => {
+            wb(m, a0.wrapping_add(OB_ROUTINE), 6);
+            wb(m, a0.wrapping_add(OB_COLTYPE), 0);
+            for (id, rotina) in [(0x2E, 0), (ID_EXPLOSION_ITEM, 2)] {
+                if let Some(slot) = find_free_obj(m) {
+                    wb(m, slot.wrapping_add(OB_ID), id);
+                    wb(m, slot.wrapping_add(OB_ROUTINE), rotina);
+                    let x = rw(m, a0.wrapping_add(OB_X));
+                    let y = rw(m, a0.wrapping_add(OB_Y));
+                    ww(m, slot.wrapping_add(OB_X), x);
+                    ww(m, slot.wrapping_add(OB_Y), y);
+                    if id == 0x2E {
+                        let anim = rb(m, a0.wrapping_add(OB_ANIM));
+                        wb(m, slot.wrapping_add(OB_ANIM), anim);
+                    }
+                }
+            }
+            let marca = V_OBJSTATE
+                .wrapping_add(2)
+                .wrapping_add(u32::from(rb(m, a0.wrapping_add(OB_RESPAWNNO))));
+            let estado = rb(m, marca);
+            wb(m, marca, estado | 1);
+            wb(m, a0.wrapping_add(OB_ANIM), 9);
+            display_sprite(m, a0);
+            Ok(())
+        }
+        6 => {
+            animate_sprite(m, a0, ANI_MONITOR)?;
+            mon_display(m, a0)
+        }
         8 => mon_display(m, a0),
         _ => Err(ErroAbertura::NaoImplementado("monitor quebrando")),
     }
+}
+
+/// `PowerUp`: ícone do monitor e aplicação do prêmio ao parar.
+fn power_up(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
+    let mut rotina = rb(m, a.wrapping_add(OB_ROUTINE));
+    if rotina == 0 {
+        rotina = 2;
+        wb(m, a.wrapping_add(OB_ROUTINE), rotina);
+        ww(m, a.wrapping_add(OB_GFX), ARTTILE_MONITOR);
+        wb(m, a.wrapping_add(OB_RENDER), 0x24);
+        wb(m, a.wrapping_add(OB_PRIORITY), 3);
+        wb(m, a.wrapping_add(OB_ACTWID), 8);
+        ww(m, a.wrapping_add(OB_VELY), 0xFD00);
+        let quadro = rb(m, a.wrapping_add(OB_ANIM)).wrapping_add(2);
+        wb(m, a.wrapping_add(OB_FRAME), quadro);
+        let deslocamento = super::boot::rom_w(
+            m,
+            MAP_MONITOR.wrapping_add(u32::from(quadro).wrapping_mul(2)),
+        );
+        let mapa = MAP_MONITOR
+            .wrapping_add(u32::from(deslocamento))
+            .wrapping_add(1);
+        wl(m, a.wrapping_add(OB_MAP), mapa);
+    }
+    match rotina {
+        2 if com_sinal(rw(m, a.wrapping_add(OB_VELY))) < 0 => {
+            super::fisica::speed_to_pos(m, a);
+            let vy = rw(m, a.wrapping_add(OB_VELY)).wrapping_add(0x18);
+            ww(m, a.wrapping_add(OB_VELY), vy);
+        }
+        2 => {
+            wb(m, a.wrapping_add(OB_ROUTINE), 4);
+            ww(m, a.wrapping_add(OB_TIME_FRAME), 29);
+            let tipo = rb(m, a.wrapping_add(OB_ANIM));
+            premio_monitor(m, tipo);
+        }
+        4 => {
+            let tempo = rw(m, a.wrapping_add(OB_TIME_FRAME)).wrapping_sub(1);
+            ww(m, a.wrapping_add(OB_TIME_FRAME), tempo);
+            if com_sinal(tempo) < 0 {
+                delete_object(m, a);
+            }
+        }
+        _ => return Err(ErroAbertura::NaoImplementado("rotina do premio de monitor")),
+    }
+    display_sprite(m, a);
+    Ok(())
+}
+
+fn premio_monitor(m: &mut Memoria, tipo: u8) {
+    match tipo {
+        2 => vida_extra_monitor(m),
+        3 => {
+            wb(m, V_SHOES, 1);
+            ww(m, V_PLAYER.wrapping_add(0x34), 1200);
+            ww(m, V_SONSPEEDMAX, 0xC00);
+            ww(m, V_SONSPEEDACC, 0x18);
+            ww(m, V_SONSPEEDDEC, 0x80);
+            wb(m, V_SOUNDQUEUE0, 0xE2);
+        }
+        4 => {
+            wb(m, V_SHIELD, 1);
+            wb(m, 0xFF_D180, 0x38);
+            wb(m, V_SOUNDQUEUE0, 0xAF);
+        }
+        5 => {
+            wb(m, V_INVINC, 1);
+            ww(m, V_PLAYER.wrapping_add(0x32), 1200);
+            for (i, a) in [0xFF_D200, 0xFF_D240, 0xFF_D280, 0xFF_D2C0]
+                .into_iter()
+                .enumerate()
+            {
+                wb(m, a, 0x38);
+                wb(
+                    m,
+                    a.wrapping_add(OB_ANIM),
+                    u8::try_from(i).unwrap_or(0).wrapping_add(1),
+                );
+            }
+            if rb(m, F_LOCKSCREEN) == 0 && rw(m, V_AIR) > 12 {
+                wb(m, V_SOUNDQUEUE0, 0x87);
+            }
+        }
+        6 => {
+            let aneis = rw(m, V_RINGS).wrapping_add(10);
+            ww(m, V_RINGS, aneis);
+            let flag = rb(m, F_RINGCOUNT);
+            wb(m, F_RINGCOUNT, flag | 1);
+            let vidas = rb(m, V_LIFECOUNT);
+            let bit = if aneis >= 100 && vidas & 2 == 0 {
+                2
+            } else if aneis >= 200 && vidas & 4 == 0 {
+                4
+            } else {
+                0
+            };
+            if bit != 0 {
+                wb(m, V_LIFECOUNT, vidas | bit);
+                vida_extra_monitor(m);
+            } else {
+                wb(m, V_SOUNDQUEUE0, 0xB5);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn vida_extra_monitor(m: &mut Memoria) {
+    let vidas = rb(m, V_LIVES).wrapping_add(1);
+    let flag = rb(m, F_LIFECOUNT).wrapping_add(1);
+    wb(m, V_LIVES, vidas);
+    wb(m, F_LIFECOUNT, flag);
+    wb(m, V_SOUNDQUEUE0, 0x88);
+}
+
+/// `ShieldItem`: efeito do escudo e trilha das estrelas de invencibilidade.
+fn escudo_estrelas(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
+    match rb(m, a.wrapping_add(OB_ROUTINE)) {
+        0 => {
+            let estrelas = rb(m, a.wrapping_add(OB_ANIM)) != 0;
+            wb(m, a.wrapping_add(OB_ROUTINE), if estrelas { 4 } else { 2 });
+            wl(m, a.wrapping_add(OB_MAP), 0x14B1A);
+            wb(m, a.wrapping_add(OB_RENDER), 4);
+            wb(m, a.wrapping_add(OB_PRIORITY), 1);
+            wb(m, a.wrapping_add(OB_ACTWID), 16);
+            ww(
+                m,
+                a.wrapping_add(OB_GFX),
+                if estrelas { 0x55C } else { 0x541 },
+            );
+            return Ok(());
+        }
+        2 => {
+            if rb(m, V_INVINC) != 0 {
+                return Ok(());
+            }
+            if rb(m, V_SHIELD) == 0 {
+                delete_object(m, a);
+                return Ok(());
+            }
+            let x = rw(m, V_PLAYER.wrapping_add(OB_X));
+            let y = rw(m, V_PLAYER.wrapping_add(OB_Y));
+            ww(m, a.wrapping_add(OB_X), x);
+            ww(m, a.wrapping_add(OB_Y), y);
+        }
+        4 => {
+            if rb(m, V_INVINC) == 0 {
+                delete_object(m, a);
+                return Ok(());
+            }
+            let indice = rb(m, a.wrapping_add(OB_ANIM))
+                .wrapping_sub(1)
+                .wrapping_mul(24)
+                .wrapping_add(4);
+            let atraso = rb(m, a.wrapping_add(0x30));
+            let pos = rb(m, V_TRACKBYTE).wrapping_sub(indice).wrapping_sub(atraso);
+            let proximo = atraso.wrapping_add(4);
+            wb(
+                m,
+                a.wrapping_add(0x30),
+                if proximo >= 24 { 0 } else { proximo },
+            );
+            let x = rw(m, V_TRACKSONIC.wrapping_add(u32::from(pos)));
+            let y = rw(m, V_TRACKSONIC.wrapping_add(u32::from(pos)).wrapping_add(2));
+            ww(m, a.wrapping_add(OB_X), x);
+            ww(m, a.wrapping_add(OB_Y), y);
+        }
+        _ => return Err(ErroAbertura::NaoImplementado("rotina do escudo")),
+    }
+    let estado = rb(m, V_PLAYER.wrapping_add(OB_STATUS));
+    wb(m, a.wrapping_add(OB_STATUS), estado);
+    animate_sprite(m, a, 0x14AB4)?;
+    display_sprite(m, a);
+    Ok(())
 }
 
 /// `Mon_Solid`: contato lateral e plataforma sobre o monitor.
@@ -1094,6 +1302,36 @@ fn mon_solid_sides(m: &mut Memoria, a0: u32) -> Option<(u16, u16, bool)> {
 #[cfg(test)]
 mod testes_monitor_contato {
     use super::*;
+
+    #[test]
+    fn monitor_quebrado_cria_premio_e_marca_estado() {
+        let mut m = Memoria::nova(vec![0; 0x20000]);
+        let a = V_LVLOBJSPACE;
+        wb(&mut m, a.wrapping_add(OB_ID), ID_MONITOR);
+        wb(&mut m, a.wrapping_add(OB_ROUTINE), 4);
+        wb(&mut m, a.wrapping_add(OB_ANIM), 6);
+        monitor(&mut m, a).unwrap();
+        assert_eq!(rb(&mut m, a.wrapping_add(OB_ROUTINE)), 6);
+        assert_eq!(rb(&mut m, V_OBJSTATE.wrapping_add(2)) & 1, 1);
+        assert_eq!(rb(&mut m, a.wrapping_add(OBJECT_SIZE)), 0x2E);
+        assert_eq!(
+            rb(&mut m, a.wrapping_add(OBJECT_SIZE).wrapping_add(OB_ANIM)),
+            6
+        );
+    }
+
+    #[test]
+    fn premio_de_aneis_concede_vida_uma_vez_ao_cruzar_cem() {
+        let mut m = Memoria::nova(vec![]);
+        ww(&mut m, V_RINGS, 95);
+        wb(&mut m, V_LIVES, 3);
+        premio_monitor(&mut m, 6);
+        assert_eq!(rw(&mut m, V_RINGS), 105);
+        assert_eq!(rb(&mut m, V_LIVES), 4);
+        premio_monitor(&mut m, 6);
+        assert_eq!(rw(&mut m, V_RINGS), 115);
+        assert_eq!(rb(&mut m, V_LIVES), 4);
+    }
 
     #[test]
     fn contato_lateral_empurra_e_libera_ao_afastar() {
