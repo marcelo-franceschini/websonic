@@ -25,6 +25,8 @@ mod esteira_labirinto;
 mod corrente_espinhos;
 #[path = "jangada_labirinto.rs"]
 mod jangada_labirinto;
+#[path = "orbinaut.rs"]
+mod orbinaut;
 #[path = "jaws.rs"]
 mod jaws;
 #[path = "portas_labirinto.rs"]
@@ -164,6 +166,7 @@ fn rodar_objeto(m: &mut Memoria, a0: u32, id: u8) -> Result<(), ErroAbertura> {
         0x64 => bolhas_labirinto::executar(m, a0),
         0x65 => cascata_labirinto::executar(m, a0),
         0x63 => esteira_labirinto::executar(m, a0),
+        0x60 => orbinaut::executar(m, a0),
         0x16 => arpao_labirinto::executar(m, a0),
         0x2C => jaws::executar(m, a0),
         0x2E => power_up(m, a0),
@@ -244,6 +247,7 @@ pub fn objeto_existe(id: u8) -> bool {
             | 0x64
             | 0x65
             | 0x63
+            | 0x60
             | 0x16
             | 0x2C
             | 0x2E
