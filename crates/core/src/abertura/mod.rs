@@ -365,6 +365,8 @@ pub struct Abertura {
     observador: Option<Observador>,
     observador_temporal: Option<ObservadorTemporal>,
     saidas_observadas: usize,
+    buffer_eventos: Vec<EventoQuadro>,
+    saidas_notificacao: Vec<crate::memoria::Saida>,
 }
 
 /// Função chamada depois de cada evento processado.
@@ -404,6 +406,8 @@ impl Abertura {
             quadro: 0,
             erro: None,
             marcas_ignoradas: 0,
+            buffer_eventos: Vec::new(),
+            saidas_notificacao: Vec::new(),
         }
     }
 
@@ -525,11 +529,14 @@ impl Abertura {
                 _ => {}
             }
         }
-        let anteriores = if self.atraso {
-            std::mem::replace(&mut self.pendentes, eventos.to_vec())
+        let mut anteriores = std::mem::take(&mut self.buffer_eventos);
+        anteriores.clear();
+        if self.atraso {
+            anteriores.append(&mut self.pendentes);
+            self.pendentes.extend_from_slice(eventos);
         } else {
-            eventos.to_vec()
-        };
+            anteriores.extend_from_slice(eventos);
+        }
         for (indice, e) in anteriores.iter().copied().enumerate() {
             self.hblank_disponivel = anteriores
                 .iter()
@@ -562,6 +569,10 @@ impl Abertura {
                 MomentoSaida::Principal
             };
             self.notificar_observadores(momento);
+        }
+        anteriores.clear();
+        if self.buffer_eventos.is_empty() {
+            self.buffer_eventos = anteriores;
         }
         self.quadro = self.quadro.saturating_add(1);
     }
@@ -1302,9 +1313,13 @@ impl Abertura {
         if self.saidas_observadas > total {
             self.saidas_observadas = 0;
         }
-        if let Some(o) = self.observador_temporal.as_mut() {
-            let novas = self.mem.saidas()[self.saidas_observadas..].to_vec();
-            o(&mut self.mem, momento, &novas);
+        if self.observador_temporal.is_some() {
+            self.saidas_notificacao.clear();
+            self.saidas_notificacao
+                .extend_from_slice(&self.mem.saidas()[self.saidas_observadas..]);
+            if let Some(o) = self.observador_temporal.as_mut() {
+                o(&mut self.mem, momento, &self.saidas_notificacao);
+            }
             self.saidas_observadas = total;
         }
         if let Some(o) = self.observador.as_mut() {

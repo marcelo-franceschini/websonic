@@ -187,6 +187,17 @@ impl Memoria {
         std::mem::take(&mut self.saidas)
     }
 
+    /// Drena as saídas para o destino reaproveitando a capacidade do vetor.
+    pub fn drenar_saidas_em(&mut self, destino: &mut Vec<Saida>) {
+        destino.clear();
+        destino.append(&mut self.saidas);
+    }
+
+    /// Descarta as saídas acumuladas sem perder a capacidade alocada.
+    pub fn descartar_saidas(&mut self) {
+        self.saidas.clear();
+    }
+
     pub fn avisos(&self) -> &BTreeMap<Aviso, u64> {
         &self.avisos
     }
