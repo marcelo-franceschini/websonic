@@ -209,12 +209,74 @@ impl Sintetizador {
         if mclk_alvo <= self.mclk {
             return;
         }
+        let (novos_fm, novos_psg) = self.amostras_ate(mclk_alvo);
+        saida_fm.reserve(novos_fm);
+        saida_psg.reserve(novos_psg);
+        self.avancar_com(
+            mclk_alvo,
+            |misturado, ciclos| {
+                let mut pl = 0i16;
+                let mut pr = 0i16;
+                for &idx in &[3, 7, 11, 15, 19, 23] {
+                    pl = pl.wrapping_add(ciclos[idx].0);
+                    pr = pr.wrapping_add(ciclos[idx].1);
+                }
+                saida_fm.push(AmostraFm {
+                    misturado,
+                    picos_pino: (pl, pr),
+                    ciclos: *ciclos,
+                });
+            },
+            |emp| saida_psg.push(AmostraPsg::from(emp)),
+        );
+    }
 
+    /// Avanca ambos os chips ate `mclk_alvo`, entregando `(i16, i16)` do FM e `u16` do PSG.
+    ///
+    /// Mesmo laço de [`Sintetizador::avancar_ate`]: o site só não copia o histórico de 24
+    /// ciclos de cada amostra, que serve à prova contra o Nuked-OPN2.
+    pub fn avancar_ate_compacto(
+        &mut self,
+        mclk_alvo: u64,
+        saida_fm: &mut Vec<(i16, i16)>,
+        saida_psg: &mut Vec<u16>,
+    ) {
+        if mclk_alvo <= self.mclk {
+            return;
+        }
+        let (novos_fm, novos_psg) = self.amostras_ate(mclk_alvo);
+        saida_fm.reserve(novos_fm);
+        saida_psg.reserve(novos_psg);
+        self.avancar_com(
+            mclk_alvo,
+            |misturado, _ciclos| saida_fm.push(misturado),
+            |emp| saida_psg.push(emp),
+        );
+    }
+
+    /// Quantas amostras de FM e de PSG o avanço até `mclk_alvo` vai entregar (para reservar).
+    fn amostras_ate(&self, mclk_alvo: u64) -> (usize, usize) {
+        let ciclos_alvo_fm = mclk_alvo / MCLK_POR_CICLO_FM;
+        let ciclos_alvo_psg = mclk_alvo / MCLK_POR_CICLO_PSG;
+        (
+            usize::try_from(ciclos_alvo_fm.saturating_sub(self.ciclos_fm) / 24).unwrap_or(0),
+            usize::try_from(ciclos_alvo_psg.saturating_sub(self.ciclos_psg) / 16).unwrap_or(0),
+        )
+    }
+
+    /// Laço único do avanço dos dois chips. As escritas de um ciclo valem antes desse ciclo.
+    /// Entre duas escritas, os ciclos rodam sem conferir a fila. `ao_fm` recebe a saída
+    /// misturada e os 24 ciclos de cada amostra de FM; `ao_psg`, a saída empacotada do PSG.
+    /// Os dois caminhos públicos usam este laço, então o site e a prova de fidelidade não
+    /// podem divergir.
+    fn avancar_com(
+        &mut self,
+        mclk_alvo: u64,
+        mut ao_fm: impl FnMut((i16, i16), &[(i16, i16); 24]),
+        mut ao_psg: impl FnMut(u16),
+    ) {
         // Avanco do FM.
         let ciclos_alvo_fm = mclk_alvo / MCLK_POR_CICLO_FM;
-        let novos_fm =
-            usize::try_from(ciclos_alvo_fm.saturating_sub(self.ciclos_fm) / 24).unwrap_or(0);
-        saida_fm.reserve(novos_fm);
         while self.ciclos_fm < ciclos_alvo_fm {
             while self.pos_fm < self.fila_fm.len() {
                 let (m, p, v) = self.fila_fm[self.pos_fm];
@@ -241,27 +303,13 @@ impl Sintetizador {
                 self.ciclos_fm = self.ciclos_fm.wrapping_add(1);
                 if self.subciclo_fm >= 24 {
                     self.subciclo_fm = 0;
-                    let misturado = self.fm.saida_misturada();
-                    let mut pl = 0i16;
-                    let mut pr = 0i16;
-                    for &idx in &[3, 7, 11, 15, 19, 23] {
-                        pl = pl.wrapping_add(self.buffer_fm[idx].0);
-                        pr = pr.wrapping_add(self.buffer_fm[idx].1);
-                    }
-                    saida_fm.push(AmostraFm {
-                        misturado,
-                        picos_pino: (pl, pr),
-                        ciclos: self.buffer_fm,
-                    });
+                    ao_fm(self.fm.saida_misturada(), &self.buffer_fm);
                 }
             }
         }
 
         // Avanco do PSG.
         let ciclos_alvo_psg = mclk_alvo / MCLK_POR_CICLO_PSG;
-        let novos_psg =
-            usize::try_from(ciclos_alvo_psg.saturating_sub(self.ciclos_psg) / 16).unwrap_or(0);
-        saida_psg.reserve(novos_psg);
         while self.ciclos_psg < ciclos_alvo_psg {
             while self.pos_psg < self.fila_psg.len() {
                 let (m, v) = self.fila_psg[self.pos_psg];
@@ -287,8 +335,7 @@ impl Sintetizador {
                 self.ciclos_psg = self.ciclos_psg.wrapping_add(1);
                 if self.subciclo_psg >= 16 {
                     self.subciclo_psg = 0;
-                    let emp = self.psg.saida_empacotada();
-                    saida_psg.push(AmostraPsg::from(emp));
+                    ao_psg(self.psg.saida_empacotada());
                 }
             }
         }
@@ -315,100 +362,5 @@ impl Sintetizador {
         let mut psg_aux = Vec::new();
         self.avancar_ate(mclk_alvo, saida_fm, &mut psg_aux);
         saida_psg.extend(psg_aux.into_iter().map(u16::from));
-    }
-
-    /// Avanca ambos os chips ate `mclk_alvo`, entregando `(i16, i16)` do FM e `u16` do PSG.
-    pub fn avancar_ate_compacto(
-        &mut self,
-        mclk_alvo: u64,
-        saida_fm: &mut Vec<(i16, i16)>,
-        saida_psg: &mut Vec<u16>,
-    ) {
-        if mclk_alvo <= self.mclk {
-            return;
-        }
-
-        // Avanco do FM.
-        let ciclos_alvo_fm = mclk_alvo / MCLK_POR_CICLO_FM;
-        let novos_fm =
-            usize::try_from(ciclos_alvo_fm.saturating_sub(self.ciclos_fm) / 24).unwrap_or(0);
-        saida_fm.reserve(novos_fm);
-        while self.ciclos_fm < ciclos_alvo_fm {
-            while self.pos_fm < self.fila_fm.len() {
-                let (m, p, v) = self.fila_fm[self.pos_fm];
-                let c_escrita = m / MCLK_POR_CICLO_FM;
-                if c_escrita <= self.ciclos_fm {
-                    self.fm.escreve(p, v);
-                    self.pos_fm = self.pos_fm.wrapping_add(1);
-                } else {
-                    break;
-                }
-            }
-
-            let proxima_escrita = if self.pos_fm < self.fila_fm.len() {
-                self.fila_fm[self.pos_fm].0 / MCLK_POR_CICLO_FM
-            } else {
-                ciclos_alvo_fm
-            };
-            let limite = ciclos_alvo_fm.min(proxima_escrita);
-
-            while self.ciclos_fm < limite {
-                self.fm.ciclo();
-                self.subciclo_fm = self.subciclo_fm.wrapping_add(1);
-                self.ciclos_fm = self.ciclos_fm.wrapping_add(1);
-                if self.subciclo_fm >= 24 {
-                    self.subciclo_fm = 0;
-                    let misturado = self.fm.saida_misturada();
-                    saida_fm.push(misturado);
-                }
-            }
-        }
-
-        // Avanco do PSG.
-        let ciclos_alvo_psg = mclk_alvo / MCLK_POR_CICLO_PSG;
-        let novos_psg =
-            usize::try_from(ciclos_alvo_psg.saturating_sub(self.ciclos_psg) / 16).unwrap_or(0);
-        saida_psg.reserve(novos_psg);
-        while self.ciclos_psg < ciclos_alvo_psg {
-            while self.pos_psg < self.fila_psg.len() {
-                let (m, v) = self.fila_psg[self.pos_psg];
-                let c_escrita = m / MCLK_POR_CICLO_PSG;
-                if c_escrita <= self.ciclos_psg {
-                    self.psg.escreve(v);
-                    self.pos_psg = self.pos_psg.wrapping_add(1);
-                } else {
-                    break;
-                }
-            }
-
-            let proxima_escrita = if self.pos_psg < self.fila_psg.len() {
-                self.fila_psg[self.pos_psg].0 / MCLK_POR_CICLO_PSG
-            } else {
-                ciclos_alvo_psg
-            };
-            let limite = ciclos_alvo_psg.min(proxima_escrita);
-
-            while self.ciclos_psg < limite {
-                self.psg.ciclo();
-                self.subciclo_psg = self.subciclo_psg.wrapping_add(1);
-                self.ciclos_psg = self.ciclos_psg.wrapping_add(1);
-                if self.subciclo_psg >= 16 {
-                    self.subciclo_psg = 0;
-                    let emp = self.psg.saida_empacotada();
-                    saida_psg.push(emp);
-                }
-            }
-        }
-
-        if self.pos_fm > 0 {
-            self.fila_fm.drain(..self.pos_fm);
-            self.pos_fm = 0;
-        }
-        if self.pos_psg > 0 {
-            self.fila_psg.drain(..self.pos_psg);
-            self.pos_psg = 0;
-        }
-
-        self.mclk = mclk_alvo;
     }
 }
