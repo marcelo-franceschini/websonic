@@ -158,6 +158,11 @@ impl Jogo {
         format!("{:016x}", self.console.hash_da_imagem())
     }
 
+    /// Informa se o núcleo encontrou algum erro e parou.
+    pub fn tem_erro(&self) -> bool {
+        self.console.tem_erro()
+    }
+
     /// Erro do núcleo, se parou. Vazio se está tudo bem.
     pub fn erro(&self) -> String {
         self.console.erro().unwrap_or_default()

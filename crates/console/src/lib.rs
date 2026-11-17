@@ -581,6 +581,11 @@ impl Console {
         )
     }
 
+    /// Informa se o núcleo encontrou algum erro e parou.
+    pub fn tem_erro(&self) -> bool {
+        self.ab.erro.is_some()
+    }
+
     pub fn erro(&self) -> Option<String> {
         self.ab.erro.map(|e| format!("{e:?}"))
     }

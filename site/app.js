@@ -760,8 +760,8 @@ function laco(agora, sessao) {
       atualizarEstadoAudioUI();
     }
 
-    const erro = jogo.erro();
-    if (erro) {
+    if (jogo.tem_erro()) {
+      const erro = jogo.erro();
       const p = document.getElementById("erro-jogo");
       p.hidden = false;
       p.textContent = "O nucleo parou: " + erro;
