@@ -13,6 +13,6 @@ license = "MIT"
 all = { level = "warn", priority = -1 }
 
 [profile.release]
-# Binario WebAssembly menor. Nao muda o comportamento.
-opt-level = "s"
+# opt-level 3 reduz o tempo do quadro Wasm de 15,46 para 8,02 ms (-48%) com ganho de 22% no tamanho (secao 3.7).
+opt-level = 3
 lto = true
