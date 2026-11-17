@@ -24,10 +24,12 @@ export class Relogio {
     if (this.acumulado > PERIODO_QUADRO * 10) {
       this.acumulado = PERIODO_QUADRO * 10;
     }
-    // Janela de estabilizacao para V-Sync em ~60 Hz (entre 0.75 e 1.75 quadros):
+    // Janela de estabilizacao para V-Sync em ~60 Hz (entre 0.8 e 1.75 quadros). O limite e 0,8 e
+    // nao 0,75: com 60 Hz exatos, tres quartos de quadro somados em ponto flutuante chegam a
+    // 0,75 exato e disparavam um passo antes da hora (teste de interpolacao a 120, 144 e 240 Hz).
     // Elimina micro-stutter e jitter sem alterar a contagem acumulada em testes sinteticos.
     let passos = 0;
-    if (this.acumulado >= PERIODO_QUADRO * 0.75 && this.acumulado < PERIODO_QUADRO * 1.75) {
+    if (this.acumulado >= PERIODO_QUADRO * 0.8 && this.acumulado < PERIODO_QUADRO * 1.75) {
       passos = 1;
       this.acumulado -= PERIODO_QUADRO;
     } else {
