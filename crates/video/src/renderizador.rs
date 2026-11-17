@@ -6,14 +6,12 @@
 //! Referência de comportamento: jgenesis `386db855`, `vdp.rs` e `vdp/render.rs`.
 
 use crate::camadas::{
-    ALTURA, FonteDeTile, LARGURA, ParametrosDosPlanos, PontoDeTile, Sprite, SpriteEmCache,
-    desenhar_planos, desenhar_sprites, fontes_planos, fontes_sprites, ler_rolagem_h,
-    resolver_ponto, varrer_sprites,
+    LARGURA, ParametrosDosPlanos, PontoDeTile, Sprite, SpriteEmCache, desenhar_planos,
+    desenhar_sprites, ler_rolagem_h, resolver_ponto, varrer_sprites,
 };
 use crate::cor::da_palavra_cram;
 use crate::portas::{Efeitos, PontoDaCram, Vdp};
 use crate::quadro::Quadro;
-use crate::quadro_gpu::QuadroGpu;
 use crate::registros::Registros;
 use crate::tempo::{
     AGENDA, Evento, FIM_ATIVO, INICIO_ATIVO, LINHA_DO_FIM_DO_QUADRO, LINHAS_POR_QUADRO,
@@ -88,8 +86,6 @@ impl EstadoDeSprites {
 pub struct Renderizador {
     vdp: Vdp,
     quadro: Quadro,
-    quadro_gpu: Option<QuadroGpu>,
-    somente_gpu: bool,
     // Tempo.
     /// O quadro acabou de ser fechado e nada andou desde então.
     fechado: bool,
@@ -116,9 +112,6 @@ pub struct Renderizador {
     versao_planos: u64,
     buf_a: Vec<PontoDeTile>,
     buf_b: Vec<PontoDeTile>,
-    fontes_a: Vec<FonteDeTile>,
-    fontes_b: Vec<FonteDeTile>,
-    fontes_sprite: Vec<FonteDeTile>,
 }
 
 impl Default for Renderizador {
@@ -132,8 +125,6 @@ impl Renderizador {
         Self {
             vdp: Vdp::nova(),
             quadro: Quadro::novo(),
-            quadro_gpu: None,
-            somente_gpu: false,
             fechado: false,
             linha: 0,
             ponto: 0,
@@ -153,9 +144,6 @@ impl Renderizador {
             versao_planos: 0,
             buf_a: vec![PontoDeTile::default(); LARGURA],
             buf_b: vec![PontoDeTile::default(); LARGURA],
-            fontes_a: Vec::new(),
-            fontes_b: Vec::new(),
-            fontes_sprite: Vec::new(),
         }
     }
 
@@ -165,54 +153,6 @@ impl Renderizador {
 
     pub fn quadro(&self) -> &Quadro {
         &self.quadro
-    }
-
-    /// Ativa a coleta para o compositor gráfico com dimensões configuradas.
-    pub fn ativar_gpu_com_dimensoes(&mut self, largura: usize, altura: usize) {
-        let largura = largura.max(LARGURA);
-        let altura = altura.max(ALTURA);
-        self.quadro_gpu = Some(QuadroGpu::com_dimensoes(largura, altura));
-        self.fontes_a.resize(largura, FonteDeTile::default());
-        self.fontes_b.resize(largura, FonteDeTile::default());
-        self.fontes_sprite
-            .resize(largura.saturating_mul(20), FonteDeTile::default());
-    }
-
-    /// Ativa a coleta widescreen 16:9 (426x224) para o compositor gráfico.
-    pub fn ativar_gpu_widescreen(&mut self) {
-        self.ativar_gpu_com_dimensoes(426, 224);
-    }
-
-    /// Ativa a coleta para o compositor gráfico, sem alterar a referência em software.
-    pub fn ativar_gpu(&mut self) {
-        self.ativar_gpu_com_dimensoes(LARGURA, ALTURA);
-    }
-
-    /// Ativa o modo gráfico sem referência em software com dimensões configuradas.
-    pub fn ativar_gpu_sem_referencia_com_dimensoes(&mut self, largura: usize, altura: usize) {
-        self.ativar_gpu_com_dimensoes(largura, altura);
-        self.somente_gpu = true;
-    }
-
-    /// Ativa widescreen 16:9 sem referência em software.
-    pub fn ativar_gpu_widescreen_sem_referencia(&mut self) {
-        self.ativar_gpu_sem_referencia_com_dimensoes(426, 224);
-    }
-
-    /// Dispensa a imagem de referência, mantendo a avaliação temporal da VDP.
-    pub fn ativar_gpu_sem_referencia(&mut self) {
-        self.ativar_gpu();
-        self.somente_gpu = true;
-    }
-
-    /// Volta à imagem CPU se o contexto gráfico estiver indisponível.
-    pub fn desativar_gpu(&mut self) {
-        self.somente_gpu = false;
-        self.quadro_gpu = None;
-    }
-
-    pub fn quadro_gpu(&self) -> Option<&QuadroGpu> {
-        self.quadro_gpu.as_ref()
     }
 
     /// Posição atual (linha, ponto).
@@ -558,12 +498,7 @@ impl Renderizador {
                 .unwrap_or(0)
                 .saturating_sub(BORDA_ESQUERDA);
             let Ok(x) = usize::try_from(x) else { continue };
-            if !self.somente_gpu {
-                self.quadro.definir(x, y, da_palavra_cram(*cor));
-            }
-            if let Some(q) = &mut self.quadro_gpu {
-                q.cor_direta(x, y, da_palavra_cram(*cor));
-            }
+            self.quadro.definir(x, y, da_palavra_cram(*cor));
         }
     }
 
@@ -624,65 +559,27 @@ impl Renderizador {
             return;
         }
         let y = usize::from(linha);
-        if linha == 0
-            && ponto_inicial == 0
-            && let Some(q) = &mut self.quadro_gpu
-        {
-            q.iniciar_quadro();
-        }
-        let largura = self
-            .quadro_gpu
-            .as_ref()
-            .map(|q| q.largura())
-            .unwrap_or(LARGURA);
-        let fim_linha = i32::try_from(largura).unwrap_or(320);
+        let fim_linha = i32::try_from(LARGURA).unwrap_or(320);
         if !self.vdp.imagem_ligada() {
             let fundo = self.cor_do_fundo();
             if linha < LINHAS_ATIVAS {
-                for x in usize::from(ponto_inicial)..largura {
-                    if !self.somente_gpu && x < LARGURA {
-                        self.quadro.definir(x, y, fundo);
-                    }
-                    if let Some(q) = &mut self.quadro_gpu {
-                        q.cor_direta(x, y, fundo);
-                    }
+                for x in usize::from(ponto_inicial)..LARGURA {
+                    self.quadro.definir(x, y, fundo);
                 }
             }
             self.pontos_de_sprite.fill(PontoDeTile::default());
-            if let Some(q) = &mut self.quadro_gpu {
-                self.fontes_sprite.fill(FonteDeTile::default());
-                q.sprites_da_linha(y, usize::from(ponto_inicial), 0, &self.fontes_sprite);
-            }
             return;
         }
         if ponto_inicial == 0 {
             let pular_tiles = self.estado_sprites.pontos_desligados.div_ceil(2);
-            let estouro_gpu = if let Some(q) = &mut self.quadro_gpu {
-                let estouro = fontes_sprites(
-                    &self.vdp.vram,
-                    &self.sprites,
-                    linha,
-                    pular_tiles,
-                    self.estado_sprites.estouro_de_pontos_anterior,
-                    &mut self.fontes_sprite,
-                );
-                q.sprites_da_linha(y, 0, self.sprites.len(), &self.fontes_sprite);
-                Some(estouro)
-            } else {
-                None
-            };
-            let estouro = if self.somente_gpu {
-                estouro_gpu.unwrap_or(false)
-            } else {
-                desenhar_sprites(
-                    &self.vdp.vram,
-                    &self.sprites,
-                    linha,
-                    pular_tiles,
-                    self.estado_sprites.estouro_de_pontos_anterior,
-                    &mut self.pontos_de_sprite,
-                )
-            };
+            let estouro = desenhar_sprites(
+                &self.vdp.vram,
+                &self.sprites,
+                linha,
+                pular_tiles,
+                self.estado_sprites.estouro_de_pontos_anterior,
+                &mut self.pontos_de_sprite,
+            );
             self.estado_sprites.estouro_de_pontos_anterior = estouro;
         }
         if linha >= LINHAS_ATIVAS {
@@ -701,12 +598,7 @@ impl Renderizador {
                 ini: i32::from(ponto_inicial),
                 fim: fim_linha,
             };
-            if !self.somente_gpu {
-                desenhar_planos(&par, &mut self.buf_a, &mut self.buf_b);
-            }
-            if self.quadro_gpu.is_some() {
-                fontes_planos(&par, &mut self.fontes_a, &mut self.fontes_b);
-            }
+            desenhar_planos(&par, &mut self.buf_a, &mut self.buf_b);
             // Só o desenho da linha inteira deixa os buffers válidos para a linha toda.
             self.chave_planos = if ponto_inicial == 0 {
                 Some(chave)
@@ -720,11 +612,8 @@ impl Renderizador {
         for (p, c) in paleta.iter_mut().zip(self.vdp.cram.iter()) {
             *p = da_palavra_cram(*c);
         }
-        let seletor_gpu = self.quadro_gpu.as_mut().and_then(|q| q.paleta(&paleta));
         let inicio = usize::from(ponto_inicial);
-        if !self.somente_gpu
-            && let Some(linha_do_quadro) = self.quadro.linha_mut(y)
-        {
+        if let Some(linha_do_quadro) = self.quadro.linha_mut(y) {
             let pontos = self
                 .pontos_de_sprite
                 .iter()
@@ -733,46 +622,6 @@ impl Renderizador {
             for (destino, ((s, a), b)) in linha_do_quadro.iter_mut().zip(pontos).skip(inicio) {
                 let idx = usize::from(resolver_ponto(*s, *a, *b, fundo)) & 63;
                 *destino = paleta[idx];
-            }
-        }
-        if let Some(q) = &mut self.quadro_gpu {
-            for x in inicio..largura {
-                if let Some(p) = seletor_gpu {
-                    q.ponto(
-                        x,
-                        y,
-                        self.fontes_a.get(x).copied().unwrap_or_default(),
-                        self.fontes_b.get(x).copied().unwrap_or_default(),
-                        fundo,
-                        p,
-                    );
-                } else {
-                    // Se muitas paletas foram gravadas, mantém a referência necessária
-                    // para resolver o ponto em vez de perder a mudança de cor.
-                    let fonte_a = self
-                        .fontes_a
-                        .get(x)
-                        .copied()
-                        .unwrap_or_default()
-                        .decodificar();
-                    let fonte_b = self
-                        .fontes_b
-                        .get(x)
-                        .copied()
-                        .unwrap_or_default()
-                        .decodificar();
-                    let fonte_sprite = (0..20usize)
-                        .filter_map(|i| {
-                            self.fontes_sprite
-                                .get(i.saturating_mul(largura).saturating_add(x))
-                        })
-                        .map(|f| f.decodificar())
-                        .find(|f| f.cor != 0)
-                        .unwrap_or_default();
-                    let idx =
-                        usize::from(resolver_ponto(fonte_sprite, fonte_a, fonte_b, fundo)) & 63;
-                    q.cor_direta(x, y, paleta[idx]);
-                }
             }
         }
     }
