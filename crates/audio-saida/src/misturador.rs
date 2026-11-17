@@ -39,6 +39,11 @@ pub struct MisturadorSaida {
     cont_psg_in: u64,
     cont_saida: u64,
     falhas: u64,
+
+    fm_float: Vec<(f32, f32)>,
+    psg_float: Vec<f32>,
+    saida_fm: Vec<(f32, f32)>,
+    saida_psg: Vec<(f32, f32)>,
 }
 
 impl MisturadorSaida {
@@ -67,6 +72,10 @@ impl MisturadorSaida {
             cont_psg_in: 0,
             cont_saida: 0,
             falhas: 0,
+            fm_float: Vec::new(),
+            psg_float: Vec::new(),
+            saida_fm: Vec::new(),
+            saida_psg: Vec::new(),
         }
     }
 
@@ -96,36 +105,37 @@ impl MisturadorSaida {
         self.cont_fm_in = self.cont_fm_in.wrapping_add(amostras_fm.len() as u64);
         self.cont_psg_in = self.cont_psg_in.wrapping_add(amostras_psg.len() as u64);
 
+        self.fm_float.clear();
+        self.psg_float.clear();
+        self.saida_fm.clear();
+        self.saida_psg.clear();
+
         // Converte FM para f32 [-1.0, 1.0]
-        let mut fm_float = Vec::with_capacity(amostras_fm.len());
         for a in amostras_fm {
             let l = (a.misturado.0 as f32) / 2048.0;
             let r = (a.misturado.1 as f32) / 2048.0;
-            fm_float.push((l * self.ganho_fm, r * self.ganho_fm));
+            self.fm_float.push((l * self.ganho_fm, r * self.ganho_fm));
         }
-        self.reamostrador_fm.alimentar_estereo(&fm_float);
+        self.reamostrador_fm.alimentar_estereo(&self.fm_float);
 
         // Converte PSG para f32 mono centralizado
-        let mut psg_float = Vec::with_capacity(amostras_psg.len());
         for p in amostras_psg {
             let v0 = PSG_VOL_TABLE[usize::from(p.canais[0] & 15)];
             let v1 = PSG_VOL_TABLE[usize::from(p.canais[1] & 15)];
             let v2 = PSG_VOL_TABLE[usize::from(p.canais[2] & 15)];
             let v3 = PSG_VOL_TABLE[usize::from(p.canais[3] & 15)];
             let soma = (v0 + v1 + v2 + v3) * 0.25 * self.ganho_psg;
-            psg_float.push(soma);
+            self.psg_float.push(soma);
         }
-        self.reamostrador_psg.alimentar_mono(&psg_float);
+        self.reamostrador_psg.alimentar_mono(&self.psg_float);
 
         // Processa reamostragem de ambos
-        let mut saida_fm = Vec::new();
-        let mut saida_psg = Vec::new();
-        self.reamostrador_fm.processar(&mut saida_fm);
-        self.reamostrador_psg.processar(&mut saida_psg);
+        self.reamostrador_fm.processar(&mut self.saida_fm);
+        self.reamostrador_psg.processar(&mut self.saida_psg);
 
         // Combina as saidas interpoladas e passa pelo filtro analogico
-        self.pendentes_fm.extend(saida_fm);
-        self.pendentes_psg.extend(saida_psg);
+        self.pendentes_fm.extend(self.saida_fm.iter().copied());
+        self.pendentes_psg.extend(self.saida_psg.iter().copied());
         while !self.pendentes_fm.is_empty() && !self.pendentes_psg.is_empty() {
             let (fml, fmr) = self.pendentes_fm.pop_front().expect("FM disponível");
             let (psgl, psgr) = self.pendentes_psg.pop_front().expect("PSG disponível");
@@ -225,6 +235,10 @@ impl MisturadorSaida {
         self.buffer_audio.clear();
         self.pendentes_fm.clear();
         self.pendentes_psg.clear();
+        self.fm_float.clear();
+        self.psg_float.clear();
+        self.saida_fm.clear();
+        self.saida_psg.clear();
         self.ocupacao_externa = None;
         self.cont_fm_in = 0;
         self.cont_psg_in = 0;

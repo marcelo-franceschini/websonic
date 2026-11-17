@@ -184,6 +184,7 @@ pub struct Vdp {
     fila_dma: VecDeque<u16>,
     preenchimento: Option<u16>,
     pendentes: Vec<Pendente>,
+    pendentes_reserva: Vec<Pendente>,
     /// Quantas vezes a VRAM foi gravada (o renderizador usa para saber se os planos ainda valem).
     pub(crate) gravacoes_de_vram: u64,
     /// Bytes gravados na VRAM desde a última vez que o renderizador olhou (cache de sprites).
@@ -221,6 +222,7 @@ impl Vdp {
             fila_dma: VecDeque::new(),
             preenchimento: None,
             pendentes: Vec::new(),
+            pendentes_reserva: Vec::new(),
             gravacoes_de_vram: 0,
             ao_gravar_vram: Vec::new(),
         }
@@ -520,17 +522,17 @@ impl Vdp {
         }
         self.dma_ativo = false;
         // Aplica as escritas que esperaram o fim do DMA.
-        let mut pendentes = std::mem::take(&mut self.pendentes);
-        for &p in &pendentes {
+        self.pendentes_reserva.clear();
+        std::mem::swap(&mut self.pendentes, &mut self.pendentes_reserva);
+        let len = self.pendentes_reserva.len();
+        for i in 0..len {
+            let p = self.pendentes_reserva[i];
             match p {
                 Pendente::Controle(v) => self.escrever_controle(v),
                 Pendente::Dados(v) => self.escrever_palavra_de_dados(v),
             }
         }
-        pendentes.clear();
-        if self.pendentes.is_empty() {
-            self.pendentes = pendentes;
-        }
+        self.pendentes_reserva.clear();
     }
 
     fn progredir_preenchimento(&mut self) {
