@@ -45,6 +45,9 @@ class SonicAudioProcessor extends AudioWorkletProcessor {
           this.descartadas++;
         }
       }
+      if (dados.buffer) {
+        this.port.postMessage(dados.buffer, [dados.buffer]);
+      }
     };
   }
 

@@ -49,6 +49,14 @@ let fallbackNode = null;
 let volumeAtual = 1.0;
 let mudoAtivo = false;
 
+// Pool de buffers de audio reutilizados para transferencia ao worklet
+const POOL_AUDIO_TAMANHO = 8;
+const poolAudio = [];
+for (let i = 0; i < POOL_AUDIO_TAMANHO; i++) {
+  poolAudio.push(new Float32Array(4096));
+}
+let vistaAudio = null;
+
 // Metricas
 let quadroNum = 0;
 let picoHistorico = 0;
@@ -219,6 +227,12 @@ async function iniciarAudio() {
         workletNode = new AudioWorkletNode(audioCtx, "sonic-audio-processor");
       }
       workletNode.port.onmessage = (e) => {
+        if (e.data instanceof ArrayBuffer) {
+          if (poolAudio.length < POOL_AUDIO_TAMANHO) {
+            poolAudio.push(new Float32Array(e.data));
+          }
+          return;
+        }
         if (e.data && e.data.tipo === "status") {
           elDiagWorklet.textContent = `Fila: ${e.data.disponiveis} amostras | Falhas: ${e.data.falhas} | Descartadas: ${e.data.descartadas}`;
           if (jogo) jogo.ocupacao_audio(e.data.disponiveis);
@@ -685,25 +699,38 @@ function laco(agora, sessao) {
     jogo.simular_quadro();
     atualizou = true;
 
-    const audio = jogo.audio();
+    const ptrAudio = jogo.audio_ptr();
+    const lenAudio = jogo.audio_len();
     let picoQuadro = 0;
-    if (audio.length > 0) {
+    if (lenAudio > 0) {
       const diagAberto = painelDiag && !painelDiag.hidden;
+      const mem = wasmInstance.memory.buffer;
+      if (!vistaAudio || vistaAudio.buffer !== mem) {
+        vistaAudio = new Float32Array(mem);
+      }
+      const fatiaAudio = vistaAudio.subarray(ptrAudio >> 2, (ptrAudio >> 2) + lenAudio);
       if (diagAberto) {
-        for (let i = 0; i < audio.length; i++) {
-          const abs = Math.abs(audio[i]);
+        for (let i = 0; i < lenAudio; i++) {
+          const abs = Math.abs(fatiaAudio[i]);
           if (abs > picoQuadro) picoQuadro = abs;
         }
         if (picoQuadro > picoHistorico) picoHistorico = picoQuadro;
         if (picoQuadro > 0.002) quadrosComSom++;
-      } else if (quadrosComSom < 1000 && (audio[0] !== 0 || audio[audio.length - 1] !== 0)) {
+      } else if (quadrosComSom < 1000 && (fatiaAudio[0] !== 0 || fatiaAudio[lenAudio - 1] !== 0)) {
         quadrosComSom++;
       }
 
+      const buf = poolAudio.pop() || new Float32Array(4096);
+      buf.set(fatiaAudio);
+      const sub = buf.subarray(0, lenAudio);
+
       if (workletNode) {
-        workletNode.port.postMessage(audio.buffer, [audio.buffer]);
+        workletNode.port.postMessage(sub, [buf.buffer]);
       } else if (fallbackNode) {
-        fallbackNode.enviar(audio);
+        fallbackNode.enviar(sub);
+        if (poolAudio.length < POOL_AUDIO_TAMANHO) {
+          poolAudio.push(buf);
+        }
       }
     }
 
@@ -711,7 +738,7 @@ function laco(agora, sessao) {
     if (quadroNum % 6 === 0 && painelDiag && !painelDiag.hidden) {
       const seg = (quadroNum * PERIODO_QUADRO / 1000).toFixed(1);
       elDiagQuadro.textContent = `${quadroNum} (${seg}s de jogo)`;
-      elDiagAmostras.textContent = String(audio.length);
+      elDiagAmostras.textContent = String(lenAudio);
       elDiagPico.textContent = picoQuadro.toFixed(4);
       elBarraVolume.style.width = Math.min(100, Math.round(picoQuadro * 100)) + "%";
       elDiagPicoMax.textContent = picoHistorico.toFixed(4);
