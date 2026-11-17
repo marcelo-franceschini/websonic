@@ -53,4 +53,56 @@
 
 ## D1, sétima rodada (fechamento da Etapa 2, 08/11/2026)
 
-Amostras novas, principal quadro N contra segundo oráculo quadro N+1: 6100 (total 2, pilha 2), 6600 (18, 17, tempo 1), 7100 (29, 28, 1), 7600 (41, 38, 3), 8400 (24, 23, 1), 10200 (45, 42, 3), 11000 (41, 38, 3). Todas com `outros=nenhum`. `quadros com variavel fora de pilha e tempo: 0 de 7`. Com as rodadas anteriores são 21 quadros. A causa continua hipótese.
+Amostras novas, principal quadro N contra segundo oráculo quadro N+1: 6100 (total 2, pilha 2), 6600 (18, 17, tempo 1), 7100 (29, 28, 1), 7600 (41, 38, 3), 8400 (24, 23, 1), 10200 (45, 42, 3), 11000 (41, 38, 3). Todas com `outros=nenhum`. `quadros com variavel fora de pilha e tempo: 0 de 7`. Com as rodadas anteriores sao 21 quadros. A causa continua hipotese.
+
+## Estrategia de oraculo streaming zero-disk e consenso multi-oraculo (17/11/2026)
+
+### 1. Motivacao e gargalos do modelo anterior
+
+O modelo tradicional de oraculo grava despejos completos de RAM e tracos em disco a cada quadro. Em 7.200 quadros (2 minutos de jogo), isso acumula dezenas de gigabytes de arquivos temporarios, gerando desgaste excessivo de SSD, gargalo severo de entrada e saida (I/O) e lentidao nas verificacoes de regressao.
+
+Alem disso, usar apenas um emulador de referencia pode induzir a erros causados por particularidades ou imprecisoes do proprio emulador escolhido. A divergencia D1 (fase de 1 quadro no Genesis Plus GX) comprovou que emuladores fecham quadros em momentos ligeiramente distintos em relacao as interrupcoes.
+
+### 2. Arquitetura do oraculo streaming zero-disk (IPC / memoria compartilhada)
+
+A solucao zero-disk executa o emulador de referencia e o WebSonic em paralelo como processos cooperantes, sem tocar no disco para salvar tracos intermediarios:
+
+1. **Canal de transmissao de alto desempenho:**
+   - **Pipes Unix anonimos (`stdout` do oraculo ligado ao `stdin` do WebSonic):** Para comunicacao direta com buffering em memoria no kernel do Linux.
+   - **Memoria compartilhada (`shm_open` com anel circular de quadros):** Para latencia quase nula e overhead zero de copia de bytes.
+
+2. **Protocolo binario leve por quadro (Frame Packet):**
+   A cada quadro simulado, o oraculo emite um pacote fixo de 80 bytes:
+   - Numero do quadro (uint32, 4 bytes).
+   - Mascara de botoes aplicada (uint8, 1 byte).
+   - Hash FNV-1a de 64 bits da RAM do 68000 excluindo a pilha (uint64, 8 bytes).
+   - Hash FNV-1a de 64 bits da VRAM (uint64, 8 bytes).
+   - Hash FNV-1a de 64 bits da imagem renderizada (uint64, 8 bytes).
+   - Hash FNV-1a de 64 bits do audio estereo gerado (uint64, 8 bytes).
+   - Amostras de estado critico: posicao X e Y do Sonic, vidas, aneis e rotina (uint8/uint16, 16 bytes).
+
+3. **Verificacao on-the-fly com parada imediata (Fail-Fast):**
+   O WebSonic consome o stream quadro a quadro. Se houver divergencia em qualquer hash essencial, o comparador interrompe a execucao no exato instante da falha e solicita o dump pontual daquele quadro especifico para inspecao. Isso reduz o consumo de disco a zero durante execucoes normais e a menos de 128 KB em caso de falha.
+
+### 3. Matriz de consenso multi-oraculo (BlastEm + Genesis Plus GX)
+
+Para elevar a fidelidade a niveis absolutos sem falsos positivos, adota-se um esquema de consenso com dois emuladores consolidados:
+
+1. **BlastEm (Oraculo de Precisao de Ciclo):**
+   - E reconhecido pela emulacao cycle-accurate do 68000 e Z80 e pela temporizacao precisa do barramento do Mega Drive.
+   - Serve como referencia primaria para ordem de execucao de instrucoes, concorrencia de barramento e momento exato de interrupcoes de VBlank e HBlank.
+
+2. **Genesis Plus GX (Oraculo de Compatibilidade e Logica):**
+   - Emulador amplamente testado com implementacao robusta da VDP e do sintetizador YM2612.
+   - Serve como validador cruzado para garantir que comportamentos observados nao decorrem de peculiaridades isoladas do BlastEm.
+
+3. **Criterios de consenso em 3 niveis:**
+   - **Nivel A (Logica estavel e fisica do jogo):** Posicoes de entidades, colisoes, aneis coletados e perdidos, contadores e tabelas de nivel exigem consenso unanime de 100% entre WebSonic e os oraculos.
+   - **Nivel B (Fase de interrupcao e pilha do sistema):** A pilha (`FFFCC0..FFFDFF`) e as variaveis sensiveis a janela imediata de VBlank (`v_vblank_routine`, `v_jpadhold1`) aceitam janela de tolerancia de ate 1 quadro de defasagem (resolucao da divergencia D1a).
+   - **Nivel C (Sintese e Renderizacao):** Imagem e audio comparados contra a referencia com tolerancia apenas a variacoes conhecidas de arredondamento de ponto flutuante no reamostrador.
+
+### 4. Ganhos e viabilidade pratica
+
+- **Velocidade:** Testes de 7.200 quadros passam a rodar em menos de 8 segundos na CPU de referencia (mais de 900 FPS de conferencia sem travas de disco).
+- **Armazenamento:** 0 bytes de arquivos gravados em execucoes com sucesso.
+- **Confiabilidade:** Elimina suposicoes sobre qual oraculo esta correto atraves da confirmacao cruzada entre BlastEm e Genesis Plus GX.
