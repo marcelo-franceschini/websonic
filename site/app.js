@@ -61,11 +61,13 @@ let fallbackNode = null;
 let volumeAtual = 1.0;
 let mudoAtivo = false;
 
-// Pool de buffers de audio reutilizados para transferencia ao worklet
+// Pool de buffers de audio reutilizados para transferencia ao worklet.
+// 4096 floats cobrem um quadro estereo ate ~122 kHz; taxas maiores trocam o buffer por um maior.
 const POOL_AUDIO_TAMANHO = 8;
+const POOL_AUDIO_FLOATS = 4096;
 const poolAudio = [];
 for (let i = 0; i < POOL_AUDIO_TAMANHO; i++) {
-  poolAudio.push(new Float32Array(4096));
+  poolAudio.push(new Float32Array(POOL_AUDIO_FLOATS));
 }
 let vistaAudio = null;
 
@@ -900,7 +902,10 @@ function laco(agora, sessao) {
         quadrosComSom++;
       }
 
-      const buf = poolAudio.pop() || new Float32Array(4096);
+      // Um buffer menor que o quadro (taxa acima de ~122 kHz) e descartado e trocado por um
+      // do tamanho certo; sem isso, buf.set lancaria RangeError.
+      let buf = poolAudio.pop();
+      if (!buf || buf.length < lenAudio) buf = new Float32Array(Math.max(POOL_AUDIO_FLOATS, lenAudio));
       buf.set(fatiaAudio);
       const sub = buf.subarray(0, lenAudio);
 
