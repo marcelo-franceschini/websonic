@@ -520,12 +520,16 @@ impl Vdp {
         }
         self.dma_ativo = false;
         // Aplica as escritas que esperaram o fim do DMA.
-        let pendentes = std::mem::take(&mut self.pendentes);
-        for p in pendentes {
+        let mut pendentes = std::mem::take(&mut self.pendentes);
+        for &p in &pendentes {
             match p {
                 Pendente::Controle(v) => self.escrever_controle(v),
                 Pendente::Dados(v) => self.escrever_palavra_de_dados(v),
             }
+        }
+        pendentes.clear();
+        if self.pendentes.is_empty() {
+            self.pendentes = pendentes;
         }
     }
 
