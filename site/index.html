@@ -520,10 +520,36 @@
     }
 
     #barra-volume {
-      width: 0%;
+      width: 100%;
       height: 100%;
       background: var(--emerald-green);
-      transition: width 0.05s ease;
+      transform-origin: left center;
+      transform: scaleX(0);
+    }
+
+    .diag-ativo {
+      color: var(--emerald-green);
+      font-weight: bold;
+    }
+
+    .diag-aviso {
+      color: var(--ring-gold);
+      font-weight: bold;
+    }
+
+    .diag-mudo {
+      color: var(--text-muted);
+      font-weight: normal;
+    }
+
+    .diag-azul {
+      color: var(--sonic-blue);
+      font-weight: bold;
+    }
+
+    .diag-erro {
+      color: var(--danger-red);
+      font-weight: bold;
     }
   </style>
 </head>
@@ -665,7 +691,7 @@
           </div>
         </div>
         <table id="tabela-diag">
-          <tr><td style="width: 45%;"><b>Estado do Áudio no Navegador:</b></td><td id="diag-estado"><span style="color: var(--text-muted);">Aguardando inicialização</span></td></tr>
+          <tr><td style="width: 45%;"><b>Estado do Áudio no Navegador:</b></td><td id="diag-estado" class="diag-mudo">Aguardando inicialização</td></tr>
           <tr><td><b>Taxa de Amostragem do Navegador:</b></td><td id="diag-taxa">-</td></tr>
           <tr><td><b>Pipeline em Uso:</b></td><td id="diag-pipeline">-</td></tr>
           <tr><td><b>Quadro Atual do Jogo:</b></td><td id="diag-quadro">0 (0.0s)</td></tr>

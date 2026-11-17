@@ -173,8 +173,11 @@ btnBipe.addEventListener("click", () => {
 
 function atualizarEstadoAudioUI() {
   if (!audioCtx) {
-    elDiagEstado.innerHTML = `<span style="color:var(--text-muted);">Não inicializado</span>`;
-    if (badgeAudio) {
+    if (elDiagEstado && elDiagEstado.textContent !== "Não inicializado") {
+      elDiagEstado.textContent = "Não inicializado";
+      elDiagEstado.className = "diag-mudo";
+    }
+    if (badgeAudio && badgeAudio.textContent !== "🔇 Áudio Desligado") {
       badgeAudio.className = "pill";
       badgeAudio.textContent = "🔇 Áudio Desligado";
     }
@@ -182,25 +185,41 @@ function atualizarEstadoAudioUI() {
   }
   const st = audioCtx.state;
   if (st === "running") {
-    elDiagEstado.innerHTML = `<span style="color:var(--emerald-green); font-weight:bold;">🟢 Ativo (running)</span>`;
-    btnAudio.textContent = "🔊 Áudio Ativo";
-    btnAudio.style.background = "var(--emerald-green)";
-    if (badgeAudio) {
+    if (elDiagEstado && elDiagEstado.textContent !== "🟢 Ativo (running)") {
+      elDiagEstado.textContent = "🟢 Ativo (running)";
+      elDiagEstado.className = "diag-ativo";
+    }
+    if (btnAudio && btnAudio.textContent !== "🔊 Áudio Ativo") {
+      btnAudio.textContent = "🔊 Áudio Ativo";
+      btnAudio.style.background = "var(--emerald-green)";
+    }
+    if (badgeAudio && badgeAudio.textContent !== "🔊 Áudio Ativo") {
       badgeAudio.className = "pill ativo";
       badgeAudio.textContent = "🔊 Áudio Ativo";
     }
   } else if (st === "suspended") {
-    elDiagEstado.innerHTML = `<span style="color:var(--ring-gold); font-weight:bold;">🟡 Pausado pelo navegador (suspended)</span>`;
-    btnAudio.textContent = "⚠️ Desbloquear Áudio";
-    btnAudio.style.background = "var(--ring-gold)";
-    if (badgeAudio) {
+    if (elDiagEstado && elDiagEstado.textContent !== "🟡 Pausado pelo navegador (suspended)") {
+      elDiagEstado.textContent = "🟡 Pausado pelo navegador (suspended)";
+      elDiagEstado.className = "diag-aviso";
+    }
+    if (btnAudio && btnAudio.textContent !== "⚠️ Desbloquear Áudio") {
+      btnAudio.textContent = "⚠️ Desbloquear Áudio";
+      btnAudio.style.background = "var(--ring-gold)";
+    }
+    if (badgeAudio && badgeAudio.textContent !== "🟡 Clique para Áudio") {
       badgeAudio.className = "pill aviso";
       badgeAudio.textContent = "🟡 Clique para Áudio";
     }
   } else {
-    elDiagEstado.innerHTML = `<span style="color:var(--text-muted);">${st}</span>`;
+    if (elDiagEstado && elDiagEstado.textContent !== st) {
+      elDiagEstado.textContent = st;
+      elDiagEstado.className = "diag-mudo";
+    }
   }
-  elDiagTaxa.textContent = audioCtx.sampleRate + " Hz";
+  const taxaStr = audioCtx.sampleRate + " Hz";
+  if (elDiagTaxa && elDiagTaxa.textContent !== taxaStr) {
+    elDiagTaxa.textContent = taxaStr;
+  }
 }
 
 function desbloquearAudio() {
@@ -253,7 +272,10 @@ async function iniciarAudio() {
         console.warn("AudioWorklet erro:", e);
       };
       workletNode.connect(ganhoMasterNode);
-      elDiagPipeline.innerHTML = `<span style="color:var(--emerald-green); font-weight:bold;">AudioWorklet</span>`;
+      if (elDiagPipeline) {
+        elDiagPipeline.textContent = "AudioWorklet";
+        elDiagPipeline.className = "diag-ativo";
+      }
     } catch (eWorklet) {
       console.warn("AudioWorklet indisponivel, usando ScriptProcessor:", eWorklet);
       const spNode = audioCtx.createScriptProcessor(2048, 0, 2);
@@ -296,7 +318,10 @@ async function iniciarAudio() {
           }
         },
       };
-      elDiagPipeline.innerHTML = `<span style="color:var(--sonic-blue); font-weight:bold;">ScriptProcessor (Fallback universal)</span>`;
+      if (elDiagPipeline) {
+        elDiagPipeline.textContent = "ScriptProcessor (Fallback universal)";
+        elDiagPipeline.className = "diag-azul";
+      }
       elDiagWorklet.textContent = "Usando ScriptProcessor fallback";
     }
 
@@ -309,7 +334,10 @@ async function iniciarAudio() {
     desbloquearAudio();
     atualizarEstadoAudioUI();
   } catch (e) {
-    elDiagPipeline.innerHTML = `<span style="color:var(--danger-red);">Falha ao iniciar audio: ${e.message}</span>`;
+    if (elDiagPipeline) {
+      elDiagPipeline.textContent = `Falha ao iniciar audio: ${e.message}`;
+      elDiagPipeline.className = "diag-erro";
+    }
   }
 }
 
@@ -731,14 +759,18 @@ function laco(agora, sessao) {
         vistaAudio = new Float32Array(mem);
       }
       const fatiaAudio = vistaAudio.subarray(ptrAudio >> 2, (ptrAudio >> 2) + lenAudio);
-      if (diagAberto) {
+
+      // Calcula o pico somente no passo que atualiza o painel
+      const atualizaDiag = diagAberto && (quadroNum % 6 === 0);
+      if (atualizaDiag) {
         for (let i = 0; i < lenAudio; i++) {
           const abs = Math.abs(fatiaAudio[i]);
           if (abs > picoQuadro) picoQuadro = abs;
         }
         if (picoQuadro > picoHistorico) picoHistorico = picoQuadro;
-        if (picoQuadro > 0.002) quadrosComSom++;
-      } else if (quadrosComSom < 1000 && (fatiaAudio[0] !== 0 || fatiaAudio[lenAudio - 1] !== 0)) {
+      }
+
+      if (quadrosComSom < 1000 && (fatiaAudio[0] !== 0 || fatiaAudio[lenAudio - 1] !== 0)) {
         quadrosComSom++;
       }
 
@@ -763,12 +795,24 @@ function laco(agora, sessao) {
     // Atualiza Painel de Diagnostico a cada 6 quadros (~10 vezes por segundo)
     if (quadroNum % 6 === 0 && painelDiag && !painelDiag.hidden) {
       const seg = (quadroNum * PERIODO_QUADRO / 1000).toFixed(1);
-      elDiagQuadro.textContent = `${quadroNum} (${seg}s de jogo)`;
-      elDiagAmostras.textContent = String(lenAudio);
-      elDiagPico.textContent = picoQuadro.toFixed(4);
-      elBarraVolume.style.width = Math.min(100, Math.round(picoQuadro * 100)) + "%";
-      elDiagPicoMax.textContent = picoHistorico.toFixed(4);
-      elDiagQuadrosSom.textContent = `${quadrosComSom} quadros`;
+      const strQuadro = `${quadroNum} (${seg}s de jogo)`;
+      if (elDiagQuadro.textContent !== strQuadro) elDiagQuadro.textContent = strQuadro;
+
+      const strAmostras = String(lenAudio);
+      if (elDiagAmostras.textContent !== strAmostras) elDiagAmostras.textContent = strAmostras;
+
+      const strPico = picoQuadro.toFixed(4);
+      if (elDiagPico.textContent !== strPico) elDiagPico.textContent = strPico;
+
+      const scaleStr = `scaleX(${Math.min(1, picoQuadro).toFixed(3)})`;
+      if (elBarraVolume.style.transform !== scaleStr) elBarraVolume.style.transform = scaleStr;
+
+      const strPicoMax = picoHistorico.toFixed(4);
+      if (elDiagPicoMax.textContent !== strPicoMax) elDiagPicoMax.textContent = strPicoMax;
+
+      const strQuadrosSom = `${quadrosComSom} quadros`;
+      if (elDiagQuadrosSom.textContent !== strQuadrosSom) elDiagQuadrosSom.textContent = strQuadrosSom;
+
       atualizarEstadoAudioUI();
     }
 
