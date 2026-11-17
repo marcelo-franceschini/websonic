@@ -416,7 +416,7 @@ tela.addEventListener("webglcontextrestored", () => {
   if (jogo && !document.hidden && !animacao) {
     relogio.iniciar(performance.now());
     desbloquearAudio();
-    animacao = requestAnimationFrame((t) => laco(t, geracao));
+    if (funcaoRafAtual) animacao = requestAnimationFrame(funcaoRafAtual);
   }
 });
 
@@ -489,6 +489,8 @@ function apresentar() {
 const relogio = new Relogio();
 let geracao = 0;
 let animacao = 0;
+let funcaoRafAtual = null;
+let temGamepadConectado = false;
 
 // Mapeamento de Teclas Fisicas e Virtuais (Colecao Deterministica com Set)
 const teclasSeguradas = new Set();
@@ -522,9 +524,8 @@ const MAPA_TECLAS_KEY = {
   Enter: 0x80, p: 0x80, P: 0x80,
 };
 
-function calcularMascaraTeclado() {
+function calcularMascaraTeclado(modo = 4) {
   let mascara = 0;
-  const modo = jogo?.modo_jogo?.() ?? 4;
   // Abertura / Titulo / Demo: 0x00 (Sega), 0x04 (Titulo), 0x08 (Demo)
   const telaTituloOuDemo = modo === 0x00 || modo === 0x04 || modo === 0x08;
 
@@ -605,19 +606,29 @@ function atualizarBadgeGamepad(gp) {
 }
 
 window.addEventListener("gamepadconnected", (e) => {
+  temGamepadConectado = true;
   atualizarBadgeGamepad(e.gamepad);
 });
 
 window.addEventListener("gamepaddisconnected", () => {
-  atualizarBadgeGamepad(null);
+  const gps = navigator.getGamepads ? navigator.getGamepads() : [];
+  temGamepadConectado = false;
+  let primeiro = null;
+  for (let i = 0; i < gps.length; i++) {
+    if (gps[i]?.connected) {
+      temGamepadConectado = true;
+      primeiro = gps[i];
+      break;
+    }
+  }
+  atualizarBadgeGamepad(primeiro);
 });
 
-function botoesDoControle() {
-  if (!navigator.getGamepads) return 0;
+function botoesDoControle(modo = 4) {
+  if (!temGamepadConectado || !navigator.getGamepads) return 0;
   const gamepads = navigator.getGamepads();
   if (!gamepads) return 0;
 
-  const modo = jogo?.modo_jogo?.() ?? 4;
   const telaTituloOuDemo = modo === 0x00 || modo === 0x04 || modo === 0x08;
 
   let mascara = 0;
@@ -702,7 +713,8 @@ function laco(agora, sessao) {
   for (let passo = 0; passo < passos; passo++) {
     quadroNum++;
 
-    const estadoControles = calcularMascaraTeclado() | botoesDoControle();
+    const modo = jogo?.modo_jogo?.() ?? 4;
+    const estadoControles = calcularMascaraTeclado(modo) | botoesDoControle(modo);
     jogo.botoes(estadoControles);
 
     if (fallbackNode) jogo.ocupacao_audio(fallbackNode.ocupacao());
@@ -778,11 +790,12 @@ function laco(agora, sessao) {
     apresentar();
   }
 
-  animacao = requestAnimationFrame((t) => laco(t, sessao));
+  if (funcaoRafAtual) animacao = requestAnimationFrame(funcaoRafAtual);
 }
 
 async function iniciar(bytes) {
   const sessao = ++geracao;
+  funcaoRafAtual = (t) => laco(t, sessao);
   cancelAnimationFrame(animacao);
   animacao = 0;
   await iniciarAudio();
@@ -811,7 +824,7 @@ async function iniciar(bytes) {
   tela.focus();
   quadroNum = 0;
   relogio.iniciar(performance.now());
-  if (!document.hidden) animacao = requestAnimationFrame((t) => laco(t, sessao));
+  if (!document.hidden && funcaoRafAtual) animacao = requestAnimationFrame(funcaoRafAtual);
 }
 
 document.addEventListener("visibilitychange", () => {
@@ -826,6 +839,6 @@ document.addEventListener("visibilitychange", () => {
   } else if (jogo && !animacao && !contextoPerdido) {
     desbloquearAudio();
     relogio.retomar(performance.now());
-    animacao = requestAnimationFrame((t) => laco(t, geracao));
+    if (funcaoRafAtual) animacao = requestAnimationFrame(funcaoRafAtual);
   }
 });
