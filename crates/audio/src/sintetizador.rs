@@ -226,24 +226,34 @@ impl Sintetizador {
                     break;
                 }
             }
-            let lr = self.fm.ciclo();
-            self.buffer_fm[self.subciclo_fm] = lr;
-            self.subciclo_fm = self.subciclo_fm.wrapping_add(1);
-            self.ciclos_fm = self.ciclos_fm.wrapping_add(1);
-            if self.subciclo_fm >= 24 {
-                self.subciclo_fm = 0;
-                let misturado = self.fm.saida_misturada();
-                let mut pl = 0i16;
-                let mut pr = 0i16;
-                for &idx in &[3, 7, 11, 15, 19, 23] {
-                    pl = pl.wrapping_add(self.buffer_fm[idx].0);
-                    pr = pr.wrapping_add(self.buffer_fm[idx].1);
+
+            let proxima_escrita = if self.pos_fm < self.fila_fm.len() {
+                self.fila_fm[self.pos_fm].0 / MCLK_POR_CICLO_FM
+            } else {
+                ciclos_alvo_fm
+            };
+            let limite = ciclos_alvo_fm.min(proxima_escrita);
+
+            while self.ciclos_fm < limite {
+                let lr = self.fm.ciclo();
+                self.buffer_fm[self.subciclo_fm] = lr;
+                self.subciclo_fm = self.subciclo_fm.wrapping_add(1);
+                self.ciclos_fm = self.ciclos_fm.wrapping_add(1);
+                if self.subciclo_fm >= 24 {
+                    self.subciclo_fm = 0;
+                    let misturado = self.fm.saida_misturada();
+                    let mut pl = 0i16;
+                    let mut pr = 0i16;
+                    for &idx in &[3, 7, 11, 15, 19, 23] {
+                        pl = pl.wrapping_add(self.buffer_fm[idx].0);
+                        pr = pr.wrapping_add(self.buffer_fm[idx].1);
+                    }
+                    saida_fm.push(AmostraFm {
+                        misturado,
+                        picos_pino: (pl, pr),
+                        ciclos: self.buffer_fm,
+                    });
                 }
-                saida_fm.push(AmostraFm {
-                    misturado,
-                    picos_pino: (pl, pr),
-                    ciclos: self.buffer_fm,
-                });
             }
         }
 
@@ -263,13 +273,23 @@ impl Sintetizador {
                     break;
                 }
             }
-            self.psg.ciclo();
-            self.subciclo_psg = self.subciclo_psg.wrapping_add(1);
-            self.ciclos_psg = self.ciclos_psg.wrapping_add(1);
-            if self.subciclo_psg >= 16 {
-                self.subciclo_psg = 0;
-                let emp = self.psg.saida_empacotada();
-                saida_psg.push(AmostraPsg::from(emp));
+
+            let proxima_escrita = if self.pos_psg < self.fila_psg.len() {
+                self.fila_psg[self.pos_psg].0 / MCLK_POR_CICLO_PSG
+            } else {
+                ciclos_alvo_psg
+            };
+            let limite = ciclos_alvo_psg.min(proxima_escrita);
+
+            while self.ciclos_psg < limite {
+                self.psg.ciclo();
+                self.subciclo_psg = self.subciclo_psg.wrapping_add(1);
+                self.ciclos_psg = self.ciclos_psg.wrapping_add(1);
+                if self.subciclo_psg >= 16 {
+                    self.subciclo_psg = 0;
+                    let emp = self.psg.saida_empacotada();
+                    saida_psg.push(AmostraPsg::from(emp));
+                }
             }
         }
 
