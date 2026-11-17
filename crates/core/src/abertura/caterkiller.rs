@@ -122,18 +122,16 @@ fn cabeca(m: &mut Memoria, a: u32) {
         }
         wb(m, a.wrapping_add(OB_ROUTINE_2), 2);
         wb(m, a.wrapping_add(TEMPO), 16);
-        let modo = rb(m, a.wrapping_add(MODO)) ^ 0x10;
-        wb(m, a.wrapping_add(MODO), modo | 0x80);
-        ww(
-            m,
-            a.wrapping_add(OB_VELX),
-            if modo & 0x10 != 0 { 0xFF40 } else { 0 },
-        );
-        ww(
-            m,
-            a.wrapping_add(OB_INERTIA),
-            if modo & 0x10 != 0 { 0x40 } else { 0xFFC0 },
-        );
+        let antigo = rb(m, a.wrapping_add(MODO));
+        let modo = (antigo ^ 0x10) | 0x80;
+        wb(m, a.wrapping_add(MODO), modo);
+        if antigo & 0x10 != 0 {
+            ww(m, a.wrapping_add(OB_VELX), 0xFF40);
+            ww(m, a.wrapping_add(OB_INERTIA), 0x0040);
+        } else {
+            ww(m, a.wrapping_add(OB_VELX), 0);
+            ww(m, a.wrapping_add(OB_INERTIA), 0xFFC0);
+        }
     }
     let tempo = rb(m, a.wrapping_add(TEMPO)).wrapping_sub(1);
     wb(m, a.wrapping_add(TEMPO), tempo);
@@ -148,7 +146,7 @@ fn cabeca(m: &mut Memoria, a: u32) {
             let distancia = obj_floor_dist(m, a);
             let d = i16::from_be_bytes(distancia.to_be_bytes());
             if !(-8..12).contains(&d) {
-                virar(m, a);
+                virar_cabeca(m, a);
             } else {
                 let y = rw(m, a.wrapping_add(OB_Y)).wrapping_add(distancia);
                 ww(m, a.wrapping_add(OB_Y), y);
@@ -195,13 +193,42 @@ fn registrar_piso(m: &mut Memoria, a: u32, d: u8) {
     wb(m, a.wrapping_add(PISO).wrapping_add(u32::from(p)), d);
     wb(m, a.wrapping_add(PAI), p.wrapping_add(1) & 15);
 }
-fn virar(m: &mut Memoria, a: u32) {
-    registrar_piso(m, a, 0x80);
+fn virar_cabeca(m: &mut Memoria, a: u32) {
+    let p = rb(m, a.wrapping_add(PAI));
+    wb(m, a.wrapping_add(PISO).wrapping_add(u32::from(p)), 0x80);
     let sub = rw(m, a.wrapping_add(OB_X).wrapping_add(2)).wrapping_neg();
     ww(m, a.wrapping_add(OB_X).wrapping_add(2), sub);
-    let estado = rb(m, a.wrapping_add(OB_STATUS)) ^ 1;
-    wb(m, a.wrapping_add(OB_STATUS), estado);
-    wb(m, a.wrapping_add(OB_RENDER), estado);
+    let mut p_prox = p;
+    let status = rb(m, a.wrapping_add(OB_STATUS));
+    if sub != 0 && (status & 1 != 0) {
+        let x = rw(m, a.wrapping_add(OB_X)).wrapping_sub(1);
+        ww(m, a.wrapping_add(OB_X), x);
+        p_prox = p_prox.wrapping_add(1);
+        wb(m, a.wrapping_add(PISO).wrapping_add(u32::from(p_prox & 15)), 0);
+    }
+    let novo_status = status ^ 1;
+    wb(m, a.wrapping_add(OB_STATUS), novo_status);
+    wb(m, a.wrapping_add(OB_RENDER), novo_status);
+    wb(m, a.wrapping_add(PAI), p_prox.wrapping_add(1) & 15);
+}
+
+fn virar_corpo(m: &mut Memoria, a: u32, vel_x: u16) {
+    let p = rb(m, a.wrapping_add(PAI));
+    wb(m, a.wrapping_add(PISO).wrapping_add(u32::from(p)), 0x80);
+    let sub = rw(m, a.wrapping_add(OB_X).wrapping_add(2)).wrapping_neg();
+    ww(m, a.wrapping_add(OB_X).wrapping_add(2), sub);
+    let mut p_prox = p;
+    let status = rb(m, a.wrapping_add(OB_STATUS));
+    if sub != 0 && (status & 1 != 0) && vel_x == 0xFF40 {
+        let x = rw(m, a.wrapping_add(OB_X)).wrapping_sub(1);
+        ww(m, a.wrapping_add(OB_X), x);
+        p_prox = p_prox.wrapping_add(1);
+        wb(m, a.wrapping_add(PISO).wrapping_add(u32::from(p_prox & 15)), 0);
+    }
+    let novo_status = status ^ 1;
+    wb(m, a.wrapping_add(OB_STATUS), novo_status);
+    wb(m, a.wrapping_add(OB_RENDER), novo_status);
+    wb(m, a.wrapping_add(PAI), p_prox.wrapping_add(1) & 15);
 }
 
 fn corpo(m: &mut Memoria, a: u32) {
@@ -240,7 +267,7 @@ fn corpo(m: &mut Memoria, a: u32) {
             let pos = rb(m, a.wrapping_add(PAI));
             let piso = rb(m, pai.wrapping_add(PISO).wrapping_add(u32::from(pos)));
             if piso == 0x80 {
-                virar(m, a);
+                virar_corpo(m, a, velocidade);
             } else {
                 let delta = u16::from_be_bytes(i16::from(i8::from_be_bytes([piso])).to_be_bytes());
                 let y = rw(m, a.wrapping_add(OB_Y)).wrapping_add(delta);

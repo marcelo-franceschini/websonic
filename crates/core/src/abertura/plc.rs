@@ -18,6 +18,28 @@ const V_NGFX_BUFFER: u32 = 0xFF_AA00;
 /// plc_slot_size) / 4` (22). O `dbf` roda essa quantidade de vezes, como no original.
 const LONGAS_DO_DESEMPILHAR: u32 = (V_PLC_BUFFER_ONLY_END - V_PLC_BUFFER - PLC_SLOT_SIZE) / 4;
 
+/// `QuickPLC`: descomprime diretamente para a VRAM todas as entradas da lista de PLC `id`.
+pub fn quick_plc(m: &mut Memoria, id: u16) -> Result<(), ErroAbertura> {
+    let deslocamento = rom_w(m, ART_LOAD_CUES.wrapping_add(u32::from(id).wrapping_mul(2)));
+    let lista = ART_LOAD_CUES.wrapping_add(u32::from(deslocamento));
+    let quantos = rom_w(m, lista);
+    if quantos & 0x8000 != 0 {
+        return Ok(());
+    }
+    let mut origem = lista.wrapping_add(2);
+    for _ in 0..=u32::from(quantos) {
+        let arte = rom_l(m, origem);
+        let vram_byte = u32::from(rom_w(m, origem.wrapping_add(4)));
+        let cmd = 0x4000_0000u32
+            .wrapping_add((vram_byte & 0x3FFF) << 16)
+            .wrapping_add((vram_byte & 0xC000) >> 14);
+        wl(m, VDP_CONTROLE, cmd);
+        crate::rotinas::nem_dec(m, arte).map_err(ErroAbertura::Rotina)?;
+        origem = origem.wrapping_add(PLC_SLOT_SIZE);
+    }
+    Ok(())
+}
+
 /// `ClearPLC`: zera a fila inteira ($FFF680 a $FFF700).
 pub fn clear_plc(m: &mut Memoria) {
     let mut a = V_PLC_BUFFER;

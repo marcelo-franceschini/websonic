@@ -429,6 +429,10 @@ fn dynamic_level_events(m: &mut Memoria) -> Result<(), ErroAbertura> {
         super::spring_yard_cenario::eventos(m)?;
     } else if zona == ID_SLZ {
         super::star_light_cenario::eventos(m)?;
+    } else if zona == ID_SBZ {
+        eventos_sbz(m)?;
+    } else if zona == ID_END {
+        // Sem eventos adicionais no final
     } else if zona != 0 {
         return Err(ErroAbertura::NaoImplementado("eventos de outra zona"));
     } else {
@@ -592,6 +596,96 @@ fn eventos_mz(m: &mut Memoria) -> Result<(), ErroAbertura> {
             _ => return Err(ErroAbertura::NaoImplementado("rotina de eventos da MZ3")),
         },
         _ => return Err(ErroAbertura::NaoImplementado("ato da MZ")),
+    }
+    Ok(())
+}
+
+/// Limites e transições dos eventos dinâmicos da Scrap Brain Zone e Final Zone.
+fn eventos_sbz(m: &mut Memoria) -> Result<(), ErroAbertura> {
+    let act = rb(m, V_ACT);
+    match act {
+        0 => {
+            let x = rw(m, V_SCREENPOSX);
+            let limit = if x < 0x1880 {
+                0x720
+            } else if x < 0x2000 {
+                0x620
+            } else {
+                0x2A0
+            };
+            ww(m, V_LIMITBTM1, limit);
+        }
+        1 => {
+            let x = rw(m, V_SCREENPOSX);
+            let rotina = rb(m, V_DLE_ROUTINE);
+            match rotina {
+                0 => {
+                    let limit = if x < 0x1800 { 0x800 } else { 0x720 };
+                    ww(m, V_LIMITBTM1, limit);
+                    if x >= 0x1E00 {
+                        wb(m, V_DLE_ROUTINE, 2);
+                    }
+                }
+                1..=3 => {
+                    if x >= 0x1EB0 {
+                        if let Some(a1) = objetos::find_free_obj(m) {
+                            wb(m, a1.wrapping_add(OB_ID), 0x83);
+                        }
+                        wb(m, V_DLE_ROUTINE, 4);
+                        plc::add_plc(m, 0x14)?;
+                    }
+                }
+                4..=5 => {
+                    if x >= 0x1F60 {
+                        if let Some(a1) = objetos::find_free_obj(m) {
+                            wb(m, a1.wrapping_add(OB_ID), 0x82);
+                        }
+                        wb(m, F_LOCKSCREEN, 1);
+                        wb(m, V_DLE_ROUTINE, 6);
+                    }
+                    ww(m, V_LIMITLEFT2, x);
+                }
+                _ => {
+                    if x < 0x2050 {
+                        ww(m, V_LIMITLEFT2, x);
+                    }
+                }
+            }
+        }
+        2 => {
+            let x = rw(m, V_SCREENPOSX);
+            let rotina = rb(m, V_DLE_ROUTINE);
+            match rotina {
+                0 => {
+                    if x >= 0x2148 {
+                        wb(m, V_DLE_ROUTINE, 2);
+                        plc::add_plc(m, 0x15)?;
+                    }
+                    ww(m, V_LIMITLEFT2, x);
+                }
+                2 => {
+                    if x >= 0x2300 {
+                        if let Some(a1) = objetos::find_free_obj(m) {
+                            wb(m, a1.wrapping_add(OB_ID), 0x85);
+                        }
+                        wb(m, F_LOCKSCREEN, 1);
+                        wb(m, V_DLE_ROUTINE, 4);
+                    }
+                    ww(m, V_LIMITLEFT2, x);
+                }
+                4 => {
+                    if x >= 0x2450 {
+                        wb(m, V_DLE_ROUTINE, 6);
+                    }
+                    ww(m, V_LIMITLEFT2, x);
+                }
+                6 => {}
+                _ => {
+                    ww(m, V_LIMITLEFT2, x);
+                }
+            }
+        }
+        _ => return Err(ErroAbertura::NaoImplementado("ato da SBZ")),
     }
     Ok(())
 }

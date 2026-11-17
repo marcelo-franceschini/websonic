@@ -168,7 +168,8 @@ fn find_floor2(m: &mut Memoria, b: Busca, d2: u16, d3: u16) -> u16 {
     match altura_no_bloco(m, b, d2, d3, palavra) {
         Piso::Dist(d1) => d1,
         Piso::Negativo(resto) => !resto,
-        Piso::Vazio | Piso::NegativoVazio | Piso::Maximo => 0xFu16.wrapping_sub(d2 & 0xF),
+        Piso::Maximo => 0xFu16.wrapping_sub(0x10u16.wrapping_add(d2 & 0xF)),
+        Piso::Vazio | Piso::NegativoVazio => 0xFu16.wrapping_sub(d2 & 0xF),
     }
 }
 
@@ -1447,9 +1448,14 @@ fn sonic_level_bound(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
     }
     let fundo = rw(m, V_LIMITBTM2).wrapping_add(224);
     if s16(fundo) < s16(rw(m, a0.wrapping_add(OB_Y))) {
-        return Err(ErroAbertura::NaoImplementado(
-            "Sonic abaixo do limite da fase",
-        ));
+        if rw(m, V_ZONE_ACT) == ID_SBZ_ACT2 && rw(m, a0.wrapping_add(OB_X)) >= 0x2000 {
+            wb(m, V_LASTLAMP, 0);
+            ww(m, F_RESTART, 1);
+            ww(m, V_ZONE_ACT, ID_LZ_ACT4);
+            return Ok(());
+        }
+        kill_sonic(m);
+        return Ok(());
     }
     Ok(())
 }
@@ -1891,6 +1897,15 @@ fn react_to_item(m: &mut Memoria) -> Result<(), ErroAbertura> {
                     } else {
                         return hurt_sonic(m, a1);
                     }
+                }
+                if tipo & 0xC0 == 0xC0 {
+                    let sub = tipo & 0x3F;
+                    if sub == 0x17 || sub == 0x21 {
+                        let prop = rb(m, a1.wrapping_add(OB_COLPROP)).wrapping_add(1);
+                        wb(m, a1.wrapping_add(OB_COLPROP), prop);
+                        return Ok(());
+                    }
+                    return hurt_sonic(m, a1);
                 }
                 if tipo & 0x80 != 0 {
                     return hurt_sonic(m, a1);

@@ -32,7 +32,36 @@ pub fn gm_level_inicio(m: &mut Memoria) {
 /// `Level_TtlCardLoop` (D7.10). A demo do final devolve `NaoImplementado`.
 pub fn preparo_dos_cartoes(m: &mut Memoria) -> Result<(), ErroAbertura> {
     if rw(m, F_DEMO) & 0x8000 != 0 {
-        return Err(ErroAbertura::NaoImplementado("demo do final"));
+        zerar(m, V_OBJSPACE, V_OBJSPACE_END);
+        zerar(m, V_MISC_VARIABLES, V_MISC_VARIABLES_END);
+        zerar(m, V_LEVELVARIABLES, V_LEVELVARIABLES_END);
+        zerar(
+            m,
+            V_TIMINGANDSCREENVARIABLES,
+            V_TIMINGANDSCREENVARIABLES_END,
+        );
+        clear_screen(m)?;
+        for w in [0x8B03u16, 0x8230, 0x8407, 0x857C, 0x9001, 0x8004, 0x8720] {
+            ww(m, VDP_CONTROLE, w);
+        }
+        ww(m, V_HBLANK_HREG, 0x8ADF);
+        let h = rw(m, V_HBLANK_HREG);
+        ww(m, VDP_CONTROLE, h);
+        let zona = rb(m, V_ZONE);
+        if zona == ID_LZ {
+            super::labirinto::iniciar_agua(m);
+        }
+        ww(m, V_AIR, 30);
+        pal_load(m, PALID_SONIC);
+        if zona == ID_LZ {
+            let id = if rb(m, V_ACT) == 3 { 0x10 } else { 0x0F };
+            pal_load_para(m, id, 0xFFFF_FF80);
+            if rb(m, V_LASTLAMP) != 0 {
+                let estado = rb(m, 0xFF_FE53);
+                wb(m, F_WTR_STATE, estado);
+            }
+        }
+        return Ok(());
     }
     // A arte dos cartões vai direto para a VRAM (com as interrupções desligadas).
     wl(m, VDP_CONTROLE, loc_vram(u32::from(ARTTILE_TITLE_CARD)));
@@ -106,6 +135,9 @@ pub enum DepoisDosCartoes {
 /// O laço acaba quando o elemento "ACT" chegou ao alvo e a fila esvaziou (FixBugs = 0: só o "ACT"
 /// é conferido).
 pub fn laco_dos_cartoes(m: &mut Memoria) -> Result<DepoisDosCartoes, ErroAbertura> {
+    if rw(m, F_DEMO) & 0x8000 != 0 {
+        return Ok(DepoisDosCartoes::Fim);
+    }
     execute_objects(m)?;
     build_sprites(m)?;
     plc::run_plc(m)?;
@@ -155,7 +187,7 @@ fn col_index_load(m: &mut Memoria) {
 }
 
 /// `OscillateNumInit`: os valores iniciais da tabela de números que oscilam.
-fn oscillate_num_init(m: &mut Memoria) {
+pub(crate) fn oscillate_num_init(m: &mut Memoria) {
     let mut a1 = V_OSCILLATE;
     for i in 0..33u32 {
         let valor = rom_w(m, 0x412E_u32.wrapping_add(i.wrapping_mul(2)));
@@ -169,9 +201,7 @@ fn oscillate_num_init(m: &mut Memoria) {
 /// partida, as variáveis de uma partida nova e o temporizador da demo. Roda de uma vez na marca
 /// `Level_Delay` (D7.10); as interrupções que chegam no meio são quadros de lag (D7.25).
 pub fn preparo_final(m: &mut Memoria) -> Result<(), ErroAbertura> {
-    if rw(m, F_DEMO) & 0x8000 != 0 {
-        return Err(ErroAbertura::NaoImplementado("demo do final"));
-    }
+    let is_credits = rw(m, F_DEMO) & 0x8000 != 0;
     hud::hud_base(m);
     pal_load_para(m, PALID_SONIC, 0x80);
     cenario::level_size_load(m)?;
@@ -215,12 +245,24 @@ pub fn preparo_final(m: &mut Memoria) -> Result<(), ErroAbertura> {
         wb(m, v, 1);
     }
     ww(m, V_BTNPUSHTIME1, 0);
-    // O primeiro par de bytes da gravação da demo da zona: a duração do primeiro botão.
-    let zona = u32::from(rb(m, V_ZONE));
-    let demo = rom_l(m, DEMO_DATA_PTR.wrapping_add(zona.wrapping_mul(4)));
-    let duracao = rom_b(m, demo.wrapping_add(1)).wrapping_sub(1);
+    let duracao = if is_credits {
+        let cred_num = rw(m, V_CREDITSNUM).wrapping_sub(1) & 7;
+        let indice = u32::from(cred_num).wrapping_mul(4);
+        let demo = rom_l(m, DEMO_END_DATA_PTR.wrapping_add(indice));
+        rom_b(m, demo.wrapping_add(1)).wrapping_sub(1)
+    } else {
+        let zona = u32::from(rb(m, V_ZONE));
+        let demo = rom_l(m, DEMO_DATA_PTR.wrapping_add(zona.wrapping_mul(4)));
+        rom_b(m, demo.wrapping_add(1)).wrapping_sub(1)
+    };
     wb(m, V_BTNPUSHTIME2, duracao);
-    ww(m, V_GENERICTIMER, 1800);
+    if is_credits {
+        ww(m, V_GENERICTIMER, 300);
+        plc::add_plc(m, PLCID_EXPLODE)?;
+        plc::add_plc(m, PLCID_GHZANIMALS)?;
+    } else {
+        ww(m, V_GENERICTIMER, 1800);
+    }
     if rb(m, V_ZONE) == ID_LZ {
         let id = if rb(m, V_ACT) == 3 { 0x0D } else { 0x0B };
         pal_load_para(m, id, 0xFFFF_FF00);
@@ -232,7 +274,9 @@ pub fn preparo_final(m: &mut Memoria) -> Result<(), ErroAbertura> {
 /// antes da fase).
 pub fn level_start_game(m: &mut Memoria) -> Result<(), ErroAbertura> {
     if rw(m, F_DEMO) & 0x8000 != 0 {
-        return Err(ErroAbertura::NaoImplementado("demo do final"));
+        let modo = rb(m, V_GAMEMODE) & 0x7F;
+        wb(m, V_GAMEMODE, modo);
+        return Ok(());
     }
     for (a, soma) in [
         (V_TITLECARD, 2u8),
@@ -254,14 +298,22 @@ pub fn move_sonic_in_demo(m: &mut Memoria) -> Result<(), ErroAbertura> {
     if demo == 0 {
         return Ok(());
     }
-    if demo & 0x8000 != 0 {
-        return Err(ErroAbertura::NaoImplementado("demo dos créditos"));
-    }
-    if rb(m, V_JPADHOLD1) & BTN_START != 0 {
+    let is_credits = demo & 0x8000 != 0;
+    if !is_credits && rb(m, V_JPADHOLD1) & BTN_START != 0 {
         wb(m, V_GAMEMODE, GM_TITLE_ID);
     }
-    let indice = u32::from(rb(m, V_ZONE)).wrapping_mul(4);
-    let base = rom_l(m, DEMO_DATA_PTR.wrapping_add(indice));
+    let base = if is_credits {
+        let cred_num = rw(m, V_CREDITSNUM).wrapping_sub(1) & 7;
+        let indice = u32::from(cred_num).wrapping_mul(4);
+        rom_l(m, DEMO_END_DATA_PTR.wrapping_add(indice))
+    } else {
+        let mut d0 = u32::from(rb(m, V_ZONE));
+        if rb(m, V_GAMEMODE) == ID_SPECIAL {
+            d0 = 6;
+        }
+        let indice = d0.wrapping_mul(4);
+        rom_l(m, DEMO_DATA_PTR.wrapping_add(indice))
+    };
     let pos = base.wrapping_add(u32::from(rw(m, V_BTNPUSHTIME1)));
     let botoes = rom_b(m, pos);
     wb(m, V_JPADHOLD1, botoes);
@@ -278,7 +330,11 @@ pub fn move_sonic_in_demo(m: &mut Memoria) -> Result<(), ErroAbertura> {
 
 /// `Level_EndDemo`: começa o escurecimento lento após o término de uma demo regular.
 pub fn demo_fade_inicio(m: &mut Memoria) {
-    wb(m, V_GAMEMODE, 0);
+    if rw(m, F_DEMO) & 0x8000 != 0 {
+        wb(m, V_GAMEMODE, GM_CREDITS_ID);
+    } else {
+        wb(m, V_GAMEMODE, 0);
+    }
     ww(m, V_GENERICTIMER, 60);
     ww(m, V_PFADE_START, 0x003F);
     ww(m, 0xFF_F794, 0);

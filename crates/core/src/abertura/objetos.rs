@@ -39,6 +39,26 @@ mod orbinaut;
 mod jaws;
 #[path = "portas_labirinto.rs"]
 mod portas_labirinto;
+#[path = "spinning_light.rs"]
+mod spinning_light;
+#[path = "bumper.rs"]
+mod bumper;
+#[path = "big_spike_ball.rs"]
+mod big_spike_ball;
+#[path = "yadrin.rs"]
+mod yadrin;
+#[path = "roller.rs"]
+mod roller;
+#[path = "elevador_slz.rs"]
+mod elevador_slz;
+#[path = "circling_platform.rs"]
+mod circling_platform;
+#[path = "staircase_slz.rs"]
+mod staircase_slz;
+#[path = "fan_slz.rs"]
+mod fan_slz;
+#[path = "walking_bomb.rs"]
+mod walking_bomb;
 
 const SPRITES_MAX: u8 = 80;
 const SPRITELAYER_NUM: u32 = 8;
@@ -143,8 +163,11 @@ fn rodar_objeto(m: &mut Memoria, a0: u32, id: u8) -> Result<(), ErroAbertura> {
         0x3E => super::capsula::executar(m, a0),
         0x3D => super::boss_ghz::executar(m, a0),
         0x48 => super::boss_ghz::bola(m, a0),
+        0x73 => super::boss_mz::executar(m, a0),
+        0x74 => super::boss_mz::fogo(m, a0),
         0x75 => boss_syz::chefe(m, a0),
         0x76 => boss_syz::bloco(m, a0),
+        0x77 => super::boss_lz::executar(m, a0),
         0x7A => boss_slz::executar(m, a0),
         0x7B => boss_slz_bola::executar(m, a0),
         0x3C => super::parede_quebravel::executar(m, a0),
@@ -194,6 +217,39 @@ fn rodar_objeto(m: &mut Memoria, a0: u32, id: u8) -> Result<(), ErroAbertura> {
         0x40 => super::motobug::executar(m, a0),
         0x22 => super::buzz::executar(m, a0),
         0x23 => super::buzz::missil(m, a0),
+        0x2A => super::sbz_objetos::auto_door(m, a0),
+        0x66 => super::sbz_objetos::junction(m, a0),
+        0x67 => super::sbz_objetos::running_disc(m, a0),
+        0x68 => super::sbz_objetos::conveyor(m, a0),
+        0x69 => super::sbz_objetos::spin_platform(m, a0),
+        0x6A => super::sbz_objetos::saws(m, a0),
+        0x6B => super::sbz_objetos::scrap_stomp(m, a0),
+        0x6C => super::sbz_objetos::vanish_platform(m, a0),
+        0x6D => super::sbz_objetos::flamethrower(m, a0),
+        0x6E => super::sbz_objetos::electro(m, a0),
+        0x6F => super::sbz_objetos::spin_convey(m, a0),
+        0x70 => super::sbz_objetos::girder(m, a0),
+        0x72 => super::sbz_objetos::teleport(m, a0),
+        0x82 => super::boss_sbz::scrap_eggman(m, a0),
+        0x83 => super::boss_sbz::false_floor(m, a0),
+        0x84 => super::boss_fz::eggman_cylinder(m, a0),
+        0x85 => super::boss_fz::boss_final(m, a0),
+        0x86 => super::boss_fz::boss_plasma(m, a0),
+        0x87 => super::ending::end_sonic(m, a0),
+        0x88 => super::ending::end_chaos(m, a0),
+        0x89 => super::ending::end_sth(m, a0),
+        0x8B => super::ending::end_eggman(m, a0),
+        0x8C => super::ending::try_chaos(m, a0),
+        0x12 => spinning_light::executar(m, a0),
+        0x47 => bumper::executar(m, a0),
+        0x58 => big_spike_ball::executar(m, a0),
+        0x50 => yadrin::executar(m, a0),
+        0x43 => roller::executar(m, a0),
+        0x59 => elevador_slz::executar(m, a0),
+        0x5A => circling_platform::executar(m, a0),
+        0x5B => staircase_slz::executar(m, a0),
+        0x5D => fan_slz::executar(m, a0),
+        0x5F => walking_bomb::executar(m, a0),
         outro => Err(ErroAbertura::ObjetoNaoImplementado(outro)),
     }
 }
@@ -267,8 +323,11 @@ pub fn objeto_existe(id: u8) -> bool {
             | 0x2E
             | 0x38
             | 0x52
-            | 0x76
+            | 0x73
+            | 0x74
             | 0x75
+            | 0x76
+            | 0x77
             | 0x7A
             | 0x7B
             | 0x33
@@ -281,6 +340,39 @@ pub fn objeto_existe(id: u8) -> bool {
             | 0x40
             | 0x22
             | 0x23
+            | 0x2A
+            | 0x66
+            | 0x67
+            | 0x68
+            | 0x69
+            | 0x6A
+            | 0x6B
+            | 0x6C
+            | 0x6D
+            | 0x6E
+            | 0x6F
+            | 0x70
+            | 0x72
+            | 0x82
+            | 0x83
+            | 0x84
+            | 0x85
+            | 0x86
+            | 0x87
+            | 0x88
+            | 0x89
+            | 0x8B
+            | 0x8C
+            | 0x12
+            | 0x47
+            | 0x58
+            | 0x50
+            | 0x43
+            | 0x59
+            | 0x5A
+            | 0x5B
+            | 0x5D
+            | 0x5F
     )
 }
 
@@ -549,7 +641,7 @@ fn explosao_main(m: &mut Memoria, a0: u32) {
     wb(m, a0.wrapping_add(OB_PRIORITY), 1);
     wb(m, a0.wrapping_add(OB_COLTYPE), 0);
     wb(m, a0.wrapping_add(OB_ACTWID), 12);
-    wb(m, a0.wrapping_add(OB_TIME_FRAME), 7);
+    wb(m, a0.wrapping_add(OB_TIME_FRAME), 6);
     wb(m, a0.wrapping_add(OB_FRAME), 0);
     wb(m, V_SOUNDQUEUE1, 0xC1); // sfx_BreakItem
     display_sprite(m, a0);
@@ -663,8 +755,7 @@ fn animal(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
             Ok(())
         }
         2 => {
-            let x = rw(m, a0.wrapping_add(OB_X));
-            if fora_da_janela(m, x) {
+            if rb(m, a0.wrapping_add(OB_RENDER)) & 0x80 == 0 {
                 delete_object(m, a0);
                 return Ok(());
             }
@@ -724,8 +815,14 @@ fn animal(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
                     ww(m, a0.wrapping_add(OB_VELY), spdy);
                 }
             }
-            let x = rw(m, a0.wrapping_add(OB_X));
-            if fora_da_janela(m, x) {
+            if rb(m, a0.wrapping_add(OB_SUBTYPE)) != 0 {
+                let x = rw(m, a0.wrapping_add(OB_X));
+                if fora_da_janela(m, x) {
+                    delete_object(m, a0);
+                } else {
+                    display_sprite(m, a0);
+                }
+            } else if rb(m, a0.wrapping_add(OB_RENDER)) & 0x80 == 0 {
                 delete_object(m, a0);
             } else {
                 display_sprite(m, a0);
@@ -752,8 +849,14 @@ fn animal(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
                 let quadro = (rb(m, a0.wrapping_add(OB_FRAME)).wrapping_add(1)) & 1;
                 wb(m, a0.wrapping_add(OB_FRAME), quadro);
             }
-            let x = rw(m, a0.wrapping_add(OB_X));
-            if fora_da_janela(m, x) {
+            if rb(m, a0.wrapping_add(OB_SUBTYPE)) != 0 {
+                let x = rw(m, a0.wrapping_add(OB_X));
+                if fora_da_janela(m, x) {
+                    delete_object(m, a0);
+                } else {
+                    display_sprite(m, a0);
+                }
+            } else if rb(m, a0.wrapping_add(OB_RENDER)) & 0x80 == 0 {
                 delete_object(m, a0);
             } else {
                 display_sprite(m, a0);
@@ -761,8 +864,14 @@ fn animal(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
             Ok(())
         }
         _ => {
-            let x = rw(m, a0.wrapping_add(OB_X));
-            if fora_da_janela(m, x) {
+            if rb(m, a0.wrapping_add(OB_SUBTYPE)) != 0 {
+                let x = rw(m, a0.wrapping_add(OB_X));
+                if fora_da_janela(m, x) {
+                    delete_object(m, a0);
+                } else {
+                    display_sprite(m, a0);
+                }
+            } else if rb(m, a0.wrapping_add(OB_RENDER)) & 0x80 == 0 {
                 delete_object(m, a0);
             } else {
                 display_sprite(m, a0);
@@ -783,6 +892,8 @@ fn pontos_objeto(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
             wb(m, a0.wrapping_add(OB_PRIORITY), 1);
             wb(m, a0.wrapping_add(OB_ACTWID), 8);
             ww(m, a0.wrapping_add(OB_VELY), u16_de(-0x300i16));
+            super::fisica::speed_to_pos(m, a0);
+            ww(m, a0.wrapping_add(OB_VELY), u16_de(-0x300i16 + 0x18));
             display_sprite(m, a0);
             Ok(())
         }
@@ -790,6 +901,7 @@ fn pontos_objeto(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
             let vy = com_sinal(rw(m, a0.wrapping_add(OB_VELY)));
             if vy >= 0 {
                 delete_object(m, a0);
+                display_sprite(m, a0);
                 return Ok(());
             }
             super::fisica::speed_to_pos(m, a0);
@@ -1873,12 +1985,31 @@ pub(super) fn animate_sprite(m: &mut Memoria, a0: u32, roteiro: u32) -> Result<(
             let quadro = rom_byte(m, roteiro.wrapping_add(indice_novo).wrapping_add(1));
             animacao_quadro(m, a0, quadro)
         }
+        // `Anim_End_FD`: muda para outra animacao.
+        0xFD => {
+            let novo_anim = rom_byte(m, roteiro.wrapping_add(indice).wrapping_add(2));
+            wb(m, a0.wrapping_add(OB_ANIM), novo_anim);
+            Ok(())
+        }
+        // `Anim_End_FC`: incrementa rotina principal.
         0xFC => {
             let rotina = rb(m, a0.wrapping_add(OB_ROUTINE)).wrapping_add(2);
             wb(m, a0.wrapping_add(OB_ROUTINE), rotina);
             Ok(())
         }
-        _ => Err(ErroAbertura::NaoImplementado("flag de animação")),
+        // `Anim_End_FB`: reseta indice de animacao e rotina secundaria.
+        0xFB => {
+            wb(m, a0.wrapping_add(OB_ANI_FRAME), 0);
+            wb(m, a0.wrapping_add(OB_ROUTINE_2), 0);
+            Ok(())
+        }
+        // `Anim_End_FA`: incrementa rotina secundaria.
+        0xFA => {
+            let r2 = rb(m, a0.wrapping_add(OB_ROUTINE_2)).wrapping_add(2);
+            wb(m, a0.wrapping_add(OB_ROUTINE_2), r2);
+            Ok(())
+        }
+        _ => Ok(()),
     }
 }
 

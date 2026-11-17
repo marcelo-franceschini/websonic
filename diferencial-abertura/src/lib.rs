@@ -247,6 +247,7 @@ pub fn comparar(rom: Vec<u8>, quadros: u32, nomes: &Nomes) -> Result<Relatorio, 
     let mut extras_mclk: BTreeMap<(&'static str, u32), u64> = BTreeMap::new();
     let mut o = Oraculo::novo(rom.clone(), Entradas::default())?;
     let mut nucleo = Abertura::nova(rom);
+    nucleo.continuar_apos_abertura();
     nucleo.mem.registrar_acessos_z80();
     let mut acessos_oraculo: Vec<AcessoZ80> = Vec::new();
     let mut rel = Relatorio::default();

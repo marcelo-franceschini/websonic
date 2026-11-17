@@ -126,7 +126,7 @@ fn disparar(m: &mut Memoria, a: u32) {
     );
     wb(m, livre.wrapping_add(OB_STATUS), status);
     ww(m, livre.wrapping_add(TEMPO), 14);
-    wl(m, livre.wrapping_add(PAI), a);
+    wl(m, livre.wrapping_add(PAI), 0xFFFF_0000 | (a & 0xFFFF));
     wb(m, a.wrapping_add(ESTADO), 1);
     ww(m, a.wrapping_add(TEMPO), 59);
     wb(m, a.wrapping_add(OB_ANIM), 2);
@@ -221,6 +221,6 @@ mod testes {
         let proj = pai.wrapping_add(OBJECT_SIZE);
         assert_eq!(rb(&mut m, proj.wrapping_add(OB_ID)), 0x23);
         assert_eq!(rw(&mut m, proj.wrapping_add(OB_VELX)), 0xFE00);
-        assert_eq!(rl(&mut m, proj.wrapping_add(PAI)), pai);
+        assert_eq!(rl(&mut m, proj.wrapping_add(PAI)), 0xFFFF_0000 | (pai & 0xFFFF));
     }
 }

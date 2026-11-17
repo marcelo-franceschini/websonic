@@ -54,6 +54,7 @@ dist/
 /disasm/
 /disasm-texto/
 /trabalho/
+/sonic1-ext/
 
 # Arquivos locais do Claude Code (o sandbox cria marcadores durante os comandos)
 .claude/settings.local.json

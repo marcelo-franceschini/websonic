@@ -24,6 +24,7 @@ pub const ROTINA_SPECIAL: u8 = 0x0A;
 pub const ROTINA_SEGA_PCM: u8 = 0x14;
 /// Índice de `VBlank_Continue`.
 pub const ROTINA_CONTINUE: u8 = 0x16;
+pub const ROTINA_ENDING: u8 = 0x18;
 
 /// Macros `writeCRAM` e `writeVRAM`: DMA do 68000 para a VDP. `cram` escolhe o tipo de destino.
 fn dma_para_vdp(m: &mut Memoria, fonte: u32, bytes: u32, destino: u32, cram: bool) {
@@ -254,6 +255,9 @@ pub(super) fn tratar_com_hblank(
             ROTINA_NIVEL => som_adiado = vblank_cartoes(m, true, hblank_disponivel)?,
             ROTINA_CONTINUE => vblank_continue(m)?,
             ROTINA_SPECIAL => vblank_continue_ou_special(m, true)?,
+            ROTINA_ENDING => {
+                vblank_cartoes(m, false, false)?;
+            }
             ROTINA_PALETTE_FADE => {
                 standard_transfers(m)?;
                 let h = rw(m, V_HBLANK_HREG);

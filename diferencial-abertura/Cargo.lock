@@ -824,9 +824,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
+name = "sonic1-audio"
+version = "0.0.0"
+
+[[package]]
+name = "sonic1-audio-saida"
+version = "0.0.0"
+dependencies = [
+ "sonic1-audio",
+]
+
+[[package]]
 name = "sonic1-console"
 version = "0.0.0"
 dependencies = [
+ "sonic1-audio",
+ "sonic1-audio-saida",
  "sonic1-core",
  "sonic1-video",
 ]

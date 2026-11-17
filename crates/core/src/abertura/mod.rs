@@ -19,7 +19,11 @@ pub mod badniks;
 pub mod barreira_invisivel;
 pub mod basaran;
 pub mod boot;
+pub mod boss_fz;
 pub mod boss_ghz;
+pub mod boss_lz;
+pub mod boss_mz;
+pub mod boss_sbz;
 pub mod botao;
 pub mod buzz;
 pub mod capsula;
@@ -31,6 +35,7 @@ pub mod continue_screen;
 pub mod crabmeat;
 pub mod desenho;
 pub mod edge_walls;
+pub mod ending;
 pub mod fase;
 pub mod fisica;
 pub mod game_over;
@@ -54,6 +59,7 @@ pub mod plataforma_oscilante;
 pub mod plc;
 pub mod ponte;
 pub mod ram;
+pub mod sbz_objetos;
 pub mod sega;
 pub mod signpost;
 pub mod sonic_agua;
@@ -217,6 +223,31 @@ enum Modo {
     Titulo(Titulo),
     Fase(Fase),
     Especial(Especial),
+    Ending(Ending),
+    Credits(Credits),
+}
+
+/// Etapas de `GM_Ending`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Ending {
+    FadeOut(u8),
+    FadeIn(u8),
+    Loop,
+    AllEmeralds(u8),
+    WhiteIn(u8),
+}
+
+/// Etapas de `GM_Credits` e da tela "TRY AGAIN / END".
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Credits {
+    FadeOut(u8),
+    Entrada,
+    FadeIn(u8),
+    Exibindo,
+    TryAgainFadeOut(u8),
+    TryAgainEntrada,
+    TryAgainFadeIn(u8),
+    TryAgainLoop,
 }
 
 /// Etapas de `GM_Special` e da tela de resultados.
@@ -439,7 +470,7 @@ impl Abertura {
                 | Fase::Jogando,
             ) => Espera::VBlank,
             Modo::Fase(Fase::Parado) => Espera::Nenhuma,
-            Modo::Especial(_) => Espera::VBlank,
+            Modo::Especial(_) | Modo::Ending(_) | Modo::Credits(_) => Espera::VBlank,
         }
     }
 
@@ -461,6 +492,8 @@ impl Abertura {
                         | Titulo::PreDemo
                 )
                 | Modo::Especial(_)
+                | Modo::Ending(_)
+                | Modo::Credits(_)
                 | Modo::Fase(
                     Fase::FadeOut(_)
                         | Fase::Cartoes
@@ -858,6 +891,13 @@ impl Abertura {
                     self.modo = Modo::Titulo(Titulo::Entrada);
                     return Ok(());
                 }
+                if rb(&mut self.mem, ram::V_GAMEMODE) == ram::GM_ENDING_ID {
+                    wb(&mut self.mem, ram::V_SOUNDQUEUE1, ram::BGM_STOP);
+                    titulo::palette_fade_out_inicio(&mut self.mem);
+                    self.pedir_espera();
+                    self.modo = Modo::Ending(Ending::FadeOut(22));
+                    return Ok(());
+                }
                 if rw(&mut self.mem, ram::F_DEMO) != 0
                     && rw(&mut self.mem, ram::V_GENERICTIMER) == 0
                 {
@@ -905,6 +945,8 @@ impl Abertura {
                 if fase::demo_fade_passo(&mut self.mem)? {
                     self.modo = if rb(&mut self.mem, ram::V_GAMEMODE) == ram::GM_TITLE_ID {
                         Modo::Titulo(Titulo::Entrada)
+                    } else if rb(&mut self.mem, ram::V_GAMEMODE) == ram::GM_CREDITS_ID {
+                        Modo::Credits(Credits::Entrada)
                     } else {
                         Modo::Sega(Sega::Entrada)
                     };
@@ -1045,6 +1087,163 @@ impl Abertura {
         Ok(())
     }
 
+    fn vblank_ending(&mut self, estado: Ending) -> Result<(), ErroAbertura> {
+        match estado {
+            Ending::FadeOut(n) => {
+                let restam = self.vblank_fade_out(n)?;
+                if restam != 0 {
+                    self.modo = Modo::Ending(Ending::FadeOut(restam));
+                } else {
+                    ending::preparo(&mut self.mem)?;
+                    titulo::palette_fade_in_inicio(&mut self.mem);
+                    self.pedir_espera();
+                    self.modo = Modo::Ending(Ending::FadeIn(22));
+                }
+            }
+            Ending::FadeIn(n) => {
+                let restam = self.vblank_fade_in(n)?;
+                if restam != 0 {
+                    self.modo = Modo::Ending(Ending::FadeIn(restam));
+                } else {
+                    self.pedir_vblank(vblank::ROTINA_ENDING);
+                    self.modo = Modo::Ending(Ending::Loop);
+                }
+            }
+            Ending::Loop => {
+                self.vblanks_tratados = self.vblanks_tratados.saturating_add(1);
+                self.tratar_vblank()?;
+                match ending::passo(&mut self.mem)? {
+                    ending::DepoisEnding::Continua => {
+                        self.pedir_vblank(vblank::ROTINA_ENDING);
+                    }
+                    ending::DepoisEnding::Clarear => {
+                        ww(&mut self.mem, ram::F_RESTART, 0);
+                        ww(&mut self.mem, ram::V_PFADE_START, 0x003F);
+                        ww(&mut self.mem, ram::V_PALCHGSPEED, 0);
+                        self.pedir_vblank(vblank::ROTINA_ENDING);
+                        self.modo = Modo::Ending(Ending::AllEmeralds(0));
+                    }
+                    ending::DepoisEnding::Creditos => {
+                        wb(&mut self.mem, ram::V_GAMEMODE, ram::GM_CREDITS_ID);
+                        wb(&mut self.mem, ram::V_SOUNDQUEUE1, ram::BGM_CREDITS);
+                        ww(&mut self.mem, ram::V_CREDITSNUM, 0);
+                        titulo::palette_fade_out_inicio(&mut self.mem);
+                        self.pedir_espera();
+                        self.modo = Modo::Credits(Credits::FadeOut(22));
+                    }
+                }
+            }
+            Ending::AllEmeralds(_) => {
+                self.vblanks_tratados = self.vblanks_tratados.saturating_add(1);
+                self.tratar_vblank()?;
+                match ending::passo_clarear(&mut self.mem)? {
+                    ending::DepoisClarear::Continua => {
+                        self.pedir_vblank(vblank::ROTINA_ENDING);
+                    }
+                    ending::DepoisClarear::Terminou => {
+                        titulo::palette_fade_in_inicio(&mut self.mem);
+                        self.pedir_espera();
+                        self.modo = Modo::Ending(Ending::WhiteIn(22));
+                    }
+                }
+            }
+            Ending::WhiteIn(n) => {
+                let restam = self.vblank_fade_in(n)?;
+                if restam != 0 {
+                    self.modo = Modo::Ending(Ending::WhiteIn(restam));
+                } else {
+                    self.pedir_vblank(vblank::ROTINA_ENDING);
+                    self.modo = Modo::Ending(Ending::Loop);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn vblank_credits(&mut self, estado: Credits) -> Result<(), ErroAbertura> {
+        match estado {
+            Credits::FadeOut(n) => {
+                let restam = self.vblank_fade_out(n)?;
+                if restam != 0 {
+                    self.modo = Modo::Credits(Credits::FadeOut(restam));
+                } else {
+                    self.modo = Modo::Credits(Credits::Entrada);
+                    self.pedir_espera();
+                }
+            }
+            Credits::Entrada => {
+                ending::preparar_pagina(&mut self.mem)?;
+                self.pedir_espera();
+                self.modo = Modo::Credits(Credits::FadeIn(22));
+            }
+            Credits::FadeIn(n) => {
+                let restam = self.vblank_fade_in(n)?;
+                if restam != 0 {
+                    self.modo = Modo::Credits(Credits::FadeIn(restam));
+                } else {
+                    self.pedir_vblank(vblank::ROTINA_TITULO);
+                    self.modo = Modo::Credits(Credits::Exibindo);
+                }
+            }
+            Credits::Exibindo => {
+                self.vblanks_tratados = self.vblanks_tratados.saturating_add(1);
+                self.tratar_vblank()?;
+                plc::run_plc(&mut self.mem)?;
+                let timer = rw(&mut self.mem, ram::V_GENERICTIMER);
+                let plc_ocupado = rl(&mut self.mem, ram::V_PLC_BUFFER) != 0;
+                if timer == 0 && !plc_ocupado {
+                    let page = rw(&mut self.mem, ram::V_CREDITSNUM);
+                    if page >= 9 {
+                        titulo::palette_fade_out_inicio(&mut self.mem);
+                        self.pedir_espera();
+                        self.modo = Modo::Credits(Credits::TryAgainFadeOut(22));
+                    } else {
+                        fase::gm_level_inicio(&mut self.mem);
+                        self.pedir_espera();
+                        self.modo = Modo::Fase(Fase::FadeOut(22));
+                    }
+                } else {
+                    self.pedir_vblank(vblank::ROTINA_TITULO);
+                }
+            }
+            Credits::TryAgainFadeOut(n) => {
+                let restam = self.vblank_fade_out(n)?;
+                if restam != 0 {
+                    self.modo = Modo::Credits(Credits::TryAgainFadeOut(restam));
+                } else {
+                    self.modo = Modo::Credits(Credits::TryAgainEntrada);
+                    self.pedir_espera();
+                }
+            }
+            Credits::TryAgainEntrada => {
+                ending::try_again_preparar(&mut self.mem)?;
+                self.pedir_espera();
+                self.modo = Modo::Credits(Credits::TryAgainFadeIn(22));
+            }
+            Credits::TryAgainFadeIn(n) => {
+                let restam = self.vblank_fade_in(n)?;
+                if restam != 0 {
+                    self.modo = Modo::Credits(Credits::TryAgainFadeIn(restam));
+                } else {
+                    self.pedir_vblank(vblank::ROTINA_TITULO);
+                    self.modo = Modo::Credits(Credits::TryAgainLoop);
+                }
+            }
+            Credits::TryAgainLoop => {
+                self.vblanks_tratados = self.vblanks_tratados.saturating_add(1);
+                self.tratar_vblank()?;
+                if ending::try_again_passo(&mut self.mem)? {
+                    titulo::palette_fade_out_inicio(&mut self.mem);
+                    self.pedir_espera();
+                    self.modo = Modo::Sega(Sega::Entrada);
+                } else {
+                    self.pedir_vblank(vblank::ROTINA_TITULO);
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// `move.b #rotina,(v_vblank_routine).w` antes de `WaitForVBlank`.
     fn pedir_vblank(&mut self, rotina: u8) {
         wb(&mut self.mem, ram::V_VBLANK_ROUTINE, rotina);
@@ -1145,6 +1344,12 @@ impl Abertura {
         }
         if let Modo::Especial(e) = self.modo {
             return self.vblank_especial(e);
+        }
+        if let Modo::Ending(e) = self.modo {
+            return self.vblank_ending(e);
+        }
+        if let Modo::Credits(c) = self.modo {
+            return self.vblank_credits(c);
         }
         let Modo::Sega(passo) = self.modo else {
             self.ignorar();
@@ -1444,5 +1649,30 @@ mod testes_transicoes {
 
         a.vblank().unwrap();
         assert_eq!(a.modo, Modo::Fase(Fase::FadeOut(22)));
+    }
+
+    #[test]
+    fn fase_jogando_com_ending_inicia_fade_do_ending() {
+        let mut a = Abertura::nova_nominal(vec![0; 0x10000]);
+        a.modo = Modo::Fase(Fase::Jogando);
+        a.na_espera = true;
+        wb(&mut a.mem, ram::V_GAMEMODE, ram::GM_ENDING_ID);
+
+        a.vblank().unwrap();
+        assert_eq!(a.modo, Modo::Ending(Ending::FadeOut(22)));
+        assert_eq!(rb(&mut a.mem, ram::V_SOUNDQUEUE1), ram::BGM_STOP);
+    }
+
+    #[test]
+    fn ending_conclusao_inicia_creditos() {
+        let mut a = Abertura::nova_nominal(vec![0; 0x10000]);
+        a.modo = Modo::Ending(Ending::Loop);
+        a.na_espera = true;
+        wb(&mut a.mem, ram::V_GAMEMODE, ram::GM_CREDITS_ID);
+
+        a.vblank().unwrap();
+        assert_eq!(a.modo, Modo::Credits(Credits::FadeOut(22)));
+        assert_eq!(rb(&mut a.mem, ram::V_SOUNDQUEUE1), ram::BGM_CREDITS);
+        assert_eq!(rw(&mut a.mem, ram::V_CREDITSNUM), 0);
     }
 }

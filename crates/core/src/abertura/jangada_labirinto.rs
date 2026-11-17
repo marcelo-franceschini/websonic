@@ -1,4 +1,4 @@
-//! Jangada secreta de Labyrinth, objeto 0x52 (REV01).
+//! Bloco movel e jangada secreta de Labyrinth, objeto 0x52 (REV01).
 use super::super::fisica::{obj_floor_dist, obj_hit_wall, speed_to_pos};
 use super::super::plataforma_oscilante::{detectar_altura, mover_sonic_altura, sair};
 use super::super::ram::*;
@@ -8,30 +8,59 @@ use crate::memoria::Memoria;
 
 const ORIG_X: u32 = 0x30;
 const ORIG_Y: u32 = 0x32;
+const SLIDE_WAIT: u32 = 0x34;
+const SLIDE_GOBACK: u32 = 0x36;
 const SWITCH_2: u32 = 0xFF_F7E2;
+
+// MBlock_Var: (largura_solida, frame)
+const MBLOCK_VAR: [(u8, u8); 5] = [
+    (16, 0), // $0x: MZ bloco unico / LZ jangada pequena
+    (32, 1), // $1x: MZ bloco duplo
+    (32, 2), // $2x: SBZ curto (listras amarelas/pretas)
+    (64, 3), // $3x: SBZ longo (piso deslizante vermelho)
+    (48, 4), // $4x: MZ bloco triplo
+];
 
 pub(super) fn executar(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
     let mut rotina = rb(m, a.wrapping_add(OB_ROUTINE));
     if rotina == 0 {
-        if rb(m, V_ZONE) != ID_LZ || rb(m, a.wrapping_add(OB_SUBTYPE)) >> 4 != 0 {
-            return Err(ErroAbertura::NaoImplementado(
-                "variante do bloco movel fora da Labyrinth",
-            ));
-        }
         rotina = 2;
         wb(m, a.wrapping_add(OB_ROUTINE), rotina);
-        wl(m, a.wrapping_add(OB_MAP), 0x1072c);
-        ww(m, a.wrapping_add(OB_GFX), 0x43bc);
-        wb(m, a.wrapping_add(OB_HEIGHT), 7);
+        wl(m, a.wrapping_add(OB_MAP), 0x106D6);
+        ww(m, a.wrapping_add(OB_GFX), 0x42B8);
+
+        let zona = rb(m, V_ZONE);
+        let subtipo_bruto = rb(m, a.wrapping_add(OB_SUBTYPE));
+
+        if zona == ID_LZ {
+            wl(m, a.wrapping_add(OB_MAP), 0x1072C);
+            ww(m, a.wrapping_add(OB_GFX), 0x43BC);
+            wb(m, a.wrapping_add(OB_HEIGHT), 7);
+        } else if zona == ID_SBZ {
+            if subtipo_bruto == 0x28 {
+                ww(m, a.wrapping_add(OB_GFX), 0x22C0);
+            } else {
+                ww(m, a.wrapping_add(OB_GFX), 0x4460);
+            }
+        }
+
         wb(m, a.wrapping_add(OB_RENDER), 4);
-        wb(m, a.wrapping_add(OB_ACTWID), 16);
-        wb(m, a.wrapping_add(OB_FRAME), 0);
+
+        let var_idx = usize::from((subtipo_bruto >> 4) & 7);
+        let (largura, frame) = if var_idx < MBLOCK_VAR.len() {
+            MBLOCK_VAR[var_idx]
+        } else {
+            MBLOCK_VAR[0]
+        };
+        wb(m, a.wrapping_add(OB_ACTWID), largura);
+        wb(m, a.wrapping_add(OB_FRAME), frame);
+
         wb(m, a.wrapping_add(OB_PRIORITY), 4);
         let x = rw(m, a.wrapping_add(OB_X));
         let y = rw(m, a.wrapping_add(OB_Y));
         ww(m, a.wrapping_add(ORIG_X), x);
         ww(m, a.wrapping_add(ORIG_Y), y);
-        let tipo = rb(m, a.wrapping_add(OB_SUBTYPE)) & 15;
+        let tipo = subtipo_bruto & 15;
         wb(m, a.wrapping_add(OB_SUBTYPE), tipo);
     }
     match rotina {
@@ -51,7 +80,7 @@ pub(super) fn executar(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
         }
         _ => {
             return Err(ErroAbertura::NaoImplementado(
-                "rotina da jangada de Labyrinth",
+                "rotina do bloco movel",
             ));
         }
     }
@@ -64,7 +93,7 @@ pub(super) fn executar(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
     Ok(())
 }
 
-// Devolve falso quando a jangada secreta deve permanecer invisível neste quadro.
+// Devolve falso quando a jangada secreta deve permanecer invisivel neste quadro.
 fn mover(m: &mut Memoria, a: u32) -> Result<bool, ErroAbertura> {
     let tipo = rb(m, a.wrapping_add(OB_SUBTYPE)) & 15;
     match tipo {
@@ -83,7 +112,7 @@ fn mover(m: &mut Memoria, a: u32) -> Result<bool, ErroAbertura> {
             let pos = rw(m, a.wrapping_add(origem)).wrapping_sub(desloc);
             ww(m, a.wrapping_add(campo), pos);
         }
-        2 | 4 => {
+        2 | 4 | 9 => {
             if rb(m, a.wrapping_add(OB_ROUTINE)) == 4 {
                 wb(m, a.wrapping_add(OB_SUBTYPE), tipo.wrapping_add(1));
             }
@@ -121,9 +150,41 @@ fn mover(m: &mut Memoria, a: u32) -> Result<bool, ErroAbertura> {
             }
             return Ok(false);
         }
+        10 => {
+            let largura = u16::from(rb(m, a.wrapping_add(OB_ACTWID)));
+            let total_dist = largura.wrapping_mul(2);
+            let xflip = rb(m, a.wrapping_add(OB_STATUS)) & 1 != 0;
+            let (passo, alvo_diff) = if xflip {
+                (0xFFF8u16, (0u16).wrapping_sub(total_dist))
+            } else {
+                (8u16, total_dist)
+            };
+            let voltando = rw(m, a.wrapping_add(SLIDE_GOBACK)) != 0;
+            let x = rw(m, a.wrapping_add(OB_X));
+            let orig_x = rw(m, a.wrapping_add(ORIG_X));
+            let diff = x.wrapping_sub(orig_x);
+            if voltando {
+                if diff == 0 {
+                    ww(m, a.wrapping_add(SLIDE_GOBACK), 0);
+                    let sub = rb(m, a.wrapping_add(OB_SUBTYPE)).wrapping_sub(1);
+                    wb(m, a.wrapping_add(OB_SUBTYPE), sub);
+                } else {
+                    ww(m, a.wrapping_add(OB_X), x.wrapping_sub(passo));
+                }
+            } else if diff == alvo_diff {
+                let espera = rw(m, a.wrapping_add(SLIDE_WAIT)).wrapping_sub(1);
+                ww(m, a.wrapping_add(SLIDE_WAIT), espera);
+                if espera == 0 {
+                    ww(m, a.wrapping_add(SLIDE_GOBACK), 1);
+                }
+            } else {
+                ww(m, a.wrapping_add(OB_X), x.wrapping_add(passo));
+                ww(m, a.wrapping_add(SLIDE_WAIT), 5 * 60);
+            }
+        }
         _ => {
             return Err(ErroAbertura::NaoImplementado(
-                "tipo de jangada de Labyrinth",
+                "tipo de bloco movel",
             ));
         }
     }

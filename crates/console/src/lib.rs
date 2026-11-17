@@ -17,9 +17,6 @@ use sonic1_core::memoria::{Memoria, PortaVdp, Saida, Tamanho};
 use sonic1_video::quadro::{ALTURA, LARGURA};
 use sonic1_video::renderizador::{Escrita, Renderizador};
 
-/// Linha do começo do VBlank (primeira linha fora da imagem).
-const LINHA_VBLANK: u16 = 224;
-
 /// Quadros que cada trecho espera no tempo nominal, medidos no oráculo (bloco 1 e rodada 3 do
 /// bloco 2). São provisórios até o modelo do nível 2 (Etapa 15).
 fn quadros_de_espera(m: Marca) -> u32 {
@@ -40,11 +37,10 @@ fn quadros_de_espera(m: Marca) -> u32 {
         Marca::WaitForVBlank => 0,
         // `GotoDemo` não é espera do núcleo; `GM_Level` vem logo depois do `rts` do `GotoDemo`.
         Marca::GotoDemo | Marca::GmLevel => 0,
-        // Arte dos cartões e limpeza da RAM: estimado pela rodada de 970 quadros (as
-        // interrupções voltam uns 7 quadros depois do fim do desvanecimento).
-        Marca::LevelTtlCardLoop => 7,
-        // Estimativa até a rodada com a ROM medir os dois trechos da carga final.
-        Marca::LevelDelay => 2,
+        // Arte dos cartoes e limpeza da RAM: medido no oraculo (2 quadros de lag).
+        Marca::LevelTtlCardLoop => 2,
+        // Carga final da fase (descompressoes Kosinski/Enigma e blocos): 25 quadros de lag no oraculo.
+        Marca::LevelDelay => 25,
         Marca::LevelStartGame => 0,
     }
 }
@@ -270,6 +266,7 @@ pub struct Console {
     buffer_audio_quadro: Vec<f32>,
     amostras_fm: Vec<AmostraFm>,
     amostras_psg: Vec<AmostraPsg>,
+    quadros_lag_pendentes: u32,
 }
 
 impl Console {
@@ -298,11 +295,16 @@ impl Console {
             buffer_audio_quadro: Vec::new(),
             amostras_fm: Vec::new(),
             amostras_psg: Vec::new(),
+            quadros_lag_pendentes: 0,
         }
     }
 
     /// Eventos nominais do quadro, pelo que o laço principal espera.
     fn eventos_nominais(&mut self) -> Vec<EventoQuadro> {
+        if self.quadros_lag_pendentes > 0 {
+            self.quadros_lag_pendentes = self.quadros_lag_pendentes.saturating_sub(1);
+            return vec![EventoQuadro::Interrupcao { nivel: 6, pc: 0 }];
+        }
         let espera = self.ab.espera();
         if self.espera_atual != Some(espera) {
             self.espera_atual = Some(espera);
@@ -390,8 +392,8 @@ impl Console {
             .wrapping_mul(MCLK_POR_QUADRO_NTSC);
         let mclk_fim = self.quadro_num.wrapping_mul(MCLK_POR_QUADRO_NTSC);
 
-        // Posição nominal: o tratador de VBlank escreve na linha 224; o resto, na linha 0.
-        let linha = if teve_vblank { LINHA_VBLANK } else { 0 };
+        // Posicao nominal: o tratador de VBlank escreve na linha 224, o resto na linha 0.
+        let linha = if teve_vblank { 224 } else { 0 };
         self.ab.mem.tirar_saidas();
         let saidas = std::mem::take(&mut self.capturas.borrow_mut().saidas);
         self.escritas_no_quadro = saidas.len();
