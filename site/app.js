@@ -87,6 +87,8 @@ let hudVisivel = false;
 const HISTORICO_TEMPOS_MAX = 80;
 const historicoFrameTime = new Float32Array(HISTORICO_TEMPOS_MAX);
 const historicoWasmTime = new Float32Array(HISTORICO_TEMPOS_MAX);
+// Copia reutilizada para ordenar e achar o p95 sem alocar a cada atualizacao do painel.
+const copiaWasmTime = new Float32Array(HISTORICO_TEMPOS_MAX);
 let indiceHistorico = 0;
 let totalHistorico = 0;
 
@@ -952,14 +954,14 @@ function laco(agora, sessao) {
       if (elDiagTempoWasm) {
         let soma = 0;
         const n = Math.min(totalHistorico, HISTORICO_TEMPOS_MAX);
-        const copia = [];
         for (let i = 0; i < n; i++) {
           soma += historicoWasmTime[i];
-          copia.push(historicoWasmTime[i]);
+          copiaWasmTime[i] = historicoWasmTime[i];
         }
-        copia.sort((a, b) => a - b);
+        // TypedArray ordena numericamente e no lugar.
+        const ordenados = copiaWasmTime.subarray(0, n).sort();
         const media = n > 0 ? soma / n : 0;
-        const p95 = n > 0 ? copia[Math.floor(n * 0.95)] : 0;
+        const p95 = n > 0 ? ordenados[Math.floor(n * 0.95)] : 0;
         const strTempo = `${media.toFixed(2)} ms (p95: ${p95.toFixed(2)} ms)`;
         if (elDiagTempoWasm.textContent !== strTempo) elDiagTempoWasm.textContent = strTempo;
       }
