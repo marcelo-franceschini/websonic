@@ -127,9 +127,11 @@ if (btnMudo) {
 if (seletorCrt && camadaCrt) {
   seletorCrt.addEventListener("change", () => {
     if (seletorCrt.value === "ligado") {
+      camadaCrt.style.display = "block";
       camadaCrt.classList.add("ativo");
     } else {
       camadaCrt.classList.remove("ativo");
+      camadaCrt.style.display = "none";
     }
   });
 }
