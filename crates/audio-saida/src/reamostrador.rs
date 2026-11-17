@@ -185,6 +185,47 @@ impl Reamostrador {
         }
     }
 
+    /// Converte as amostras pendentes gerando saida mono interpolada.
+    pub fn processar_mono(&mut self, saida: &mut Vec<f32>) {
+        let n_in = self.buffer_in_l.len();
+        if n_in < TAPS_POLIFASICO {
+            return;
+        }
+
+        let limite = n_in - TAPS_POLIFASICO;
+        let passo = self.passo_base * (1.0 + self.ajuste_fino);
+
+        while (self.offset_base as f64) + self.pos_frac < (limite as f64) {
+            let idx_base = self.offset_base + (self.pos_frac as usize);
+            let frac = self.pos_frac.fract();
+            let fase = ((frac * (FASES_POLIFASICO as f64)) as usize).min(FASES_POLIFASICO - 1);
+            let coefs = &self.tabela.coefs[fase];
+
+            let slice_l = &self.buffer_in_l[idx_base..idx_base + TAPS_POLIFASICO];
+
+            let mut out = 0.0f32;
+
+            for k in 0..TAPS_POLIFASICO {
+                out += slice_l[k] * coefs[k];
+            }
+
+            saida.push(out);
+            self.pos_frac += passo;
+            let inteiros = self.pos_frac as usize;
+            if inteiros > 0 {
+                self.offset_base += inteiros;
+                self.pos_frac -= inteiros as f64;
+            }
+        }
+
+        // Compacta o buffer apenas quando o offset_base acumula mais de 2048 amostras
+        if self.offset_base > 2048 {
+            self.buffer_in_l.drain(..self.offset_base);
+            self.buffer_in_r.drain(..self.offset_base);
+            self.offset_base = 0;
+        }
+    }
+
     /// Reseta o historico e a fase.
     pub fn reset(&mut self) {
         self.pos_frac = 0.0;

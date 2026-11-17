@@ -43,7 +43,7 @@ pub struct MisturadorSaida {
     fm_float: Vec<(f32, f32)>,
     psg_float: Vec<f32>,
     saida_fm: Vec<(f32, f32)>,
-    saida_psg: Vec<(f32, f32)>,
+    saida_psg: Vec<f32>,
 }
 
 impl MisturadorSaida {
@@ -131,11 +131,12 @@ impl MisturadorSaida {
 
         // Processa reamostragem de ambos
         self.reamostrador_fm.processar(&mut self.saida_fm);
-        self.reamostrador_psg.processar(&mut self.saida_psg);
+        self.reamostrador_psg.processar_mono(&mut self.saida_psg);
 
         // Combina as saidas interpoladas e passa pelo filtro analogico
         self.pendentes_fm.extend(self.saida_fm.iter().copied());
-        self.pendentes_psg.extend(self.saida_psg.iter().copied());
+        self.pendentes_psg
+            .extend(self.saida_psg.iter().copied().map(|p| (p, p)));
         while !self.pendentes_fm.is_empty() && !self.pendentes_psg.is_empty() {
             let (fml, fmr) = self.pendentes_fm.pop_front().expect("FM disponível");
             let (psgl, psgr) = self.pendentes_psg.pop_front().expect("PSG disponível");
@@ -194,11 +195,12 @@ impl MisturadorSaida {
 
         // Processa reamostragem de ambos
         self.reamostrador_fm.processar(&mut self.saida_fm);
-        self.reamostrador_psg.processar(&mut self.saida_psg);
+        self.reamostrador_psg.processar_mono(&mut self.saida_psg);
 
         // Combina as saidas interpoladas e passa pelo filtro analogico
         self.pendentes_fm.extend(self.saida_fm.iter().copied());
-        self.pendentes_psg.extend(self.saida_psg.iter().copied());
+        self.pendentes_psg
+            .extend(self.saida_psg.iter().copied().map(|p| (p, p)));
         while !self.pendentes_fm.is_empty() && !self.pendentes_psg.is_empty() {
             let (fml, fmr) = self.pendentes_fm.pop_front().expect("FM disponível");
             let (psgl, psgr) = self.pendentes_psg.pop_front().expect("PSG disponível");
