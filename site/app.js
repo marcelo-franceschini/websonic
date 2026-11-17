@@ -134,25 +134,37 @@ if (seletorCrt && camadaCrt) {
   });
 }
 
+function criarAudioContext() {
+  if (!audioCtx) {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    audioCtx = new AudioContextClass();
+    audioCtx.addEventListener("statechange", () => {
+      if (audioCtx.state === "running") {
+        if (workletNode) workletNode.port.postMessage({ tipo: "reset" });
+        if (fallbackNode) fallbackNode.reset();
+      }
+      atualizarEstadoAudioUI();
+    });
+  }
+  return audioCtx;
+}
+
 // Teste de Bipe (Web Audio puro)
 btnBipe.addEventListener("click", () => {
   try {
-    if (!audioCtx) {
-      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      audioCtx = new AudioContextClass();
-    }
-    audioCtx.resume().then(() => {
+    const ctx = criarAudioContext();
+    ctx.resume().then(() => {
       atualizarEstadoAudioUI();
-      const osc = audioCtx.createOscillator();
-      const ganho = audioCtx.createGain();
+      const osc = ctx.createOscillator();
+      const ganho = ctx.createGain();
       osc.type = "sine";
-      osc.frequency.setValueAtTime(440, audioCtx.currentTime);
-      ganho.gain.setValueAtTime(0.25, audioCtx.currentTime);
-      ganho.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.35);
+      osc.frequency.setValueAtTime(440, ctx.currentTime);
+      ganho.gain.setValueAtTime(0.25, ctx.currentTime);
+      ganho.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
       osc.connect(ganho);
-      ganho.connect(audioCtx.destination);
+      ganho.connect(ctx.destination);
       osc.start();
-      osc.stop(audioCtx.currentTime + 0.35);
+      osc.stop(ctx.currentTime + 0.35);
     });
   } catch (e) {
     alert("Erro ao tocar bipe de teste: " + e.message);
@@ -205,11 +217,7 @@ btnAudio.addEventListener("click", () => {
 async function iniciarAudio() {
   if (audioCtx && (workletNode || fallbackNode)) return;
   try {
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    if (!audioCtx) {
-      // Usa a taxa nativa do dispositivo para evitar distorcoes de resampling
-      audioCtx = new AudioContextClass();
-    }
+    criarAudioContext();
 
     if (!ganhoMasterNode) {
       ganhoMasterNode = audioCtx.createGain();
@@ -726,13 +734,17 @@ function laco(agora, sessao) {
       buf.set(fatiaAudio);
       const sub = buf.subarray(0, lenAudio);
 
-      if (workletNode) {
-        workletNode.port.postMessage(sub, [buf.buffer]);
-      } else if (fallbackNode) {
-        fallbackNode.enviar(sub);
-        if (poolAudio.length < POOL_AUDIO_TAMANHO) {
-          poolAudio.push(buf);
+      if (audioCtx && audioCtx.state === "running") {
+        if (workletNode) {
+          workletNode.port.postMessage(sub, [buf.buffer]);
+        } else if (fallbackNode) {
+          fallbackNode.enviar(sub);
+          if (poolAudio.length < POOL_AUDIO_TAMANHO) {
+            poolAudio.push(buf);
+          }
         }
+      } else if (poolAudio.length < POOL_AUDIO_TAMANHO) {
+        poolAudio.push(buf);
       }
     }
 
