@@ -316,4 +316,99 @@ impl Sintetizador {
         self.avancar_ate(mclk_alvo, saida_fm, &mut psg_aux);
         saida_psg.extend(psg_aux.into_iter().map(u16::from));
     }
+
+    /// Avanca ambos os chips ate `mclk_alvo`, entregando `(i16, i16)` do FM e `u16` do PSG.
+    pub fn avancar_ate_compacto(
+        &mut self,
+        mclk_alvo: u64,
+        saida_fm: &mut Vec<(i16, i16)>,
+        saida_psg: &mut Vec<u16>,
+    ) {
+        if mclk_alvo <= self.mclk {
+            return;
+        }
+
+        // Avanco do FM.
+        let ciclos_alvo_fm = mclk_alvo / MCLK_POR_CICLO_FM;
+        let novos_fm =
+            usize::try_from(ciclos_alvo_fm.saturating_sub(self.ciclos_fm) / 24).unwrap_or(0);
+        saida_fm.reserve(novos_fm);
+        while self.ciclos_fm < ciclos_alvo_fm {
+            while self.pos_fm < self.fila_fm.len() {
+                let (m, p, v) = self.fila_fm[self.pos_fm];
+                let c_escrita = m / MCLK_POR_CICLO_FM;
+                if c_escrita <= self.ciclos_fm {
+                    self.fm.escreve(p, v);
+                    self.pos_fm = self.pos_fm.wrapping_add(1);
+                } else {
+                    break;
+                }
+            }
+
+            let proxima_escrita = if self.pos_fm < self.fila_fm.len() {
+                self.fila_fm[self.pos_fm].0 / MCLK_POR_CICLO_FM
+            } else {
+                ciclos_alvo_fm
+            };
+            let limite = ciclos_alvo_fm.min(proxima_escrita);
+
+            while self.ciclos_fm < limite {
+                self.fm.ciclo();
+                self.subciclo_fm = self.subciclo_fm.wrapping_add(1);
+                self.ciclos_fm = self.ciclos_fm.wrapping_add(1);
+                if self.subciclo_fm >= 24 {
+                    self.subciclo_fm = 0;
+                    let misturado = self.fm.saida_misturada();
+                    saida_fm.push(misturado);
+                }
+            }
+        }
+
+        // Avanco do PSG.
+        let ciclos_alvo_psg = mclk_alvo / MCLK_POR_CICLO_PSG;
+        let novos_psg =
+            usize::try_from(ciclos_alvo_psg.saturating_sub(self.ciclos_psg) / 16).unwrap_or(0);
+        saida_psg.reserve(novos_psg);
+        while self.ciclos_psg < ciclos_alvo_psg {
+            while self.pos_psg < self.fila_psg.len() {
+                let (m, v) = self.fila_psg[self.pos_psg];
+                let c_escrita = m / MCLK_POR_CICLO_PSG;
+                if c_escrita <= self.ciclos_psg {
+                    self.psg.escreve(v);
+                    self.pos_psg = self.pos_psg.wrapping_add(1);
+                } else {
+                    break;
+                }
+            }
+
+            let proxima_escrita = if self.pos_psg < self.fila_psg.len() {
+                self.fila_psg[self.pos_psg].0 / MCLK_POR_CICLO_PSG
+            } else {
+                ciclos_alvo_psg
+            };
+            let limite = ciclos_alvo_psg.min(proxima_escrita);
+
+            while self.ciclos_psg < limite {
+                self.psg.ciclo();
+                self.subciclo_psg = self.subciclo_psg.wrapping_add(1);
+                self.ciclos_psg = self.ciclos_psg.wrapping_add(1);
+                if self.subciclo_psg >= 16 {
+                    self.subciclo_psg = 0;
+                    let emp = self.psg.saida_empacotada();
+                    saida_psg.push(emp);
+                }
+            }
+        }
+
+        if self.pos_fm > 0 {
+            self.fila_fm.drain(..self.pos_fm);
+            self.pos_fm = 0;
+        }
+        if self.pos_psg > 0 {
+            self.fila_psg.drain(..self.pos_psg);
+            self.pos_psg = 0;
+        }
+
+        self.mclk = mclk_alvo;
+    }
 }

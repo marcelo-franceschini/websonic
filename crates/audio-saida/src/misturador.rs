@@ -159,6 +159,62 @@ impl MisturadorSaida {
         self.alimentar_quadro(amostras_fm, &psg_amostras);
     }
 
+    /// Alimenta um lote compacto de amostras nativas de FM `(i16, i16)` e PSG `u16`.
+    pub fn alimentar_quadro_compacto(&mut self, amostras_fm: &[(i16, i16)], amostras_psg: &[u16]) {
+        self.cont_fm_in = self.cont_fm_in.wrapping_add(amostras_fm.len() as u64);
+        self.cont_psg_in = self.cont_psg_in.wrapping_add(amostras_psg.len() as u64);
+
+        self.fm_float.clear();
+        self.psg_float.clear();
+        self.saida_fm.clear();
+        self.saida_psg.clear();
+
+        // Converte FM para f32 [-1.0, 1.0]
+        for &(fl, fr) in amostras_fm {
+            let l = (fl as f32) / 2048.0;
+            let r = (fr as f32) / 2048.0;
+            self.fm_float.push((l * self.ganho_fm, r * self.ganho_fm));
+        }
+        self.reamostrador_fm.alimentar_estereo(&self.fm_float);
+
+        // Converte PSG para f32 mono centralizado a partir de u16 empacotado
+        for &emp in amostras_psg {
+            let c0 = usize::from((emp >> 12) & 0x0F);
+            let c1 = usize::from((emp >> 8) & 0x0F);
+            let c2 = usize::from((emp >> 4) & 0x0F);
+            let c3 = usize::from(emp & 0x0F);
+            let v0 = PSG_VOL_TABLE[c0];
+            let v1 = PSG_VOL_TABLE[c1];
+            let v2 = PSG_VOL_TABLE[c2];
+            let v3 = PSG_VOL_TABLE[c3];
+            let soma = (v0 + v1 + v2 + v3) * 0.25 * self.ganho_psg;
+            self.psg_float.push(soma);
+        }
+        self.reamostrador_psg.alimentar_mono(&self.psg_float);
+
+        // Processa reamostragem de ambos
+        self.reamostrador_fm.processar(&mut self.saida_fm);
+        self.reamostrador_psg.processar(&mut self.saida_psg);
+
+        // Combina as saidas interpoladas e passa pelo filtro analogico
+        self.pendentes_fm.extend(self.saida_fm.iter().copied());
+        self.pendentes_psg.extend(self.saida_psg.iter().copied());
+        while !self.pendentes_fm.is_empty() && !self.pendentes_psg.is_empty() {
+            let (fml, fmr) = self.pendentes_fm.pop_front().expect("FM disponível");
+            let (psgl, psgr) = self.pendentes_psg.pop_front().expect("PSG disponível");
+
+            let mist_l = (fml + psgl).clamp(-1.0, 1.0);
+            let mist_r = (fmr + psgr).clamp(-1.0, 1.0);
+
+            let filtrado = self.filtro_analogico.processar(mist_l, mist_r);
+            self.buffer_audio
+                .push((filtrado.0.clamp(-1.0, 1.0), filtrado.1.clamp(-1.0, 1.0)));
+        }
+
+        // Controlador proporcional de baixa banda para ajustar a taxa de amostragem
+        self.atualizar_controlador_taxa();
+    }
+
     fn atualizar_controlador_taxa(&mut self) {
         let ocupacao = self.ocupacao_externa.unwrap_or(self.buffer_audio.len());
         let erro = (ocupacao as f64) - (self.tamanho_alvo_buffer as f64);

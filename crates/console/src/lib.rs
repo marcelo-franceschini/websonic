@@ -10,7 +10,7 @@ pub mod agendador_vdp;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use sonic1_audio::{AmostraFm, AmostraPsg, Chip, MCLK_POR_QUADRO_NTSC, Sintetizador};
+use sonic1_audio::{Chip, MCLK_POR_QUADRO_NTSC, Sintetizador};
 use sonic1_audio_saida::MisturadorSaida;
 use sonic1_core::abertura::{Abertura, Espera, EventoQuadro, Marca, MomentoSaida};
 use sonic1_core::memoria::{Memoria, PortaVdp, Saida, Tamanho};
@@ -354,8 +354,8 @@ pub struct Console {
     misturador: MisturadorSaida,
     quadro_num: u64,
     buffer_audio_quadro: Vec<f32>,
-    amostras_fm: Vec<AmostraFm>,
-    amostras_psg: Vec<AmostraPsg>,
+    amostras_fm: Vec<(i16, i16)>,
+    amostras_psg: Vec<u16>,
     quadros_lag_pendentes: u32,
     eventos_quadro: Vec<EventoQuadro>,
     saidas_anteriores: Vec<Saida>,
@@ -524,9 +524,9 @@ impl Console {
         self.amostras_fm.clear();
         self.amostras_psg.clear();
         self.sint
-            .avancar_ate(mclk_fim, &mut self.amostras_fm, &mut self.amostras_psg);
+            .avancar_ate_compacto(mclk_fim, &mut self.amostras_fm, &mut self.amostras_psg);
         self.misturador
-            .alimentar_quadro(&self.amostras_fm, &self.amostras_psg);
+            .alimentar_quadro_compacto(&self.amostras_fm, &self.amostras_psg);
 
         // Extrai as amostras reamostradas para reprodução no navegador
         self.buffer_audio_quadro.clear();
