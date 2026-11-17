@@ -15,7 +15,6 @@ const btnBipe = document.getElementById("btn-bipe");
 const containerTela = document.getElementById("container-tela");
 const camadaCrt = document.getElementById("camada-crt");
 const barraControles = document.getElementById("barra-controles");
-const seletorProporcao = document.getElementById("seletor-proporcao");
 const seletorFps = document.getElementById("seletor-fps");
 const seletorCrt = document.getElementById("seletor-crt");
 const btnFullscreen = document.getElementById("btn-fullscreen");
@@ -56,7 +55,6 @@ let picoHistorico = 0;
 let quadrosComSom = 0;
 
 // Configuracoes de Video
-let modoWidescreen = false;
 let fpsDesbloqueado = false;
 
 // Referencia ao modulo Wasm instanciado
@@ -356,7 +354,6 @@ function usarCpu(motivo) {
   compositor = null;
   ctx = tela.getContext("2d");
   contextoPerdido = false;
-  if (jogo) jogo.desativar_gpu();
   const erro = document.getElementById("erro-jogo");
   erro.hidden = false;
   erro.textContent = `Video por software: ${motivo}`;
@@ -399,38 +396,24 @@ tela.addEventListener("webglcontextrestored", () => {
   }
 });
 
-function aplicarProporcao(widescreen) {
-  modoWidescreen = Boolean(widescreen);
-  if (seletorProporcao && seletorProporcao.value !== (modoWidescreen ? "16:9" : "4:3")) {
-    seletorProporcao.value = modoWidescreen ? "16:9" : "4:3";
-  }
-  const larguraBase = modoWidescreen ? 426 : 320;
-  const alturaBase = 224;
-  tela.width = larguraBase;
-  tela.height = alturaBase;
-  if (compositor) {
-    compositor.redimensionar(larguraBase, alturaBase);
-  }
-  if (jogo) {
-    if (modoWidescreen) {
-      if (typeof jogo.ativar_gpu_widescreen === "function") {
-        jogo.ativar_gpu_widescreen();
-      } else if (typeof jogo.ativar_gpu_com_dimensoes === "function") {
-        jogo.ativar_gpu_com_dimensoes(426, 224);
-      }
-    } else {
-      jogo.ativar_gpu_sem_referencia();
-    }
-  }
-  ajustarEscala();
-  apresentar();
+// Tabela de conversao de 9 bits para RGBA (Uint32, little-endian)
+const TABELA_COR_9BITS = new Uint32Array(512);
+for (let c = 0; c < 512; c++) {
+  const r = (c & 7), g = ((c >> 3) & 7), b = ((c >> 6) & 7);
+  const r8 = (r << 5) | (r << 2) | (r >> 1);
+  const g8 = (g << 5) | (g << 2) | (g >> 1);
+  const b8 = (b << 5) | (b << 2) | (b >> 1);
+  TABELA_COR_9BITS[c] = 0xFF000000 | (b8 << 16) | (g8 << 8) | r8;
 }
 
-if (seletorProporcao) {
-  seletorProporcao.addEventListener("change", () => {
-    aplicarProporcao(seletorProporcao.value === "16:9");
-    if (tela) tela.focus();
-  });
+// View da imagem de 9 bits na memoria Wasm. Recriada so quando a memoria cresce.
+let vistaImagem = null;
+function imagemAtual() {
+  const mem = wasmInstance.memory.buffer;
+  if (!vistaImagem || vistaImagem.buffer !== mem) {
+    vistaImagem = new Uint16Array(mem, jogo.imagem_ptr(), jogo.imagem_len());
+  }
+  return vistaImagem;
 }
 
 if (seletorFps) {
@@ -463,55 +446,18 @@ if (btnFullscreen) {
 // Apresentacao Grafica com Modo Zero-Copy Otimizado
 function apresentar() {
   if (contextoPerdido || !jogo) return;
-  const larguraBase = modoWidescreen ? 426 : 320;
-  const alturaBase = 224;
+  const pts = imagemAtual();
   if (compositor) {
     try {
-      // Caminho rapido Zero-Copy apontando diretamente na memoria Wasm
-      if (typeof jogo.camadas_gpu_ptr === "function" && wasmInstance && wasmInstance.memory) {
-        const mem = wasmInstance.memory.buffer;
-        const cPtr = jogo.camadas_gpu_ptr();
-        const cLen = jogo.camadas_gpu_len();
-        const sPtr = jogo.sprites_gpu_ptr();
-        const sLen = jogo.sprites_gpu_len();
-        const fPtr = jogo.fundos_gpu_ptr();
-        const fLen = jogo.fundos_gpu_len();
-        const selPtr = jogo.seletores_gpu_ptr();
-        const selLen = jogo.seletores_gpu_len();
-        const pPtr = jogo.paletas_gpu_ptr();
-        const pLen = jogo.paletas_gpu_len();
-
-        const camadas = new Uint8Array(mem, cPtr, cLen);
-        const sprites = new Uint8Array(mem, sPtr, sLen);
-        const fundos = new Uint8Array(mem, fPtr, fLen);
-        const seletores = new Uint16Array(mem, selPtr, selLen);
-        const paletas = new Uint16Array(mem, pPtr, pLen);
-
-        compositor.renderizar(
-          camadas,
-          sprites,
-          fundos,
-          seletores,
-          paletas,
-          larguraBase,
-          alturaBase
-        );
-      } else {
-        // Fallback compativel
-        compositor.renderizar(
-          jogo.camadas_gpu(),
-          jogo.sprites_gpu(),
-          jogo.fundos_gpu(),
-          jogo.seletores_gpu(),
-          jogo.paletas_gpu(),
-          larguraBase,
-          alturaBase
-        );
-      }
+      compositor.renderizar(pts);
     } catch (erro) {
       usarCpu(`falha de WebGL2 (${erro.message}).`);
     }
   } else {
+    const d32 = new Uint32Array(imagem.data.buffer);
+    for (let i = 0; i < 71680; i++) {
+      d32[i] = TABELA_COR_9BITS[pts[i] & 0x1FF];
+    }
     ctx.putImageData(imagem, 0, 0);
   }
 }
@@ -698,7 +644,7 @@ function botoesDoControle() {
 }
 
 function ajustarEscala() {
-  const larguraBase = modoWidescreen ? 426 : 320;
+  const larguraBase = 320;
   const alturaBase = 224;
   const emTelaCheia = Boolean(document.fullscreenElement);
   let f;
@@ -736,8 +682,7 @@ function laco(agora, sessao) {
     jogo.botoes(estadoControles);
 
     if (fallbackNode) jogo.ocupacao_audio(fallbackNode.ocupacao());
-    if (compositor) jogo.simular_quadro();
-    else imagem.data.set(jogo.quadro());
+    jogo.simular_quadro();
     atualizou = true;
 
     const audio = jogo.audio();
@@ -808,17 +753,7 @@ async function iniciar(bytes) {
   try {
     const anterior = jogo;
     jogo = Jogo.criar_com_audio(bytes, audioCtx ? audioCtx.sampleRate : 48000);
-    if (compositor) {
-      if (modoWidescreen) {
-        if (typeof jogo.ativar_gpu_widescreen === "function") {
-          jogo.ativar_gpu_widescreen();
-        } else if (typeof jogo.ativar_gpu_com_dimensoes === "function") {
-          jogo.ativar_gpu_com_dimensoes(426, 224);
-        }
-      } else {
-        jogo.ativar_gpu_sem_referencia();
-      }
-    }
+    vistaImagem = null;
     if (anterior) anterior.free();
   } catch (e) {
     jogo = null;

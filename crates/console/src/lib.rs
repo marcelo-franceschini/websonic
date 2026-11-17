@@ -267,7 +267,6 @@ pub struct Console {
     amostras_fm: Vec<AmostraFm>,
     amostras_psg: Vec<AmostraPsg>,
     quadros_lag_pendentes: u32,
-    buffer_sprites_gpu: Vec<u8>,
 }
 
 impl Console {
@@ -297,7 +296,6 @@ impl Console {
             amostras_fm: Vec::new(),
             amostras_psg: Vec::new(),
             quadros_lag_pendentes: 0,
-            buffer_sprites_gpu: Vec::new(),
         }
     }
 
@@ -333,29 +331,9 @@ impl Console {
         self.ab.mem.definir_botoes(mascara);
     }
 
-    /// Ativa a captura das camadas para composição gráfica.
-    pub fn ativar_gpu(&mut self) {
-        self.ponte.rend.ativar_gpu();
-    }
-
-    pub fn ativar_gpu_sem_referencia(&mut self) {
-        self.ponte.rend.ativar_gpu_sem_referencia();
-    }
-
-    pub fn ativar_gpu_com_dimensoes(&mut self, largura: usize, altura: usize) {
-        self.ponte.rend.ativar_gpu_com_dimensoes(largura, altura);
-    }
-
-    pub fn ativar_gpu_widescreen(&mut self) {
-        self.ponte.rend.ativar_gpu_widescreen();
-    }
-
-    pub fn desativar_gpu(&mut self) {
-        self.ponte.rend.desativar_gpu();
-    }
-
-    pub fn quadro_gpu(&self) -> Option<&sonic1_video::quadro_gpu::QuadroGpu> {
-        self.ponte.rend.quadro_gpu()
+    /// Imagem de 9 bits do quadro gerada pelo renderizador fiel da CPU (320 x 224 pontos).
+    pub fn imagem_9bits(&self) -> &[u16] {
+        self.ponte.renderizador().quadro().pontos()
     }
 
     /// Informa a ocupação da fila de áudio do navegador em pares estéreo.
@@ -450,21 +428,12 @@ impl Console {
             Vec::new()
         };
 
-        if let Some(q) = self.ponte.rend.quadro_gpu() {
-            q.sprites_compactos_em(&mut self.buffer_sprites_gpu);
-        }
-
         resultado
     }
 
     /// Modo atual de jogo (0 = Sega, 4 = Titulo, 8 = Demo, 0x0C = Level, etc).
     pub fn modo_jogo(&self) -> u8 {
         self.ab.mem.ram()[0xF600]
-    }
-
-    /// Fatia compactada dos sprites gerados para a GPU no último quadro.
-    pub fn sprites_gpu_slice(&self) -> &[u8] {
-        &self.buffer_sprites_gpu
     }
 
     /// Devolve as amostras de áudio estereo geradas no último quadro (intercaladas: L, R, L, R...).

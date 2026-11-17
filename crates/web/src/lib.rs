@@ -108,140 +108,19 @@ impl Jogo {
         self.console.definir_botoes(mascara);
     }
 
-    /// Coleta os candidatos de vídeo para o compositor WebGL2.
-    pub fn ativar_gpu(&mut self) {
-        self.console.ativar_gpu();
-    }
-
-    /// Ativa o compositor gráfico com dimensões configuradas.
-    pub fn ativar_gpu_com_dimensoes(&mut self, largura: usize, altura: usize) {
-        self.console.ativar_gpu_com_dimensoes(largura, altura);
-    }
-
-    /// Ativa o compositor gráfico em modo widescreen 16:9 (426x224).
-    pub fn ativar_gpu_widescreen(&mut self) {
-        self.console.ativar_gpu_widescreen();
-    }
-
-    /// Usa somente a composição gráfica, sem rasterizar uma imagem CPU.
-    pub fn ativar_gpu_sem_referencia(&mut self) {
-        self.console.ativar_gpu_sem_referencia();
-    }
-
-    pub fn largura_gpu(&self) -> usize {
-        self.console
-            .quadro_gpu()
-            .map(|q| q.largura())
-            .unwrap_or(320)
-    }
-
-    pub fn altura_gpu(&self) -> usize {
-        self.console.quadro_gpu().map(|q| q.altura()).unwrap_or(224)
-    }
-
-    pub fn desativar_gpu(&mut self) {
-        self.console.desativar_gpu();
-    }
-
     /// Avança simulação e áudio; a apresentação usa as camadas separadamente.
     pub fn simular_quadro(&mut self) {
         self.console.simular_quadro();
     }
 
-    pub fn camadas_gpu(&self) -> Vec<u8> {
-        self.console
-            .quadro_gpu()
-            .map(|q| q.camadas().to_vec())
-            .unwrap_or_default()
+    /// Ponteiro direto para os pontos da imagem de 9 bits na memória Wasm.
+    pub fn imagem_ptr(&self) -> *const u16 {
+        self.console.imagem_9bits().as_ptr()
     }
 
-    pub fn camadas_gpu_ptr(&self) -> *const u8 {
-        self.console
-            .quadro_gpu()
-            .map(|q| q.camadas().as_ptr())
-            .unwrap_or(std::ptr::null())
-    }
-
-    pub fn camadas_gpu_len(&self) -> usize {
-        self.console
-            .quadro_gpu()
-            .map(|q| q.camadas().len())
-            .unwrap_or(0)
-    }
-
-    pub fn seletores_gpu(&self) -> Vec<u16> {
-        self.console
-            .quadro_gpu()
-            .map(|q| q.seletores().to_vec())
-            .unwrap_or_default()
-    }
-
-    pub fn seletores_gpu_ptr(&self) -> *const u16 {
-        self.console
-            .quadro_gpu()
-            .map(|q| q.seletores().as_ptr())
-            .unwrap_or(std::ptr::null())
-    }
-
-    pub fn seletores_gpu_len(&self) -> usize {
-        self.console
-            .quadro_gpu()
-            .map(|q| q.seletores().len())
-            .unwrap_or(0)
-    }
-
-    pub fn sprites_gpu(&self) -> Vec<u8> {
-        self.console.sprites_gpu_slice().to_vec()
-    }
-
-    pub fn sprites_gpu_ptr(&self) -> *const u8 {
-        self.console.sprites_gpu_slice().as_ptr()
-    }
-
-    pub fn sprites_gpu_len(&self) -> usize {
-        self.console.sprites_gpu_slice().len()
-    }
-
-    pub fn fundos_gpu(&self) -> Vec<u8> {
-        self.console
-            .quadro_gpu()
-            .map(|q| q.fundos().to_vec())
-            .unwrap_or_default()
-    }
-
-    pub fn fundos_gpu_ptr(&self) -> *const u8 {
-        self.console
-            .quadro_gpu()
-            .map(|q| q.fundos().as_ptr())
-            .unwrap_or(std::ptr::null())
-    }
-
-    pub fn fundos_gpu_len(&self) -> usize {
-        self.console
-            .quadro_gpu()
-            .map(|q| q.fundos().len())
-            .unwrap_or(0)
-    }
-
-    pub fn paletas_gpu(&self) -> Vec<u16> {
-        self.console
-            .quadro_gpu()
-            .map(|q| q.paletas().to_vec())
-            .unwrap_or_default()
-    }
-
-    pub fn paletas_gpu_ptr(&self) -> *const u16 {
-        self.console
-            .quadro_gpu()
-            .map(|q| q.paletas().as_ptr())
-            .unwrap_or(std::ptr::null())
-    }
-
-    pub fn paletas_gpu_len(&self) -> usize {
-        self.console
-            .quadro_gpu()
-            .map(|q| q.paletas().len())
-            .unwrap_or(0)
+    /// Quantidade de pontos da imagem de 9 bits (320 x 224 = 71680).
+    pub fn imagem_len(&self) -> usize {
+        self.console.imagem_9bits().len()
     }
 
     /// Informa quantos pares estéreo ainda aguardam reprodução.
