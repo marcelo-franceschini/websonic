@@ -357,6 +357,9 @@ pub struct Console {
     amostras_fm: Vec<AmostraFm>,
     amostras_psg: Vec<AmostraPsg>,
     quadros_lag_pendentes: u32,
+    eventos_quadro: Vec<EventoQuadro>,
+    saidas_anteriores: Vec<Saida>,
+    saidas_reserva: Vec<(Saida, Option<CapturadaInterna>, MomentoSaida, Option<u8>)>,
 }
 
 impl Console {
@@ -386,14 +389,20 @@ impl Console {
             amostras_fm: Vec::new(),
             amostras_psg: Vec::new(),
             quadros_lag_pendentes: 0,
+            eventos_quadro: Vec::new(),
+            saidas_anteriores: Vec::new(),
+            saidas_reserva: Vec::new(),
         }
     }
 
-    /// Eventos nominais do quadro, pelo que o laço principal espera.
-    fn eventos_nominais(&mut self) -> Vec<EventoQuadro> {
+    /// Preenche os eventos nominais do quadro no vetor reutilizado.
+    fn preencher_eventos_nominais(&mut self) {
+        self.eventos_quadro.clear();
         if self.quadros_lag_pendentes > 0 {
             self.quadros_lag_pendentes = self.quadros_lag_pendentes.saturating_sub(1);
-            return vec![EventoQuadro::Interrupcao { nivel: 6, pc: 0 }];
+            self.eventos_quadro
+                .push(EventoQuadro::Interrupcao { nivel: 6, pc: 0 });
+            return;
         }
         let espera = self.ab.espera();
         if self.espera_atual != Some(espera) {
@@ -403,16 +412,21 @@ impl Console {
         let ja = self.quadros_na_espera;
         self.quadros_na_espera = self.quadros_na_espera.saturating_add(1);
         match espera {
-            Espera::Marca(m) if ja >= quadros_de_espera(m) => vec![EventoQuadro::Marca(m)],
-            // No tempo nominal não há lag: o laço chega à espera antes de cada VBlank (D7.25).
-            Espera::VBlank => vec![
-                EventoQuadro::Marca(Marca::WaitForVBlank),
-                EventoQuadro::Interrupcao { nivel: 6, pc: 0 },
-            ],
-            Espera::VozAcabando if ja >= QUADROS_DA_VOZ => {
-                vec![EventoQuadro::Interrupcao { nivel: 6, pc: 0 }]
+            Espera::Marca(m) if ja >= quadros_de_espera(m) => {
+                self.eventos_quadro.push(EventoQuadro::Marca(m));
             }
-            _ => Vec::new(),
+            // No tempo nominal não há lag: o laço chega à espera antes de cada VBlank (D7.25).
+            Espera::VBlank => {
+                self.eventos_quadro
+                    .push(EventoQuadro::Marca(Marca::WaitForVBlank));
+                self.eventos_quadro
+                    .push(EventoQuadro::Interrupcao { nivel: 6, pc: 0 });
+            }
+            Espera::VozAcabando if ja >= QUADROS_DA_VOZ => {
+                self.eventos_quadro
+                    .push(EventoQuadro::Interrupcao { nivel: 6, pc: 0 });
+            }
+            _ => {}
         }
     }
 
@@ -444,17 +458,18 @@ impl Console {
     fn executar_quadro_interno(&mut self, imagem: bool) -> Vec<u8> {
         self.capturas.borrow_mut().palavras_dma.clear();
         // Saídas externas podem ser inseridas antes de qualquer evento do núcleo.
-        let anteriores = self.ab.mem.tirar_saidas();
+        self.ab.mem.drenar_saidas_em(&mut self.saidas_anteriores);
         self.capturas.borrow_mut().recolher(
             &mut self.ab.mem,
             MomentoSaida::Principal,
-            &anteriores,
+            &self.saidas_anteriores,
         );
-        let eventos = self.eventos_nominais();
-        let teve_vblank = eventos
+        self.preencher_eventos_nominais();
+        let teve_vblank = self
+            .eventos_quadro
             .iter()
             .any(|e| matches!(e, EventoQuadro::Interrupcao { .. }));
-        self.ab.executar_quadro(&eventos);
+        self.ab.executar_quadro(&self.eventos_quadro);
 
         self.quadro_num = self.quadro_num.wrapping_add(1);
         let mclk_inicio = self
@@ -465,15 +480,20 @@ impl Console {
 
         // Posicao nominal: o tratador de VBlank escreve na linha 224, o resto na linha 0.
         let linha = if teve_vblank { 224 } else { 0 };
-        self.ab.mem.tirar_saidas();
-        let saidas = std::mem::take(&mut self.capturas.borrow_mut().saidas);
-        self.escritas_no_quadro = saidas.len();
+        self.ab.mem.descartar_saidas();
+        std::mem::swap(
+            &mut self.capturas.borrow_mut().saidas,
+            &mut self.saidas_reserva,
+        );
+        self.escritas_no_quadro = self.saidas_reserva.len();
 
-        let n_saidas = saidas.len();
+        let n_saidas = self.saidas_reserva.len();
         {
             let cap = self.capturas.borrow();
             let dma_palavras = &cap.palavras_dma;
-            for (i, (s, capturada, _momento, _linha_hblank)) in saidas.iter().enumerate() {
+            for (i, (s, capturada, _momento, _linha_hblank)) in
+                self.saidas_reserva.iter().enumerate()
+            {
                 let delta = if n_saidas > 0 {
                     (MCLK_POR_QUADRO_NTSC.wrapping_mul(i as u64)) / (n_saidas as u64)
                 } else {
@@ -498,6 +518,7 @@ impl Console {
                 }
             }
         }
+        self.saidas_reserva.clear();
 
         // Sintetiza o áudio gerado neste quadro e alimenta o misturador
         self.amostras_fm.clear();
