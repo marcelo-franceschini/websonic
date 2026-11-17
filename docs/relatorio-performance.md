@@ -456,13 +456,45 @@ Preencha esta tabela no último commit e mostre-a no chat.
 
 | Medida | Antes (auditoria) | Antes (executor) | Depois |
 | --- | --- | --- | --- |
-| Quadro Wasm `partida-ghz1` (média, p95, % acima de 16,67 ms) | 15,46 ms, 23,50 ms, 27,2% | 17,26 ms, 29,24 ms, 38,6% | |
-| Alocações por quadro (1000 a 1599) | 1.250,9 | 1.250,9 | |
+| Quadro Wasm `partida-ghz1` (média, p95, % acima de 16,67 ms) | 15,46 ms, 23,50 ms, 27,2% | 17,26 ms, 29,24 ms, 38,6% | 6,70 ms, 11,56 ms, 0,6% |
+| Alocações por quadro (1000 a 1599) | 1.250,9 | 1.250,9 | 0,1 |
 | Bytes para a GPU por quadro | 1.486.964 | 1.486.964 | 143.360 |
-| Ticks sem passo em 10 min a 60 Hz | 47 | 47 | |
-| Mensagens do worklet em 10 s | 625 | 625 | |
-| Tamanho do Wasm | 593.170 B | | |
-| Itens `BLOQUEADO` | | | |
+| Ticks sem passo em 10 min a 60 Hz | 47 | 47 | 0 |
+| Mensagens do worklet em 10 s | 625 | 625 | 156 |
+| Tamanho do Wasm | 593.170 B | 708.528 B | 684.238 B |
+| Itens `BLOQUEADO` | | | Nenhum (0 bloqueados, 31 concluídos) |
+
+#### Commits da rodada de remediação
+1. `b274da4` chore: linha de base da sessao anterior (frontend)
+2. `7b979a3` perf(docs): E0.3 registrar prompt e plano de execucao de performance
+3. `6a24f16` perf(test): E1.1 adicionar guarda de hashes da ROM sem oraculo
+4. `dc5edd1` perf(test): E1.2 adicionar teste de alocacoes por quadro com a ROM
+5. `780ec39` perf(test): E1.3 adicionar teste de tempo de parede do Wasm na partida
+6. `fc1b0ff` perf(test): E1.4 adicionar teste de ritmo e batimento a 60 Hz
+7. `eb63782` perf(test): E1.5 adicionar teste de carga de mensagens do worklet de audio
+8. `8c2e701` perf(build): W1 adotar opt-level 3 no perfil release
+9. `4281b80` perf(video): V1a apresentar imagem fiel de 9 bits via WebGL2 e remover composicao de candidatos
+10. `8bcd60f` perf(video): V2 reutilizar capacidade de ao_gravar_vram no renderizador
+11. `2af2347` perf(video): V3 reaproveitar buffer varridos em varrer_sprites
+12. `3427ca3` perf(video): V4 reaproveitar buffer pendentes de portas
+13. `6821b91` perf(console): C1 reaproveitar buffer de palavras de DMA
+14. `da67ff5` perf(core): K1 drenar saidas e eventos sem realocacao
+15. `158d4f5` perf(console): C2 reaproveitar buffers de eventos e saidas
+16. `4da724a` perf(audio): A1 reutilizar buffers de saida no misturador
+17. `43b59aa` perf(audio): W2 transferir buffers de audio com pool de Float32Array
+18. `07f0d6c` perf(audio): A5 reduzir frequencia de telemetria do worklet de audio
+19. `784fc83` perf(audio): A6 nao enfileirar audio antes de AudioContext estar running
+20. `b70cb9f` perf(ritmo): R1 alinhar relogio a 60 Hz exatos conforme requisito
+21. `e44befb` perf(web): J1 expor tem_erro para evitar decodificacao de string em todo passo
+22. `c225d00` perf(site): J2 otimizar leituras de gamepad modo de jogo e closure do rAF
+23. `35e3ef2` perf(site): D1 otimizar atualizacao do painel de diagnostico
+24. `f4965c0` perf(site): D2 ignorar repeticao de teclado e cachear elementos de tecla
+25. `831935e` perf(site): D3 ocultar camada CRT com display none quando desligada
+26. `e70f5f7` perf(audio): S1 saltar ciclos sem escrita no sintetizador FM e PSG
+27. `36e9a90` perf(audio): S2 avancar sintese sem copiar historico de ciclos FM
+28. `fd95c94` perf(audio): A2 reamostragem mono direta para PSG
+29. `bd02876` perf(video): V1b remover codigo morto do compositor de candidatos e testes legados
+30. `5b01579` perf(docs): T1 atualizar documentacao tecnica de arquitetura e desempenho
 
 Liste também os commits (hash e título) e as pendências da seção 6.3.
 
