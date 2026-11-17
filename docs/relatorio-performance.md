@@ -284,11 +284,11 @@ Marque `[x]` no mesmo commit do item. Use `BLOQUEADO: <motivo>` quando o protoco
 
 | Feito | Ordem | ID | P | Arquivo:Linha | Problema | Solução passo a passo | Aceitação | Ganho estimado |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| [ ] | 1 | E0.1 | P0 | `docs/pedidos/l1-hook-detector.patch` | O hook não detecta trechos da ROM (L1 inativa). | (1) Compile o detector com a receita da seção 0.6.<br>(2) Rode os dois controles.<br>(3) Apague o arquivo positivo. | Positivo sai com 1. Negativo sai com 0. | Guarda contra cópia de trechos da ROM. |
-| [ ] | 2 | E0.2 | P0 | árvore de trabalho | 10 arquivos modificados e 4 novos da sessão anterior estão sem commit. | (1) Adicione só os 14 arquivos da seção 4.1.<br>(2) Rode o detector.<br>(3) Faça o commit `chore: linha de base da sessao anterior (frontend)`. | Fora do commit ficam só `CLAUDE.md`, `.claude/skills/`, este documento e os arquivos não rastreados de outras sessões. | Cada item seguinte pode ser revertido sozinho. |
-| [ ] | 3 | E0.3 | P0 | `docs/relatorio-performance.md` | Este documento está fora do git. | Faça o commit deste documento sozinho. | Commit criado. | Checkboxes rastreáveis. |
-| [ ] | 4 | E1.1 | P0 | novo `crates/console/tests/guarda_rom.rs` | Não existe guarda de comportamento que dispense o oráculo. | (1) Crie o arquivo do Anexo A.1.<br>(2) Rode com `SONIC1_ROM` e `--ignored`. | Passa no estado atual com os 9 hashes da seção 5.3. | Detecta qualquer mudança de imagem, RAM ou áudio. |
-| [ ] | 5 | E1.2 | P0 | novo `crates/console/tests/alocacoes_rom.rs` | Nenhum teste mede alocações por quadro. | (1) Crie o arquivo do Anexo A.2.<br>(2) Rode e anote a média na seção 6.2. | Falha hoje com 1.250,9 por quadro. Passa no fim do bloco de alocações. | Torna a regressão de alocação visível. |
+| [x] | 1 | E0.1 | P0 | `docs/pedidos/l1-hook-detector.patch` | O hook não detecta trechos da ROM (L1 inativa). | (1) Compile o detector com a receita da seção 0.6.<br>(2) Rode os dois controles.<br>(3) Apague o arquivo positivo. | Positivo sai com 1. Negativo sai com 0. | Guarda contra cópia de trechos da ROM. |
+| [x] | 2 | E0.2 | P0 | árvore de trabalho | 10 arquivos modificados e 4 novos da sessão anterior estão sem commit. | (1) Adicione só os 14 arquivos da seção 4.1.<br>(2) Rode o detector.<br>(3) Faça o commit `chore: linha de base da sessao anterior (frontend)`. | Fora do commit ficam só `CLAUDE.md`, `.claude/skills/`, este documento e os arquivos não rastreados de outras sessões. | Cada item seguinte pode ser revertido sozinho. |
+| [x] | 3 | E0.3 | P0 | `docs/relatorio-performance.md` | Este documento está fora do git. | Faça o commit deste documento sozinho. | Commit criado. | Checkboxes rastreáveis. |
+| [x] | 4 | E1.1 | P0 | novo `crates/console/tests/guarda_rom.rs` | Não existe guarda de comportamento que dispense o oráculo. | (1) Crie o arquivo do Anexo A.1.<br>(2) Rode com `SONIC1_ROM` e `--ignored`. | Passa no estado atual com os 9 hashes da seção 5.3. | Detecta qualquer mudança de imagem, RAM ou áudio. |
+| [x] | 5 | E1.2 | P0 | novo `crates/console/tests/alocacoes_rom.rs` | Nenhum teste mede alocações por quadro. | (1) Crie o arquivo do Anexo A.2.<br>(2) Rode e anote a média na seção 6.2. | Falha hoje com 1.250,9 por quadro. Passa no fim do bloco de alocações. | Torna a regressão de alocação visível. |
 | [x] | 6 | E1.3 | P0 | novo `site/tests/desempenho-wasm.test.mjs` | O teste de auditoria mede tempo simulado (`site/tests/auditoria-oraculo-web.test.mjs:126-174`). | (1) Crie o arquivo do Anexo A.3.<br>(2) Rode `cargo xtask site`.<br>(3) Rode o teste três vezes e anote a mediana. | Falha hoje com média de 15,46 ms (carga até 6). Passa com média ≤ 8,0 ms, p95 ≤ 13,0 ms e ≤ 2% acima de 16,67 ms. | Mede o tempo de parede do Wasm real do site. |
 | [x] | 7 | E1.4 | P0 | novo `site/tests/ritmo-60hz.test.mjs` | Nenhum teste mede quadros repetidos por minuto. | Crie o arquivo do Anexo A.4. | Falha hoje com 47 ticks sem passo em 10 min. Passa com 0. | Torna o batimento visível. |
 | [x] | 8 | E1.5 | P0 | novo `site/tests/audio-worklet-carga.test.cjs` | Nenhum teste mede a carga da thread de áudio. | Crie o arquivo do Anexo A.5. | Falha hoje com 625 mensagens em 10 s. Passa com ≤ 160. | Torna a carga do worklet visível. |
@@ -394,6 +394,8 @@ uptime                                                       # registre a carga 
 | Bancada de áudio | `WEBSONIC_BENCH=1 cargo test --locked --offline -p sonic1-audio-saida --release --test desempenho -- --nocapture` | Mediana de 2.786 µs |
 
 ### 5.3 Guardas (rode depois de cada item)
+
+Os valores desta seção são os da auditoria e valeram até o commit `beb3175`. Os valores atuais estão na seção 7.3.
 
 ```sh
 cargo test --locked --offline -p sonic1-console -p sonic1-web -p sonic1-audio-saida -p sonic1-video -p sonic1-audio
@@ -509,6 +511,43 @@ Liste também os commits (hash e título) e as pendências da seção 6.3.
 ### 6.4 Handoff
 
 Chame `memory_handoff_begin` com um resumo de 2 a 3 frases, as pendências da seção 6.3 como próximos passos e a lista de arquivos tocados.
+
+## 7. Revisão pós-execução (17/11/2026)
+
+Uma sessão nova revisou os 36 commits do executor (`b274da4` a `0292b13`), mediu de novo e corrigiu os desvios. Os números e os comandos estão em `docs/estado.md`.
+
+### 7.1 Resultado
+
+- Os 31 itens de performance mudaram só o desempenho. No commit `beb3175`, a guarda com os hashes originais passa, e `console_hashes` com 7.200 quadros dá `b8d4a450a5baf18634d191411896fd5caad98d6e`.
+- Quadro Wasm na `partida-ghz1`: média de 5,61 ms, p95 de 8,40 ms e 0,1% dos quadros acima de 16,67 ms (mediana de 3 rodadas, carga 2). Na auditoria eram 15,46 ms, 23,50 ms e 27,2%.
+- Alocações por quadro: 0,1. Bytes para a GPU por quadro: 143.360.
+
+### 7.2 Desvios encontrados e correções
+
+| Desvio | Correção |
+| --- | --- |
+| `33cbc7d` implementou os anéis perdidos fora do escopo, com 4 desvios do `.asm`, e trocou os hashes da guarda | R6 `fe49e48`: `RingLoss` e `HurtSonic` fiéis ao disassembly; hashes novos com aprovação do Marcelo |
+| `cargo fmt --check` falhava em 28 arquivos | R1 `3a54493` |
+| O S2 duplicou o laço da síntese e a entrada do misturador | R2 `d5d2b6a` |
+| Buffers fixos de 4.096 floats no pool de áudio | R3 `8888619` |
+| Janela do relógio de 0,8 sem registro | R4 e R4b `e256ec1`: 0,8 mantido e documentado no código |
+| Seletor de proporção morto e rótulo "Fiel ao NTSC" | R5 `ae4be2e` |
+| `estado.md` afirmava "L1 ativada", `console_hashes` idêntico e Wasm "reduzido" | R7: `estado.md` e `desempenho-web.md` corrigidos |
+| `0292b13` pôs na base um projeto de oráculo sem evidência | R7: reversão em `docs/conhecimento/oraculos.md` |
+| O bloco do ai-memory sumiu do `CLAUDE.md` | R8: bloco reinstalado, sem commit |
+| Fora do escopo e mantidos: HUD e profiler (`da3fcd8`) e `expect` nas fatias do reamostrador (`0ac1a08`) | Sem mudança |
+
+### 7.3 Valores atuais das guardas
+
+Os valores da seção 5.3 são os da auditoria e valeram até `beb3175`. Depois da R6, valem:
+
+| Guarda | Valor esperado |
+| --- | --- |
+| `guarda_rom`, `boot-demos` | imagem `c42c937482ce693b`, RAM `53dcaed742e54cba`, áudio `a566fb9496197a58` |
+| `guarda_rom`, `partida-ghz1` | imagem `60e258d3c5e554fc`, RAM `50684ee53074a4d8`, áudio `0cdc57e4c3cfaf1b` |
+| `guarda_rom`, `lz-agua` | imagem `40ba0d3e3b00edc7`, RAM `41b8ca120d65ba8e`, áudio `c6f77b45fbd54140` |
+| `console_hashes` com 7.200 quadros | `28299e8d4df6fd706ceb0fc8faecd61d382966fd` |
+| Erros do clippy no `core` | 144 |
 
 ## Anexo A. Código das bancadas e dos testes
 

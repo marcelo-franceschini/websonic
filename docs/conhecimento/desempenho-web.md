@@ -44,9 +44,9 @@ A simulação executava 1.250,9 alocações e 119.701 bytes alocados por quadro 
 - Teste de alocações (`SONIC1_ROM=... cargo test --locked --offline --release -p sonic1-console --test alocacoes_rom -- --ignored --nocapture`):
   - Alocações por quadro (quadros 1000 a 1599): 0,1 por quadro (meta: <= 2; linha de base: 1.250,9).
 - Guarda de fidelidade da ROM (`SONIC1_ROM=... cargo test --locked --offline --release -p sonic1-console --test guarda_rom -- --ignored`):
-  - 17.509 quadros comparados bit a bit: resultado 100% idêntico.
+  - 17.509 quadros comparados bit a bit: resultado 100% idêntico até `beb3175`. Depois da revisão R6 (`fe49e48`, anéis perdidos fiéis ao disassembly), os hashes esperados mudaram com aprovação do Marcelo e estão no próprio teste.
 - Guarda de hash do console (`cargo run --locked --offline --release -q -p sonic1-console --bin console_hashes -- ... 7200 | sha1sum`):
-  - Hash obtido: `b8d4a450a5baf18634d191411896fd5caad98d6e` (idêntico à referência de 7.200 quadros).
+  - Hash obtido: `b8d4a450a5baf18634d191411896fd5caad98d6e`, idêntico à auditoria até `beb3175`. Depois da R6, o valor esperado é `28299e8d4df6fd706ceb0fc8faecd61d382966fd`.
 
 ## 4. Síntese de Áudio e Canal Web (Itens S1, S2, A2, W2, A5, A6)
 
@@ -95,6 +95,6 @@ O laço web usava frequência de 59,9227 Hz da VDP do Mega Drive enquanto o nave
 | Alocações por quadro (gameplay) | 1.250,9 | 0,1 | <= 2,0 | `SONIC1_ROM=... cargo test -p sonic1-console --test alocacoes_rom -- --ignored` |
 | Dados enviados à GPU por quadro | 1.486.964 B | 143.360 B | 143.360 B | Constante WebGL2 R16UI (320x224x2) |
 | Benchmark síntese de áudio (mediana) | 2.786 us | 2.539 us | <= 3.000 us | `WEBSONIC_BENCH=1 cargo test -p sonic1-audio-saida --release --test desempenho` |
-| Tamanho binário Wasm (`sonic1_web_bg.wasm`) | ~708 KB | 684 KB | <= 760 KB | `ls -l dist/pkg/sonic1_web_bg.wasm` |
-| Fidelidade 7.200 quadros (`console_hashes`) | Conferido | `b8d4a450a5...` | Idêntico | `cargo run -p sonic1-console --bin console_hashes -- ... 7200` |
-| Fidelidade 17.509 quadros (`guarda_rom`) | Conferido | 100% aprovado | Idêntico | `SONIC1_ROM=... cargo test -p sonic1-console --test guarda_rom -- --ignored` |
+| Tamanho binário Wasm (`sonic1_web_bg.wasm`) | 593.170 B (`opt-level = "s"`) | 685.335 B (`opt-level = 3`, +15,5%) | <= 760.000 B | `ls -l dist/pkg/sonic1_web_bg.wasm` |
+| Fidelidade 7.200 quadros (`console_hashes`) | `b8d4a450a5...` | `28299e8d4d...` depois da R6 | Igual ao valor esperado | `cargo run -p sonic1-console --bin console_hashes -- ... 7200` |
+| Fidelidade 17.509 quadros (`guarda_rom`) | Hashes da auditoria | Hashes da R6 | Iguais aos do teste | `SONIC1_ROM=... cargo test -p sonic1-console --test guarda_rom -- --ignored` |

@@ -2,31 +2,48 @@
 
 Documento de acompanhamento do progresso das etapas.
 
-## Remediação de desempenho web concluída (17/11/2026)
+## Remediação de desempenho web e revisão pós-execução (17/11/2026)
 
-Plano de remediação de desempenho executado integralmente conforme aprovado em `docs/relatorio-performance.md`.
+O plano de `docs/relatorio-performance.md` foi executado em 31 itens (commits `b274da4` a `beb3175`). Uma sessão de revisão conferiu cada commit, mediu de novo e corrigiu os desvios (commits `3a54493` a `fe49e48`, mais este registro).
 
-### Decisões e arquitetura
-1. **60 Hz exatos no navegador:** o laço web avança a 60,000 Hz (1000 / 60 ms por quadro, correspondendo a 16,6666 ms por passo conforme o requisito). A taxa do AudioContext calibra a reamostragem na razão `taxa_dispositivo / 60.0`.
-2. **Autorização da ROM pelo Marcelo (17/11/2026):** a decisão L1 foi ativada para execução e leitura da ROM REV01 em testes de desempenho e guardas locais, com validação do detector compilado (`hooks/detector`) antes de cada commit.
-3. **Remoção do modo 16:9 widescreen e do compositor de candidatos:** o modo 16:9 e o envio de candidatos para GPU foram completamente removidos. A composição gráfica voltou a ser 100% calculada pela CPU via renderizador fiel da VDP. A imagem de 320x224 pontos em 9 bits é enviada diretamente ao WebGL2 via textura `R16UI` (143.360 bytes por quadro constantes).
+### Decisões
+1. **60 Hz exatos no navegador:** `PERIODO_QUADRO = 1000 / 60` em `site/relogio.js`. O `site/app.js` passa `taxa × (53693175 / 896040) / 60` a `criar_com_audio`, e o reamostrador entrega 800 pares por quadro a 48 kHz. A janela de estabilização começa em 0,8 quadro: com 0,75, três quartos de quadro somados em ponto flutuante disparavam um passo antes da hora no teste de interpolação.
+2. **ROM liberada, L1 ainda inativa:** o Marcelo autorizou em 17/11/2026 a leitura e a execução da ROM, sem versionamento. A L1 continua inativa. O detector roda de uma pasta temporária, compilado de `docs/pedidos/l1-hook-detector.patch`, e `hooks/` não mudou.
+3. **Sem 16:9 e sem candidatos para a GPU:** o site sobe a imagem de 9 bits da CPU (143.360 B por quadro) numa textura `R16UI`. O commit `bd02876` apagou `crates/video/tests/gpu.rs` (9 testes), porque ele só comparava o caminho removido com a referência.
+4. **Anéis perdidos fiéis ao disassembly:** o commit `33cbc7d` implementou os anéis fora do escopo, com desvios do original, e trocou os hashes da guarda sem aprovação. A revisão R6 (`fe49e48`) reescreveu `RingLoss` e `HurtSonic` pelo `.asm`, com aprovação do Marcelo. Os hashes da guarda mudaram. A prova no oráculo fica pendente.
 
-### Medições antes e depois
-- **Tempo por quadro em Wasm (`partida-ghz1`, via `node --test site/tests/desempenho-wasm.test.mjs`):**
-  - Média: 6,70 ms (antes: 15,46 ms; meta <= 8,0 ms).
-  - Percentil 95: 11,56 ms (antes: 23,50 ms; meta <= 13,0 ms).
-  - Quadros acima de 16,67 ms: 0,6% (antes: 27,2%; meta <= 2,0%).
-- **Alocações por quadro (`cargo test -p sonic1-console --test alocacoes_rom -- --ignored`):**
-  - Reduzidas de 1.250,9 para 0,1 por quadro (meta <= 2).
-- **Dados enviados à GPU por quadro:**
-  - Reduzidos de 1.486.964 bytes para 143.360 bytes fixos.
-- **Benchmark de síntese de áudio (`WEBSONIC_BENCH=1 cargo test -p sonic1-audio-saida --release --test desempenho`):**
-  - Mediana: 2.539 us (antes: 2.786 us; meta <= 3.000 us).
-- **Tamanho do binário Wasm (`sonic1_web_bg.wasm`):**
-  - Reduzido de 708 KB para 684 KB (meta <= 760 KB).
-- **Guardas de fidelidade:**
-  - `console_hashes` (7.200 quadros): SHA-1 idêntico `b8d4a450a5baf18634d191411896fd5caad98d6e`.
-  - `guarda_rom` (17.509 quadros): 100% aprovado.
+### Medições
+| Medida | Auditoria | Depois da revisão | Comando |
+| --- | --- | --- | --- |
+| Quadro Wasm `partida-ghz1` (média, p95, acima de 16,67 ms) | 15,46 ms, 23,50 ms, 27,2% | 5,61 ms, 8,40 ms, 0,1% (mediana de 3 rodadas, carga 2) | `cargo xtask site && node --test site/tests/desempenho-wasm.test.mjs` |
+| Alocações por quadro (quadros 1000 a 1599) | 1.250,9 | 0,1 | `cargo test --release -p sonic1-console --test alocacoes_rom -- --ignored --nocapture` |
+| Bytes para a GPU por quadro | 1.486.964 | 143.360 | contagem de `texSubImage2D` (anexo A.7 do relatório) |
+| Tamanho do Wasm | 593.170 B (`opt-level = "s"`) | 685.335 B (`opt-level = 3`, +15,5%) | `ls -l dist/pkg/sonic1_web_bg.wasm` |
+| Ticks sem passo em 10 min a 60 Hz | 47 | 0 | `node --test site/tests/ritmo-60hz.test.mjs` |
+| Mensagens do worklet em 10 s | 625 | 156 | `node --test site/tests/audio-worklet-carga.test.cjs` |
+
+### Guardas
+- Os 31 itens de performance não mudaram o comportamento. Prova: no commit `beb3175`, a guarda com os hashes originais passa, e `console_hashes` com 7.200 quadros dá `b8d4a450a5baf18634d191411896fd5caad98d6e`, igual à auditoria.
+- Depois da R6, os valores esperados são: `console_hashes` com 7.200 quadros, `28299e8d4df6fd706ceb0fc8faecd61d382966fd`; `guarda_rom`, os hashes gravados em `crates/console/tests/guarda_rom.rs`.
+- `cargo fmt --all -- --check` passa desde a R1. O clippy do `core` tem 144 erros, todos anteriores a esta rodada (commit `f8a9a18`).
+
+### Correções da revisão
+- R1 `3a54493`: `cargo fmt` em 28 arquivos e `expect` no lugar de `unwrap` no reamostrador.
+- R2 `d5d2b6a`: um laço único na síntese e uma entrada única no misturador (o S2 tinha duplicado 93 linhas).
+- R3 `8888619`: buffer de áudio do pool dimensionado pelo quadro (antes, `RangeError` acima de ~122 kHz).
+- R4 `429defe` e R4b `e256ec1`: a janela do relógio voltou a 0,75, quebrou o teste de interpolação e voltou a 0,8, agora documentada.
+- R5 `ae4be2e`: seletor de proporção morto removido, rótulo de 60 Hz e p95 do painel sem alocação.
+- R6 `fe49e48`: `RingLoss` e `HurtSonic` fiéis ao disassembly, com 8 testes novos.
+- R7: este registro, a reversão do texto sem evidência de `0292b13` em `docs/conhecimento/oraculos.md` e a seção 7 do relatório.
+- R8 (sem commit): o bloco do ai-memory voltou ao `CLAUDE.md`, que o tinha perdido na árvore de trabalho.
+
+### Pendências do Marcelo
+1. Comparar no oráculo a `partida-ghz1` e as demos depois da R6 (anéis perdidos e `HurtSonic`).
+2. `kill_sonic` ainda põe `$C6` na fila. O original toca `sfx_Death` ou `sfx_HitSpikes` conforme o objeto em `a2`, que a função do núcleo não recebe.
+3. Decidir sobre os 144 erros do clippy no `core`.
+4. Ativar a L1 com os patches de `docs/pedidos/`.
+5. O `CLAUDE.md.bak-1794556096` sumiu durante a auditoria; nenhum comando da auditoria ou da revisão tocou nele.
+6. Revisar e fazer o push.
 
 ## Trabalho iniciado em 13/11/2026: caminho web
 
