@@ -574,16 +574,31 @@ function calcularMascaraTeclado(modo = 4) {
   return mascara;
 }
 
+// Cache de elementos de teclas virtuais por data-code
+const cacheKeycaps = new Map();
+document.querySelectorAll(".tecla-cap[data-code]").forEach((cap) => {
+  const code = cap.getAttribute("data-code");
+  if (!code) return;
+  let lista = cacheKeycaps.get(code);
+  if (!lista) {
+    lista = [];
+    cacheKeycaps.set(code, lista);
+  }
+  lista.push(cap);
+});
+
 function iluminarKeycap(code, ativa) {
   if (!code) return;
-  const caps = document.querySelectorAll(`.tecla-cap[data-code="${code}"]`);
-  caps.forEach((cap) => {
-    if (ativa) cap.classList.add("ativa");
-    else cap.classList.remove("ativa");
-  });
+  const caps = cacheKeycaps.get(code);
+  if (!caps) return;
+  for (let i = 0; i < caps.length; i++) {
+    if (ativa) caps[i].classList.add("ativa");
+    else caps[i].classList.remove("ativa");
+  }
 }
 
 window.addEventListener("keydown", (e) => {
+  if (e.repeat) return;
   if (e.code === "KeyF" && !e.ctrlKey && !e.metaKey && !e.altKey) {
     alternarTelaCheia();
     e.preventDefault();
