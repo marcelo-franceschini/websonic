@@ -1988,6 +1988,7 @@ pub(crate) fn hurt_sonic(m: &mut Memoria, a2: u32) -> Result<(), ErroAbertura> {
     }
     let rings = rw(m, V_RINGS);
     if rings > 0 {
+        super::ring_loss::soltar_aneis(m);
         ww(m, V_RINGS, 0);
         wb(m, F_RINGCOUNT, 1);
         wb(m, V_PLAYER.wrapping_add(OB_ROUTINE), 4);

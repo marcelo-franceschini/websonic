@@ -59,6 +59,7 @@ pub mod plataforma_oscilante;
 pub mod plc;
 pub mod ponte;
 pub mod ram;
+pub mod ring_loss;
 pub mod sbz_objetos;
 pub mod sega;
 pub mod signpost;

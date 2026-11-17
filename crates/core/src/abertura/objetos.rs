@@ -142,6 +142,7 @@ fn rodar_objeto(m: &mut Memoria, a0: u32, id: u8) -> Result<(), ErroAbertura> {
         ID_SONIC => super::fisica::sonic_player(m, a0),
         ID_HUD => hud_objeto(m, a0),
         ID_RINGS => aneis(m, a0),
+        ID_RING_LOSS => super::ring_loss::executar(m, a0),
         ID_MONITOR => monitor(m, a0),
         ID_SPRING => mola(m, a0),
         ID_SCENERY => cenario(m, a0),
@@ -1573,7 +1574,7 @@ fn aneis(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
 }
 
 /// `CollectRing`: o original permite ultrapassar 999 anéis.
-pub(super) fn collect_ring(m: &mut Memoria) {
+pub(crate) fn collect_ring(m: &mut Memoria) {
     let aneis = rw(m, V_RINGS).wrapping_add(1);
     ww(m, V_RINGS, aneis);
     let atualizacao = rb(m, F_RINGCOUNT) | 1;
@@ -1600,7 +1601,7 @@ pub(super) fn collect_ring(m: &mut Memoria) {
     wb(m, V_SOUNDQUEUE1, som);
 }
 
-fn ring_sparkle(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
+pub(crate) fn ring_sparkle(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
     animate_sprite(m, a0, ANI_RING)?;
     display_sprite(m, a0);
     Ok(())

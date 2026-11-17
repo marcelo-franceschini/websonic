@@ -485,6 +485,7 @@ pub const SON_RESTARTIME: u32 = 0x3A;
 
 pub const ID_SBZ_ACT2: u16 = 0x501;
 pub const ID_RINGS: u8 = 0x25;
+pub const ID_RING_LOSS: u8 = 0x37;
 pub const MAP_RING: u32 = 0xA610;
 pub const ARTTILE_RING: u16 = 0x7B2;
 pub const V_ANI1_FRAME: u32 = 0xFF_FEC3;

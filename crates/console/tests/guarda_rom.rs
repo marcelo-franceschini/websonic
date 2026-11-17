@@ -1,6 +1,6 @@
 //! Guarda de comportamento sem o oráculo: hashes agregados da imagem de 9 bits, da RAM do 68000 e
 //! do áudio de saída, quadro a quadro, nas três entradas do corpus. Uma correção de desempenho não
-//! pode mudar nenhum deles. Valores medidos em 17/11/2026 (docs/relatorio-performance.md, seção 5.3).
+//! pode mudar nenhum deles. Valores atualizados após implementar Ring_Loss (objeto 0x37).
 use sonic1_console::Console;
 
 const CORPUS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../corpus");
@@ -49,9 +49,9 @@ fn hashes(rom: &[u8], entradas: &[u8]) -> (u64, u64, u64) {
 fn imagem_ram_e_audio_nao_mudam() {
     let rom = std::fs::read(std::env::var_os("SONIC1_ROM").expect("SONIC1_ROM")).expect("ROM");
     let casos: [(&str, Vec<u8>, (u64, u64, u64)); 3] = [
-        ("boot-demos", vec![0; 7200], (0x4a20_bb47_deb3_0ef2, 0x3144_7929_316f_e372, 0x2f96_f7e5_16f5_5c0c)),
-        ("partida-ghz1", ler_s1in("partida-ghz1.s1in"), (0x2cd5_d4f4_5428_32f1, 0x1d5d_dead_9530_554b, 0x1065_375c_ee2d_77ae)),
-        ("lz-agua", ler_s1in("lz-agua.s1in"), (0x1f88_b478_e64a_9179, 0xc66c_4067_b520_8e86, 0xab4b_23d6_3115_6f04)),
+        ("boot-demos", vec![0; 7200], (0x996b_d534_0a62_17d1, 0x6943_10d4_5770_69dd, 0x2f96_f7e5_16f5_5c0c)),
+        ("partida-ghz1", ler_s1in("partida-ghz1.s1in"), (0xfdd3_b2ed_a83d_bed7, 0x2831_6235_fcd1_5484, 0xc198_a3f5_bac8_e79d)),
+        ("lz-agua", ler_s1in("lz-agua.s1in"), (0xb597_b314_aa7a_1bad, 0xe6fe_0adf_7f95_8864, 0x3012_0edb_efc8_e9c8)),
     ];
     for (nome, entradas, esperado) in casos {
         assert_eq!(hashes(&rom, &entradas), esperado, "{nome}: imagem, RAM ou áudio mudou");
