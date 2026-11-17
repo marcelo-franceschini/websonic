@@ -234,7 +234,9 @@ async function iniciarAudio() {
           return;
         }
         if (e.data && e.data.tipo === "status") {
-          elDiagWorklet.textContent = `Fila: ${e.data.disponiveis} amostras | Falhas: ${e.data.falhas} | Descartadas: ${e.data.descartadas}`;
+          if (painelDiag && !painelDiag.hidden) {
+            elDiagWorklet.textContent = `Fila: ${e.data.disponiveis} amostras | Falhas: ${e.data.falhas} | Descartadas: ${e.data.descartadas}`;
+          }
           if (jogo) jogo.ocupacao_audio(e.data.disponiveis);
         }
       };

@@ -92,7 +92,7 @@ class SonicAudioProcessor extends AudioWorkletProcessor {
       }
     }
 
-    if (this.chamadasProcess % 6 === 0) {
+    if (this.chamadasProcess % 24 === 0) {
       this.port.postMessage({
         tipo: "status",
         disponiveis: this.disponiveis,
