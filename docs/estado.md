@@ -2,6 +2,32 @@
 
 Documento de acompanhamento do progresso das etapas.
 
+## Remediação de desempenho web concluída (17/11/2026)
+
+Plano de remediação de desempenho executado integralmente conforme aprovado em `docs/relatorio-performance.md`.
+
+### Decisões e arquitetura
+1. **60 Hz exatos no navegador:** o laço web avança a 60,000 Hz (1000 / 60 ms por quadro, correspondendo a 16,6666 ms por passo conforme o requisito). A taxa do AudioContext calibra a reamostragem na razão `taxa_dispositivo / 60.0`.
+2. **Autorização da ROM pelo Marcelo (17/11/2026):** a decisão L1 foi ativada para execução e leitura da ROM REV01 em testes de desempenho e guardas locais, com validação do detector compilado (`hooks/detector`) antes de cada commit.
+3. **Remoção do modo 16:9 widescreen e do compositor de candidatos:** o modo 16:9 e o envio de candidatos para GPU foram completamente removidos. A composição gráfica voltou a ser 100% calculada pela CPU via renderizador fiel da VDP. A imagem de 320x224 pontos em 9 bits é enviada diretamente ao WebGL2 via textura `R16UI` (143.360 bytes por quadro constantes).
+
+### Medições antes e depois
+- **Tempo por quadro em Wasm (`partida-ghz1`, via `node --test site/tests/desempenho-wasm.test.mjs`):**
+  - Média: 6,70 ms (antes: 15,46 ms; meta <= 8,0 ms).
+  - Percentil 95: 11,56 ms (antes: 23,50 ms; meta <= 13,0 ms).
+  - Quadros acima de 16,67 ms: 0,6% (antes: 27,2%; meta <= 2,0%).
+- **Alocações por quadro (`cargo test -p sonic1-console --test alocacoes_rom -- --ignored`):**
+  - Reduzidas de 1.250,9 para 0,1 por quadro (meta <= 2).
+- **Dados enviados à GPU por quadro:**
+  - Reduzidos de 1.486.964 bytes para 143.360 bytes fixos.
+- **Benchmark de síntese de áudio (`WEBSONIC_BENCH=1 cargo test -p sonic1-audio-saida --release --test desempenho`):**
+  - Mediana: 2.539 us (antes: 2.786 us; meta <= 3.000 us).
+- **Tamanho do binário Wasm (`sonic1_web_bg.wasm`):**
+  - Reduzido de 708 KB para 684 KB (meta <= 760 KB).
+- **Guardas de fidelidade:**
+  - `console_hashes` (7.200 quadros): SHA-1 idêntico `b8d4a450a5baf18634d191411896fd5caad98d6e`.
+  - `guarda_rom` (17.509 quadros): 100% aprovado.
+
 ## Trabalho iniciado em 13/11/2026: caminho web
 
 - O laço web roda a 60 Hz exatos (1000 / 60 ms por quadro conforme o requisito), acumula passos atrasados e pausa em aba oculta. A taxa real do AudioContext configura a reamostragem ajustada para 60 Hz; a troca de jogo limpa a fila de áudio.

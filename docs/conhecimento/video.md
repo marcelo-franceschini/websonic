@@ -106,3 +106,14 @@ Um trace de 1100 quadros de `lz-agua` contém 330 interrupções de nível 4. Fo
 Nas 169 transferências com linha programada abaixo de 220, a sequência de escritas observada abrangeu três linhas. Em 158 das 159 restantes abrangeu uma linha; a exceção abrangeu quatro. Os intervalos entre pares de palavras variam com as esperas, inclusive durante a área visível. Isso impede representar a transferência inteira como instantânea ou inferir a espera da CPU apenas pelo número de palavras.
 
 `video-comparar` reproduziu as imagens dos 1100 quadros usando linha e coluna de cada escrita do trace. Isso valida a reprodução do vídeo com tempos fornecidos, não a previsão dos tempos de CPU ou a integração nominal. O relatório mostrou 618 avisos informativos `dma_sem_dados` e nenhum aviso fora do inventário.
+
+## Medição de desempenho em WebAssembly e WebGL2 (17/11/2026)
+
+Com a remoção do compositor de candidatos para GPU e a restauração da renderização em software pela CPU, a imagem de 320x224 pontos em 9 bits é enviada diretamente ao WebGL2 via textura `R16UI`.
+- Transferência por quadro: 143.360 bytes constantes (71.680 palavras de 16 bits).
+- Chamadas `texImage2D`: zero após a inicialização.
+- Tempo de quadro em Wasm (`partida-ghz1`, comando `SONIC1_ROM=... node --test site/tests/desempenho-wasm.test.mjs`):
+  - Média: 6,70 ms por quadro (meta <= 8,0 ms; antes da remediação: 15,46 ms).
+  - Percentil 95: 11,56 ms (meta <= 13,0 ms; antes da remediação: 23,50 ms).
+  - Quadros acima de 16,67 ms: 0,6% (meta <= 2,0%; antes da remediação: 27,2%).
+- Desempenho nativo do renderizador (`WEBSONIC_BENCH=1 cargo test -p sonic1-video --release --test desempenho`): mediana de 2569 us.

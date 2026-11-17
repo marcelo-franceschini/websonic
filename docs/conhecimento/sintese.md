@@ -129,3 +129,13 @@ Comando: `sh scripts/etapa8-bloco2.sh "$HOME/sonic1-ext/rom/Sonic The Hedgehog (
 | 8.8 Filtro analógico passa-baixas | **feito** (APROXIMADO, fora da prova digital) |
 | 8.9 Medição de desempenho | **feito** (mediana ~1840 µs < 3000 µs) |
 | 8.10 Fechamento da etapa 8 | **concluída** (documentação, patches e relatório com veredito IGUAL) |
+
+## Otimizações de síntese e medidas em WebAssembly (17/11/2026)
+
+Durante a remediação de desempenho, o sintetizador e o misturador receberam otimizações mantendo exatidão total de bits:
+- O avanço de FM e PSG salta ciclos sem escritas em laço interno (`crates/audio/src/sintetizador.rs`).
+- `avancar_ate_compacto` entrega fatias `(i16, i16)` e `u16`, eliminando a cópia de 104 bytes por amostra FM.
+- `processar_mono` no reamostrador sinc executa uma única convolução para o sinal mono do PSG.
+- Desempenho nativo de síntese e saída (`WEBSONIC_BENCH=1 cargo test -p sonic1-audio-saida --release --test desempenho`): mediana de 2539 us (orçamento de 3000 us).
+- Medição completa em Wasm (`partida-ghz1`, via `node --test site/tests/desempenho-wasm.test.mjs`): média de 6,70 ms por quadro com vídeo e áudio juntos.
+- Fidelidade preservada: hash de 7.200 quadros `b8d4a450a5baf18634d191411896fd5caad98d6e` em `console_hashes` e 17.509 quadros aprovados em `guarda_rom`.
