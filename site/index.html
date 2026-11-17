@@ -365,6 +365,65 @@
       opacity: 1;
     }
 
+    /* HUD de Performance e FPS */
+    .hud-performance {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(8, 12, 20, 0.88);
+      border: 1px solid rgba(0, 212, 255, 0.4);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--text-main);
+      z-index: 20;
+      pointer-events: none;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      user-select: none;
+    }
+
+    .hud-linha-topo {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 12px;
+    }
+
+    .hud-destaque {
+      font-size: 1rem;
+      font-weight: 800;
+      color: var(--sonic-cyan);
+    }
+
+    .hud-secundario {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+    }
+
+    .hud-linha-detalhe {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 0.7rem;
+      color: var(--text-muted);
+    }
+
+    .hud-linha-detalhe b {
+      color: var(--text-main);
+    }
+
+    #hud-grafico {
+      width: 160px;
+      height: 40px;
+      background: rgba(0, 0, 0, 0.5);
+      border-radius: 4px;
+      margin-top: 2px;
+    }
+
     #container-tela:fullscreen {
       width: 100vw;
       height: 100vh;
@@ -619,6 +678,7 @@
         </div>
       </div>
       <div class="controles-grupo">
+        <button id="btn-hud" type="button" class="btn btn-cinza" title="Alternar HUD de FPS e Performance (Tecla F3)">📊 FPS (F3)</button>
         <div class="slider-volume-grupo">
           <button id="btn-mudo" type="button" class="btn btn-cinza" title="Alternar som">🔊</button>
           <input type="range" id="slider-volume" class="slider-volume" min="0" max="1" step="0.05" value="1" title="Volume Geral">
@@ -631,6 +691,17 @@
     <div id="container-tela">
       <canvas id="tela" width="320" height="224" tabindex="0" hidden></canvas>
       <div id="camada-crt" class="camada-crt"></div>
+      <div id="hud-performance" class="hud-performance" hidden>
+        <div class="hud-linha-topo">
+          <span id="hud-fps" class="hud-destaque">60.0 FPS</span>
+          <span id="hud-hz" class="hud-secundario">60.0 Hz sim</span>
+        </div>
+        <div class="hud-linha-detalhe">
+          <span>Quadro: <b id="hud-frame-time">0.0 ms</b></span>
+          <span>Wasm: <b id="hud-wasm-time">0.0 ms</b></span>
+        </div>
+        <canvas id="hud-grafico" width="160" height="40"></canvas>
+      </div>
     </div>
 
     <p id="aviso" hidden>🎮 Jogo carregado e áudio sincronizado. Clique na tela para focar e pressione <b>Start</b> (Enter ou Espaço) para jogar!</p>
@@ -696,6 +767,8 @@
           <tr><td style="width: 45%;"><b>Estado do Áudio no Navegador:</b></td><td id="diag-estado" class="diag-mudo">Aguardando inicialização</td></tr>
           <tr><td><b>Taxa de Amostragem do Navegador:</b></td><td id="diag-taxa">-</td></tr>
           <tr><td><b>Pipeline em Uso:</b></td><td id="diag-pipeline">-</td></tr>
+          <tr><td><b>Taxa Apresentada (FPS real):</b></td><td id="diag-fps" class="diag-ativo">-</td></tr>
+          <tr><td><b>Tempo de Quadro Wasm (médio / p95):</b></td><td id="diag-tempo-wasm">-</td></tr>
           <tr><td><b>Quadro Atual do Jogo:</b></td><td id="diag-quadro">0 (0.0s)</td></tr>
           <tr><td><b>Amostras geradas no quadro:</b></td><td id="diag-amostras">0</td></tr>
           <tr>

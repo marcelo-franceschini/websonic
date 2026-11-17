@@ -18,6 +18,7 @@ const barraControles = document.getElementById("barra-controles");
 const seletorFps = document.getElementById("seletor-fps");
 const seletorCrt = document.getElementById("seletor-crt");
 const btnFullscreen = document.getElementById("btn-fullscreen");
+const btnHud = document.getElementById("btn-hud");
 const btnMudo = document.getElementById("btn-mudo");
 const sliderVolume = document.getElementById("slider-volume");
 const painelTeclas = document.getElementById("painel-teclas");
@@ -26,6 +27,15 @@ const painelTeclas = document.getElementById("painel-teclas");
 const badgeAudio = document.getElementById("badge-audio");
 const badgeGamepad = document.getElementById("badge-gamepad");
 
+// HUD de Performance e Profiler
+const hudPerformance = document.getElementById("hud-performance");
+const elHudFps = document.getElementById("hud-fps");
+const elHudHz = document.getElementById("hud-hz");
+const elHudFrameTime = document.getElementById("hud-frame-time");
+const elHudWasmTime = document.getElementById("hud-wasm-time");
+const canvasHudGrafico = document.getElementById("hud-grafico");
+const ctxHudGrafico = canvasHudGrafico ? canvasHudGrafico.getContext("2d") : null;
+
 // Painel de Telemetria e Diagnostico
 const btnToggleDiag = document.getElementById("btn-toggle-diag");
 const painelDiag = document.getElementById("painel-diag");
@@ -33,6 +43,8 @@ const diagSeta = document.getElementById("diag-seta");
 const elDiagEstado = document.getElementById("diag-estado");
 const elDiagTaxa = document.getElementById("diag-taxa");
 const elDiagPipeline = document.getElementById("diag-pipeline");
+const elDiagFps = document.getElementById("diag-fps");
+const elDiagTempoWasm = document.getElementById("diag-tempo-wasm");
 const elDiagQuadro = document.getElementById("diag-quadro");
 const elDiagAmostras = document.getElementById("diag-amostras");
 const elDiagPico = document.getElementById("diag-pico");
@@ -67,6 +79,80 @@ let fpsDesbloqueado = false;
 
 // Referencia ao modulo Wasm instanciado
 let wasmInstance = null;
+
+// Profiler e Telemetria de Performance em Tempo Real
+let hudVisivel = false;
+const HISTORICO_TEMPOS_MAX = 80;
+const historicoFrameTime = new Float32Array(HISTORICO_TEMPOS_MAX);
+const historicoWasmTime = new Float32Array(HISTORICO_TEMPOS_MAX);
+let indiceHistorico = 0;
+let totalHistorico = 0;
+
+let ultimoTimestampRaf = 0;
+let contadorApresentacoes = 0;
+let acumuladorFpsTempo = 0;
+let fpsApresentado = 60.0;
+let simulacaoHz = 60.0;
+let ultimoQuadroSim = 0;
+let ultimoTempoHz = 0;
+let ultimoWasmTime = 0;
+let ultimoFrameTime = 0;
+
+function alternarHud() {
+  hudVisivel = !hudVisivel;
+  if (hudPerformance) hudPerformance.hidden = !hudVisivel;
+  if (btnHud) {
+    if (hudVisivel) {
+      btnHud.classList.add("btn-azul");
+      btnHud.classList.remove("btn-cinza");
+    } else {
+      btnHud.classList.remove("btn-azul");
+      btnHud.classList.add("btn-cinza");
+    }
+  }
+}
+
+if (btnHud) {
+  btnHud.addEventListener("click", alternarHud);
+}
+
+function desenharGraficoHud() {
+  if (!ctxHudGrafico || !hudVisivel) return;
+  const w = canvasHudGrafico.width;
+  const h = canvasHudGrafico.height;
+  ctxHudGrafico.clearRect(0, 0, w, h);
+
+  // Linhas de referencia: 16.67ms (60 FPS) e 33.33ms (30 FPS)
+  const y16 = Math.round(h - (16.67 * h / 40));
+  const y33 = Math.round(h - (33.33 * h / 40));
+
+  ctxHudGrafico.fillStyle = "rgba(0, 212, 255, 0.35)";
+  ctxHudGrafico.fillRect(0, y16, w, 1);
+
+  ctxHudGrafico.fillStyle = "rgba(239, 68, 68, 0.35)";
+  ctxHudGrafico.fillRect(0, y33, w, 1);
+
+  const n = Math.min(totalHistorico, HISTORICO_TEMPOS_MAX);
+  const larguraBarra = w / HISTORICO_TEMPOS_MAX;
+
+  for (let i = 0; i < n; i++) {
+    const idx = (indiceHistorico - n + i + HISTORICO_TEMPOS_MAX) % HISTORICO_TEMPOS_MAX;
+    const tempo = historicoFrameTime[idx];
+    const altura = Math.min(h, Math.max(1, Math.round((tempo / 40) * h)));
+    const x = i * larguraBarra;
+    const y = h - altura;
+
+    if (tempo <= 16.67) {
+      ctxHudGrafico.fillStyle = "#10b981"; // Verde (< 16.67ms)
+    } else if (tempo <= 33.33) {
+      ctxHudGrafico.fillStyle = "#ffbe0b"; // Amarelo (16.67 a 33.33ms)
+    } else {
+      ctxHudGrafico.fillStyle = "#ef4444"; // Vermelho (> 33.33ms)
+    }
+
+    ctxHudGrafico.fillRect(x, y, Math.max(1, larguraBarra - 0.5), altura);
+  }
+}
 
 function mostrar(valida, veredito, sha1, tamanho) {
   caixa.hidden = false;
@@ -606,6 +692,11 @@ window.addEventListener("keydown", (e) => {
     e.preventDefault();
     return;
   }
+  if (e.code === "F3" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    alternarHud();
+    e.preventDefault();
+    return;
+  }
 
   const b = MAPA_TECLAS_CODE[e.code] || MAPA_TECLAS_KEY[e.key];
   if (b) {
@@ -752,6 +843,19 @@ function laco(agora, sessao) {
   animacao = 0;
   if (!jogo || sessao !== geracao || document.hidden) return;
 
+  const inicioQuadro = performance.now();
+  if (ultimoTimestampRaf > 0) {
+    const deltaRaf = agora - ultimoTimestampRaf;
+    contadorApresentacoes++;
+    acumuladorFpsTempo += deltaRaf;
+    if (acumuladorFpsTempo >= 400) {
+      fpsApresentado = (contadorApresentacoes * 1000) / acumuladorFpsTempo;
+      contadorApresentacoes = 0;
+      acumuladorFpsTempo = 0;
+    }
+  }
+  ultimoTimestampRaf = agora;
+
   const passos = relogio.avancar(agora);
   let atualizou = false;
 
@@ -763,7 +867,12 @@ function laco(agora, sessao) {
     jogo.botoes(estadoControles);
 
     if (fallbackNode) jogo.ocupacao_audio(fallbackNode.ocupacao());
+
+    const inicioWasm = performance.now();
     jogo.simular_quadro();
+    ultimoWasmTime = performance.now() - inicioWasm;
+    historicoWasmTime[indiceHistorico] = ultimoWasmTime;
+
     atualizou = true;
 
     const ptrAudio = jogo.audio_ptr();
@@ -830,6 +939,26 @@ function laco(agora, sessao) {
       const strQuadrosSom = `${quadrosComSom} quadros`;
       if (elDiagQuadrosSom.textContent !== strQuadrosSom) elDiagQuadrosSom.textContent = strQuadrosSom;
 
+      if (elDiagFps) {
+        const strFps = `${fpsApresentado.toFixed(1)} FPS (simulação: ${simulacaoHz.toFixed(1)} Hz)`;
+        if (elDiagFps.textContent !== strFps) elDiagFps.textContent = strFps;
+      }
+
+      if (elDiagTempoWasm) {
+        let soma = 0;
+        const n = Math.min(totalHistorico, HISTORICO_TEMPOS_MAX);
+        const copia = [];
+        for (let i = 0; i < n; i++) {
+          soma += historicoWasmTime[i];
+          copia.push(historicoWasmTime[i]);
+        }
+        copia.sort((a, b) => a - b);
+        const media = n > 0 ? soma / n : 0;
+        const p95 = n > 0 ? copia[Math.floor(n * 0.95)] : 0;
+        const strTempo = `${media.toFixed(2)} ms (p95: ${p95.toFixed(2)} ms)`;
+        if (elDiagTempoWasm.textContent !== strTempo) elDiagTempoWasm.textContent = strTempo;
+      }
+
       atualizarEstadoAudioUI();
     }
 
@@ -849,6 +978,28 @@ function laco(agora, sessao) {
   } else if (atualizou) {
     // Apresenta estritamente no ritmo de 60Hz
     apresentar();
+  }
+
+  const fimQuadro = performance.now();
+  ultimoFrameTime = fimQuadro - inicioQuadro;
+  historicoFrameTime[indiceHistorico] = ultimoFrameTime;
+  indiceHistorico = (indiceHistorico + 1) % HISTORICO_TEMPOS_MAX;
+  totalHistorico = Math.min(totalHistorico + 1, HISTORICO_TEMPOS_MAX);
+
+  if (agora - ultimoTempoHz >= 500) {
+    const deltaQuadros = quadroNum - ultimoQuadroSim;
+    const deltaTempo = agora - ultimoTempoHz;
+    simulacaoHz = deltaTempo > 0 ? (deltaQuadros * 1000) / deltaTempo : 60.0;
+    ultimoQuadroSim = quadroNum;
+    ultimoTempoHz = agora;
+  }
+
+  if (hudVisivel) {
+    if (elHudFps) elHudFps.textContent = `${fpsApresentado.toFixed(1)} FPS`;
+    if (elHudHz) elHudHz.textContent = `${simulacaoHz.toFixed(1)} Hz sim`;
+    if (elHudFrameTime) elHudFrameTime.textContent = `${ultimoFrameTime.toFixed(1)} ms`;
+    if (elHudWasmTime) elHudWasmTime.textContent = `${ultimoWasmTime.toFixed(1)} ms`;
+    desenharGraficoHud();
   }
 
   if (funcaoRafAtual) animacao = requestAnimationFrame(funcaoRafAtual);
