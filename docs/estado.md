@@ -4,7 +4,7 @@ Documento de acompanhamento do progresso das etapas.
 
 ## Trabalho iniciado em 13/11/2026: caminho web
 
-- O laço web usa o período NTSC (896040 ciclos em 53693175 Hz), acumula passos atrasados e pausa em aba oculta. A taxa real do AudioContext configura a reamostragem; a troca de jogo limpa a fila de áudio.
+- O laço web roda a 60 Hz exatos (1000 / 60 ms por quadro conforme o requisito), acumula passos atrasados e pausa em aba oculta. A taxa real do AudioContext configura a reamostragem ajustada para 60 Hz; a troca de jogo limpa a fila de áudio.
 - O controlador de reamostragem recebe a ocupação da fila do navegador e reduz a produção quando ela está cheia. O teste `fila_cheia_reduz_a_quantidade_de_audio_produzido` verifica a direção do ajuste.
 - O navegador aceita teclado e gamepad padrão, incluindo direcional, analógico esquerdo, três botões e Start. O teclado é liberado quando a janela perde foco.
 - `node --test site/tests/relogio.test.mjs site/tests/audio-worklet.test.cjs` verifica o acumulador a 60, 120 e 144 Hz, a recuperação de atrasos, pausa e fila de áudio.

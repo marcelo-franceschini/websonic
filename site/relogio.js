@@ -1,5 +1,5 @@
-// Relógio mestre NTSC e acumulador de quadros da simulação.
-export const PERIODO_QUADRO = 1000 * 896040 / 53693175;
+// Relógio de 60 Hz exatos conforme o requisito do projeto.
+export const PERIODO_QUADRO = 1000 / 60;
 
 export class Relogio {
   constructor() {
@@ -24,10 +24,10 @@ export class Relogio {
     if (this.acumulado > PERIODO_QUADRO * 10) {
       this.acumulado = PERIODO_QUADRO * 10;
     }
-    // Janela de estabilizacao para V-Sync em ~60 Hz (entre 0.75 e 1.75 quadros):
+    // Janela de estabilizacao para V-Sync em ~60 Hz (entre 0.8 e 1.75 quadros):
     // Elimina micro-stutter e jitter sem alterar a contagem acumulada em testes sinteticos.
     let passos = 0;
-    if (this.acumulado >= PERIODO_QUADRO * 0.75 && this.acumulado < PERIODO_QUADRO * 1.75) {
+    if (this.acumulado >= PERIODO_QUADRO * 0.8 && this.acumulado < PERIODO_QUADRO * 1.75) {
       passos = 1;
       this.acumulado -= PERIODO_QUADRO;
     } else {

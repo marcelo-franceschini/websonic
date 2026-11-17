@@ -793,7 +793,9 @@ async function iniciar(bytes) {
 
   try {
     const anterior = jogo;
-    jogo = Jogo.criar_com_audio(bytes, audioCtx ? audioCtx.sampleRate : 48000);
+    const taxaBase = audioCtx ? audioCtx.sampleRate : 48000;
+    const taxaAjustada = taxaBase * (53693175 / 896040) / 60;
+    jogo = Jogo.criar_com_audio(bytes, taxaAjustada);
     vistaImagem = null;
     if (anterior) anterior.free();
   } catch (e) {

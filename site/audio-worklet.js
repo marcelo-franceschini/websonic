@@ -15,7 +15,7 @@ class SonicAudioProcessor extends AudioWorkletProcessor {
     this.falhas = 0;
     this.descartadas = 0;
     this.iniciado = false;
-    this.preenchimentoInicial = Math.ceil(sampleRate * 3 * 896040 / 53693175);
+    this.preenchimentoInicial = Math.ceil(sampleRate * 3 / 60);
     this.preenchimentoRetomada = 128;
     this.tevePrimeiraPartida = false;
     this.ultimoL = 0;
