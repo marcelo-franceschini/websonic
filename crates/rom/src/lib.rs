@@ -66,10 +66,16 @@ pub fn identificar_com(
     tamanho_esperado: usize,
     sha1_esperado: &str,
 ) -> Identificacao {
-    let hash = em_hex(&sha1(dados));
-    let veredito = if dados.is_empty() {
+    // Descarta cabecalho SMD de 512 bytes se presente (copiadores Super Magic Drive).
+    let conteudo = if dados.len() == tamanho_esperado.saturating_add(512) {
+        &dados[512..]
+    } else {
+        dados
+    };
+    let hash = em_hex(&sha1(conteudo));
+    let veredito = if conteudo.is_empty() {
         Veredito::Recusada(Motivo::Vazia)
-    } else if dados.len() != tamanho_esperado {
+    } else if conteudo.len() != tamanho_esperado {
         Veredito::Recusada(Motivo::TamanhoDiferente {
             esperado: tamanho_esperado,
             obtido: dados.len(),
@@ -81,7 +87,7 @@ pub fn identificar_com(
     };
     Identificacao {
         sha1: hash,
-        tamanho: dados.len(),
+        tamanho: conteudo.len(),
         veredito,
     }
 }
@@ -144,6 +150,15 @@ mod testes {
     fn aceita_quando_tamanho_e_hash_conferem() {
         let r = identificar_com(b"abc", 3, "a9993e364706816aba3e25717850c26c9cd0d89d");
         assert_eq!(r.veredito, Veredito::Rev01);
+    }
+
+    #[test]
+    fn aceita_com_cabecalho_smd_de_512_bytes() {
+        let mut dados = vec![0u8; 512];
+        dados.extend_from_slice(b"abc");
+        let r = identificar_com(&dados, 3, "a9993e364706816aba3e25717850c26c9cd0d89d");
+        assert_eq!(r.veredito, Veredito::Rev01);
+        assert_eq!(r.tamanho, 3);
     }
 
     #[test]

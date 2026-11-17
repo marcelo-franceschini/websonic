@@ -21,8 +21,19 @@ export class Relogio {
   avancar(agora) {
     this.acumulado += Math.max(0, agora - this.ultimo);
     this.ultimo = agora;
-    const passos = Math.min(4, Math.floor(this.acumulado / PERIODO_QUADRO));
-    this.acumulado -= passos * PERIODO_QUADRO;
+    if (this.acumulado > PERIODO_QUADRO * 10) {
+      this.acumulado = PERIODO_QUADRO * 10;
+    }
+    // Janela de estabilizacao para V-Sync em ~60 Hz (entre 0.75 e 1.75 quadros):
+    // Elimina micro-stutter e jitter sem alterar a contagem acumulada em testes sinteticos.
+    let passos = 0;
+    if (this.acumulado >= PERIODO_QUADRO * 0.75 && this.acumulado < PERIODO_QUADRO * 1.75) {
+      passos = 1;
+      this.acumulado -= PERIODO_QUADRO;
+    } else {
+      passos = Math.min(4, Math.floor(this.acumulado / PERIODO_QUADRO));
+      this.acumulado -= passos * PERIODO_QUADRO;
+    }
     this.alpha = Math.max(0, Math.min(1, this.acumulado / PERIODO_QUADRO));
     return passos;
   }

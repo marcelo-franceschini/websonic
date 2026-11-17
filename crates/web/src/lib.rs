@@ -80,9 +80,10 @@ impl Jogo {
 impl Jogo {
     /// Cria o jogo. Só aceita a REV01: qualquer outro arquivo é recusado.
     pub fn criar(dados: &[u8]) -> Result<Jogo, String> {
-        let id = identificar_rom(dados);
+        let limpos = if dados.len() == 524_288 + 512 { &dados[512..] } else { dados };
+        let id = identificar_rom(limpos);
         match id.veredito {
-            Veredito::Rev01 => Ok(Self::sem_validar(dados.to_vec())),
+            Veredito::Rev01 => Ok(Self::sem_validar(limpos.to_vec())),
             Veredito::Recusada(m) => Err(m.descricao()),
         }
     }
@@ -92,10 +93,11 @@ impl Jogo {
         if !taxa_audio.is_finite() || !(3_000.0..=768_000.0).contains(&taxa_audio) {
             return Err("Taxa de áudio inválida".into());
         }
-        let id = identificar_rom(dados);
+        let limpos = if dados.len() == 524_288 + 512 { &dados[512..] } else { dados };
+        let id = identificar_rom(limpos);
         match id.veredito {
             Veredito::Rev01 => Ok(Self {
-                console: Console::com_taxa_audio(dados.to_vec(), taxa_audio),
+                console: Console::com_taxa_audio(limpos.to_vec(), taxa_audio),
             }),
             Veredito::Recusada(m) => Err(m.descricao()),
         }
@@ -153,6 +155,20 @@ impl Jogo {
             .unwrap_or_default()
     }
 
+    pub fn camadas_gpu_ptr(&self) -> *const u8 {
+        self.console
+            .quadro_gpu()
+            .map(|q| q.camadas().as_ptr())
+            .unwrap_or(std::ptr::null())
+    }
+
+    pub fn camadas_gpu_len(&self) -> usize {
+        self.console
+            .quadro_gpu()
+            .map(|q| q.camadas().len())
+            .unwrap_or(0)
+    }
+
     pub fn seletores_gpu(&self) -> Vec<u16> {
         self.console
             .quadro_gpu()
@@ -160,11 +176,30 @@ impl Jogo {
             .unwrap_or_default()
     }
 
-    pub fn sprites_gpu(&self) -> Vec<u8> {
+    pub fn seletores_gpu_ptr(&self) -> *const u16 {
         self.console
             .quadro_gpu()
-            .map(|q| q.sprites_compactos())
-            .unwrap_or_default()
+            .map(|q| q.seletores().as_ptr())
+            .unwrap_or(std::ptr::null())
+    }
+
+    pub fn seletores_gpu_len(&self) -> usize {
+        self.console
+            .quadro_gpu()
+            .map(|q| q.seletores().len())
+            .unwrap_or(0)
+    }
+
+    pub fn sprites_gpu(&self) -> Vec<u8> {
+        self.console.sprites_gpu_slice().to_vec()
+    }
+
+    pub fn sprites_gpu_ptr(&self) -> *const u8 {
+        self.console.sprites_gpu_slice().as_ptr()
+    }
+
+    pub fn sprites_gpu_len(&self) -> usize {
+        self.console.sprites_gpu_slice().len()
     }
 
     pub fn fundos_gpu(&self) -> Vec<u8> {
@@ -174,11 +209,39 @@ impl Jogo {
             .unwrap_or_default()
     }
 
+    pub fn fundos_gpu_ptr(&self) -> *const u8 {
+        self.console
+            .quadro_gpu()
+            .map(|q| q.fundos().as_ptr())
+            .unwrap_or(std::ptr::null())
+    }
+
+    pub fn fundos_gpu_len(&self) -> usize {
+        self.console
+            .quadro_gpu()
+            .map(|q| q.fundos().len())
+            .unwrap_or(0)
+    }
+
     pub fn paletas_gpu(&self) -> Vec<u16> {
         self.console
             .quadro_gpu()
             .map(|q| q.paletas().to_vec())
             .unwrap_or_default()
+    }
+
+    pub fn paletas_gpu_ptr(&self) -> *const u16 {
+        self.console
+            .quadro_gpu()
+            .map(|q| q.paletas().as_ptr())
+            .unwrap_or(std::ptr::null())
+    }
+
+    pub fn paletas_gpu_len(&self) -> usize {
+        self.console
+            .quadro_gpu()
+            .map(|q| q.paletas().len())
+            .unwrap_or(0)
     }
 
     /// Informa quantos pares estéreo ainda aguardam reprodução.
@@ -194,6 +257,21 @@ impl Jogo {
     /// Devolve as amostras de áudio estereo geradas no último quadro (Float32Array intercalado).
     pub fn audio(&mut self) -> Vec<f32> {
         self.console.extrair_audio()
+    }
+
+    /// Ponteiro direto para o buffer de áudio na memória Wasm (zero-copy).
+    pub fn audio_ptr(&self) -> *const f32 {
+        self.console.audio_slice().as_ptr()
+    }
+
+    /// Comprimento do buffer de áudio (número de floats).
+    pub fn audio_len(&self) -> usize {
+        self.console.audio_slice().len()
+    }
+
+    /// Modo atual de jogo (0 = Sega, 4 = Titulo, 8 = Demo, 0x0C = Level, etc).
+    pub fn modo_jogo(&self) -> u8 {
+        self.console.modo_jogo()
     }
 
     /// Hash da imagem de 9 bits do último quadro, em hexadecimal (para conferir com o relatório).

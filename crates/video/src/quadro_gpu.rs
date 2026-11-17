@@ -176,12 +176,14 @@ impl QuadroGpu {
         &self.sprites
     }
 
-    /// Empacota o mesmo número de candidatos por linha; linhas menores são zeradas.
-    pub fn sprites_compactos(&self) -> Vec<u8> {
+    /// Empacota o mesmo número de candidatos por linha reutilizando o vetor de destino.
+    pub fn sprites_compactos_em(&self, saida: &mut Vec<u8>) {
         let quantidade = self.contagens.iter().copied().max().unwrap_or(0).max(1);
         let n = usize::from(quantidade);
         let tamanho_linha = self.largura.saturating_mul(n).saturating_mul(2);
-        let mut saida = vec![0; self.altura.saturating_mul(tamanho_linha)];
+        let total = self.altura.saturating_mul(tamanho_linha);
+        saida.resize(total, 0);
+        saida.fill(0);
         for (y, contagem) in self.contagens.iter().copied().enumerate() {
             let origem = y
                 .saturating_mul(self.largura)
@@ -198,6 +200,12 @@ impl QuadroGpu {
                 b.copy_from_slice(a);
             }
         }
+    }
+
+    /// Empacota o mesmo número de candidatos por linha; linhas menores são zeradas.
+    pub fn sprites_compactos(&self) -> Vec<u8> {
+        let mut saida = Vec::new();
+        self.sprites_compactos_em(&mut saida);
         saida
     }
     pub fn fundos(&self) -> &[u8] {

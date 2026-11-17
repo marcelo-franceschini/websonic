@@ -16,6 +16,8 @@ class SonicAudioProcessor extends AudioWorkletProcessor {
     this.descartadas = 0;
     this.iniciado = false;
     this.preenchimentoInicial = Math.ceil(sampleRate * 3 * 896040 / 53693175);
+    this.preenchimentoRetomada = 128;
+    this.tevePrimeiraPartida = false;
     this.ultimoL = 0;
     this.ultimoR = 0;
     this.chamadasProcess = 0;
@@ -28,6 +30,7 @@ class SonicAudioProcessor extends AudioWorkletProcessor {
         this.falhas = 0;
         this.descartadas = 0;
         this.iniciado = false;
+        this.tevePrimeiraPartida = false;
         return;
       }
       const dados = e.data instanceof Float32Array ? e.data : new Float32Array(e.data);
@@ -54,8 +57,10 @@ class SonicAudioProcessor extends AudioWorkletProcessor {
     const outR = out.length > 1 ? out[1] : null;
     const n = outL.length; // Normalmente 128 amostras
 
-    if (!this.iniciado && this.disponiveis >= this.preenchimentoInicial) {
+    const limiar = this.tevePrimeiraPartida ? this.preenchimentoRetomada : this.preenchimentoInicial;
+    if (!this.iniciado && this.disponiveis >= limiar) {
       this.iniciado = true;
+      this.tevePrimeiraPartida = true;
     }
 
     for (let i = 0; i < n; i++) {
@@ -84,7 +89,7 @@ class SonicAudioProcessor extends AudioWorkletProcessor {
       }
     }
 
-    if (this.chamadasProcess % 30 === 0) {
+    if (this.chamadasProcess % 6 === 0) {
       this.port.postMessage({
         tipo: "status",
         disponiveis: this.disponiveis,

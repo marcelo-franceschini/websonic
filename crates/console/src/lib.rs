@@ -267,6 +267,7 @@ pub struct Console {
     amostras_fm: Vec<AmostraFm>,
     amostras_psg: Vec<AmostraPsg>,
     quadros_lag_pendentes: u32,
+    buffer_sprites_gpu: Vec<u8>,
 }
 
 impl Console {
@@ -296,6 +297,7 @@ impl Console {
             amostras_fm: Vec::new(),
             amostras_psg: Vec::new(),
             quadros_lag_pendentes: 0,
+            buffer_sprites_gpu: Vec::new(),
         }
     }
 
@@ -436,22 +438,43 @@ impl Console {
         self.buffer_audio_quadro.clear();
         let disp = self.misturador.ocupacao_buffer();
         if disp > 0 {
-            let mut bloco = vec![0.0f32; disp.wrapping_mul(2)];
-            self.misturador.extrair_bloco_worklet(&mut bloco);
-            self.buffer_audio_quadro = bloco;
+            let total = disp.saturating_mul(2);
+            self.buffer_audio_quadro.resize(total, 0.0);
+            self.misturador.extrair_bloco_worklet(&mut self.buffer_audio_quadro);
         }
 
-        if imagem {
+        let resultado = if imagem {
             self.ponte.fechar_quadro()
         } else {
             self.ponte.rend.fechar_quadro();
             Vec::new()
+        };
+
+        if let Some(q) = self.ponte.rend.quadro_gpu() {
+            q.sprites_compactos_em(&mut self.buffer_sprites_gpu);
         }
+
+        resultado
+    }
+
+    /// Modo atual de jogo (0 = Sega, 4 = Titulo, 8 = Demo, 0x0C = Level, etc).
+    pub fn modo_jogo(&self) -> u8 {
+        self.ab.mem.ram()[0xF600]
+    }
+
+    /// Fatia compactada dos sprites gerados para a GPU no último quadro.
+    pub fn sprites_gpu_slice(&self) -> &[u8] {
+        &self.buffer_sprites_gpu
     }
 
     /// Devolve as amostras de áudio estereo geradas no último quadro (intercaladas: L, R, L, R...).
     pub fn extrair_audio(&mut self) -> Vec<f32> {
         std::mem::take(&mut self.buffer_audio_quadro)
+    }
+
+    /// Fatia das amostras de áudio estereo geradas no último quadro.
+    pub fn audio_slice(&self) -> &[f32] {
+        &self.buffer_audio_quadro
     }
 
     pub fn hash_da_imagem(&self) -> u64 {

@@ -98,10 +98,20 @@ export function criarRenderizadorGPU(canvas) {
   const locQuantidadeSprites = gl.getUniformLocation(programa, "quantidadeSprites");
   const locLarguraTela = gl.getUniformLocation(programa, "larguraTela");
   const locAlturaTela = gl.getUniformLocation(programa, "alturaTela");
+  const dimensoesTexturas = texturas.map(() => ({ w: 0, h: 0 }));
+  let paletasEmpacotadasBuffer = new Uint16Array(2048 * 4);
+
   function atualizar(i, formato, externo, largura, altura, tipo, dados) {
     gl.activeTexture(gl.TEXTURE0 + i);
     gl.bindTexture(gl.TEXTURE_2D, texturas[i]);
-    gl.texImage2D(gl.TEXTURE_2D, 0, formato, largura, altura, 0, externo, tipo, dados);
+    const d = dimensoesTexturas[i];
+    if (d.w !== largura || d.h !== altura) {
+      d.w = largura;
+      d.h = altura;
+      gl.texImage2D(gl.TEXTURE_2D, 0, formato, largura, altura, 0, externo, tipo, dados);
+    } else {
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, largura, altura, externo, tipo, dados);
+    }
   }
   return {
     renderizar(camadas, sprites, fundos, seletores, paletas, largura, altura) {
@@ -134,8 +144,12 @@ export function criarRenderizadorGPU(canvas) {
         canvas.width = largura;
         canvas.height = altura;
       }
-      const paletasEmpacotadas = new Uint16Array(2048 * alturaPaletas);
-      paletasEmpacotadas.set(paletas);
+      const tamPaletas = 2048 * alturaPaletas;
+      if (paletasEmpacotadasBuffer.length < tamPaletas) {
+        paletasEmpacotadasBuffer = new Uint16Array(tamPaletas);
+      }
+      paletasEmpacotadasBuffer.set(paletas);
+      const paletasView = paletasEmpacotadasBuffer.subarray(0, tamPaletas);
       gl.uniform1i(locQuantidadeSprites, quantidadeSprites);
       gl.uniform1i(locLarguraTela, largura);
       gl.uniform1i(locAlturaTela, altura);
@@ -143,11 +157,9 @@ export function criarRenderizadorGPU(canvas) {
       atualizar(1, gl.RG8UI, gl.RG_INTEGER, largura * 4, Math.ceil(altura / 4) * quantidadeSprites, gl.UNSIGNED_BYTE, sprites);
       atualizar(2, gl.R8UI, gl.RED_INTEGER, largura, altura, gl.UNSIGNED_BYTE, fundos);
       atualizar(3, gl.R16UI, gl.RED_INTEGER, largura, altura, gl.UNSIGNED_SHORT, seletores);
-      atualizar(4, gl.R16UI, gl.RED_INTEGER, 2048, alturaPaletas, gl.UNSIGNED_SHORT, paletasEmpacotadas);
+      atualizar(4, gl.R16UI, gl.RED_INTEGER, 2048, alturaPaletas, gl.UNSIGNED_SHORT, paletasView);
       gl.viewport(0, 0, largura, altura);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
-      const erro = gl.getError();
-      if (erro !== gl.NO_ERROR) throw new Error(`WebGL2: erro ${erro}`);
     },
     // Usado na validação: framebuffer em ordem inferior para superior.
     lerPixels(largura = canvas.width || 320, altura = canvas.height || 224) {

@@ -247,11 +247,11 @@ fn andar_o_sonic(m: &mut Memoria) -> bool {
     x >= 0x1C00
 }
 
-/// `andi.b #btnStart,(v_jpadpress1).w` e `beq`: a instrução grava o byte mascarado de volta.
+/// Confere se o Start foi pressionado ou esta sendo segurado.
 fn start_apertado(m: &mut Memoria) -> bool {
-    let start = rb(m, V_JPADPRESS1) & BTN_START;
-    wb(m, V_JPADPRESS1, start);
-    start != 0
+    let press = rb(m, V_JPADPRESS1) & BTN_START;
+    let hold = rb(m, V_JPADHOLD1) & BTN_START;
+    (press | hold) != 0
 }
 
 /// `adda.w`: a palavra entra com sinal na soma do endereço.
