@@ -439,11 +439,12 @@ pub fn varrer_sprites(
     travados: &[SpriteEmCache],
     linha: u16,
     limite_pular: u32,
-) -> (Vec<u8>, bool) {
+    ids: &mut Vec<u8>,
+) -> bool {
+    ids.clear();
     let total: u32 = 80;
     let maximo = total.saturating_sub(limite_pular);
     let linha_sprite = INICIO_SPRITES.wrapping_add(linha) & 0x1ff;
-    let mut ids = Vec::with_capacity(20);
     let mut estourou = false;
     let mut idx: usize = 0;
     for _ in 0..maximo {
@@ -462,7 +463,7 @@ pub fn varrer_sprites(
             break;
         }
     }
-    (ids, estourou)
+    estourou
 }
 
 /// Fase 3: desenha os sprites já buscados da `linha`. `pular_tiles` reduz o limite de 40 tiles.
@@ -753,12 +754,13 @@ mod testes {
             };
         }
         c[24].elo = 0;
-        let (ids, estouro) = varrer_sprites(&c, 0, 0);
+        let mut ids = Vec::new();
+        let estouro = varrer_sprites(&c, 0, 0, &mut ids);
         assert_eq!(ids.len(), 20);
         assert!(estouro);
         // Com 20 exatos nao estoura.
         c[19].elo = 0;
-        let (ids, estouro) = varrer_sprites(&c, 0, 0);
+        let estouro = varrer_sprites(&c, 0, 0, &mut ids);
         assert_eq!(ids.len(), 20);
         assert!(!estouro);
     }
@@ -772,10 +774,15 @@ mod testes {
             alt: 2,
             elo: 0,
         }; // linhas 8 a 23
-        assert_eq!(varrer_sprites(&c, 7, 0).0.len(), 0);
-        assert_eq!(varrer_sprites(&c, 8, 0).0.len(), 1);
-        assert_eq!(varrer_sprites(&c, 23, 0).0.len(), 1);
-        assert_eq!(varrer_sprites(&c, 24, 0).0.len(), 0);
+        let mut ids = Vec::new();
+        varrer_sprites(&c, 7, 0, &mut ids);
+        assert_eq!(ids.len(), 0);
+        varrer_sprites(&c, 8, 0, &mut ids);
+        assert_eq!(ids.len(), 1);
+        varrer_sprites(&c, 23, 0, &mut ids);
+        assert_eq!(ids.len(), 1);
+        varrer_sprites(&c, 24, 0, &mut ids);
+        assert_eq!(ids.len(), 0);
     }
 
     struct Resultado {

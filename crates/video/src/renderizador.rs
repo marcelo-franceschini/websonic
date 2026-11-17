@@ -580,9 +580,8 @@ impl Renderizador {
             return;
         }
         let pular = u32::from(self.estado_sprites.pontos_desligados);
-        let (ids, estourou) = varrer_sprites(&self.cache_travado, proxima, pular);
+        let estourou = varrer_sprites(&self.cache_travado, proxima, pular, &mut self.varridos);
         let _ = estourou;
-        self.varridos = ids;
     }
 
     fn buscar_atributos(&mut self) {
