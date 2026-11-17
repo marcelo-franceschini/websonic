@@ -266,6 +266,10 @@ pub const DEMO_LEVELS: u32 = 0x3454;
 pub const BGM_FADE: u8 = 0xE0;
 /// Som do anel (`sfx_Ring`), tocado quando o código entra.
 pub const SFX_RING: u8 = 0xB5;
+/// `sfx_Death`: som de dano do Sonic (`HurtSonic`, `KillSonic`).
+pub const SFX_DEATH: u8 = 0xA3;
+/// `sfx_RingLoss`: anéis espalhados (`RLoss_Count`).
+pub const SFX_RINGLOSS: u8 = 0xC6;
 /// Modos de jogo (`id_Demo`, `id_Special`) e a zona `id_SBZ`.
 pub const ID_DEMO: u8 = 0x08;
 pub const ID_SPECIAL: u8 = 0x10;

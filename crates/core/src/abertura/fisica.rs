@@ -6,7 +6,7 @@
 //! física completa é da Etapa 9.
 
 use super::boot::{rom_b, rom_l, rom_w};
-use super::objetos::display_sprite;
+use super::objetos::{display_sprite, find_free_obj};
 use super::ram::*;
 use super::{ErroAbertura, rb, rl, rw, wb, wl, ww};
 use crate::memoria::Memoria;
@@ -1965,48 +1965,58 @@ pub fn add_points(m: &mut Memoria, d0: u32) {
     }
 }
 
+/// `HurtSonic`: sem escudo e com anéis, cria o objeto `RingLoss` na posição do Sonic (é ele
+/// que espalha e zera os anéis). Com escudo, só perde o escudo. Sem anéis, `KillSonic`, a
+/// menos que o modo de depuração esteja ligado.
 pub(crate) fn hurt_sonic(m: &mut Memoria, a2: u32) -> Result<(), ErroAbertura> {
     if rw(m, V_PLAYER.wrapping_add(SON_FLASHTIME)) != 0 {
         return Ok(());
     }
-    if rb(m, V_SHIELD) != 0 {
-        wb(m, V_SHIELD, 0);
-        wb(m, V_PLAYER.wrapping_add(OB_ROUTINE), 4);
-        sonic_reset_on_floor(m, V_PLAYER);
-        let status = rb(m, V_PLAYER.wrapping_add(OB_STATUS)) | STATUS_IN_AIR;
-        wb(m, V_PLAYER.wrapping_add(OB_STATUS), status);
-        ww(m, V_PLAYER.wrapping_add(OB_VELY), u16_de(-0x400i16));
-        let sonic_x = rw(m, V_PLAYER.wrapping_add(OB_X));
-        let obj_x = rw(m, a2.wrapping_add(OB_X));
-        let vx = if sonic_x < obj_x { -0x200i16 } else { 0x200i16 };
-        ww(m, V_PLAYER.wrapping_add(OB_VELX), u16_de(vx));
-        ww(m, V_PLAYER.wrapping_add(OB_INERTIA), 0);
-        wb(m, V_PLAYER.wrapping_add(OB_ANIM), ANIM_HURT);
-        ww(m, V_PLAYER.wrapping_add(SON_FLASHTIME), 120);
-        wb(m, V_SOUNDQUEUE1, 0xC6);
-        return Ok(());
+    if rb(m, V_SHIELD) == 0 {
+        if rw(m, V_RINGS) == 0 {
+            // `.hitWithoutRings`: com o modo de depuração, o Sonic sobrevive.
+            if rw(m, F_DEBUGMODE) == 0 {
+                kill_sonic(m);
+                return Ok(());
+            }
+        } else if let Some(a1) = find_free_obj(m) {
+            // Sem slot livre, o original segue sem perder os anéis.
+            wb(m, a1.wrapping_add(OB_ID), ID_RING_LOSS);
+            let x = rw(m, V_PLAYER.wrapping_add(OB_X));
+            let y = rw(m, V_PLAYER.wrapping_add(OB_Y));
+            ww(m, a1.wrapping_add(OB_X), x);
+            ww(m, a1.wrapping_add(OB_Y), y);
+        }
     }
-    let rings = rw(m, V_RINGS);
-    if rings > 0 {
-        super::ring_loss::soltar_aneis(m);
-        ww(m, V_RINGS, 0);
-        wb(m, F_RINGCOUNT, 1);
-        wb(m, V_PLAYER.wrapping_add(OB_ROUTINE), 4);
-        sonic_reset_on_floor(m, V_PLAYER);
-        let status = rb(m, V_PLAYER.wrapping_add(OB_STATUS)) | STATUS_IN_AIR;
-        wb(m, V_PLAYER.wrapping_add(OB_STATUS), status);
-        ww(m, V_PLAYER.wrapping_add(OB_VELY), u16_de(-0x400i16));
-        let sonic_x = rw(m, V_PLAYER.wrapping_add(OB_X));
-        let obj_x = rw(m, a2.wrapping_add(OB_X));
-        let vx = if sonic_x < obj_x { -0x200i16 } else { 0x200i16 };
-        ww(m, V_PLAYER.wrapping_add(OB_VELX), u16_de(vx));
-        ww(m, V_PLAYER.wrapping_add(OB_INERTIA), 0);
-        wb(m, V_PLAYER.wrapping_add(OB_ANIM), ANIM_HURT);
-        ww(m, V_PLAYER.wrapping_add(SON_FLASHTIME), 120);
-        wb(m, V_SOUNDQUEUE1, 0xC6);
-        return Ok(());
-    }
-    kill_sonic(m);
+    // `.bounceSonicAway`
+    wb(m, V_SHIELD, 0);
+    wb(m, V_PLAYER.wrapping_add(OB_ROUTINE), 4);
+    sonic_reset_on_floor(m, V_PLAYER);
+    let status = rb(m, V_PLAYER.wrapping_add(OB_STATUS)) | STATUS_IN_AIR;
+    wb(m, V_PLAYER.wrapping_add(OB_STATUS), status);
+    // Embaixo d'água, o empurrão é a metade.
+    let (vel_y, vel_x) = if status & STATUS_UNDERWATER != 0 {
+        (-0x200i16, -0x100i16)
+    } else {
+        (-0x400i16, -0x200i16)
+    };
+    ww(m, V_PLAYER.wrapping_add(OB_VELY), u16_de(vel_y));
+    // `.checkDirection`: com o Sonic à direita do objeto (sem sinal), o empurrão inverte.
+    let sonic_x = rw(m, V_PLAYER.wrapping_add(OB_X));
+    let obj_x = rw(m, a2.wrapping_add(OB_X));
+    let vel_x = if sonic_x < obj_x {
+        vel_x
+    } else {
+        vel_x.wrapping_neg()
+    };
+    ww(m, V_PLAYER.wrapping_add(OB_VELX), u16_de(vel_x));
+    // `.setDamageState`
+    ww(m, V_PLAYER.wrapping_add(OB_INERTIA), 0);
+    wb(m, V_PLAYER.wrapping_add(OB_ANIM), ANIM_HURT);
+    ww(m, V_PLAYER.wrapping_add(SON_FLASHTIME), 120);
+    // Sem `FixBugs`, o teste do arpão nunca acerta: o som é sempre `sfx_Death`. Com anéis, o
+    // `RLoss_Count` troca a fila por `sfx_RingLoss` quando roda, no mesmo quadro.
+    wb(m, V_SOUNDQUEUE1, SFX_DEATH);
     Ok(())
 }
 
@@ -2484,5 +2494,81 @@ mod testes_contato {
             assert!(sonic_jump(&mut m, V_PLAYER).unwrap());
             assert_ne!(rb(&mut m, V_PLAYER + OB_STATUS) & STATUS_IN_AIR, 0);
         }
+    }
+}
+
+#[cfg(test)]
+mod testes_hurt_sonic {
+    use super::*;
+
+    /// Sonic em (0x200, 0x100) e o objeto que o feriu em `x_objeto`, numa memória vazia.
+    fn cenario(aneis: u16, escudo: u8, status: u8, x_objeto: u16) -> (Memoria, u32) {
+        let mut m = Memoria::nova(vec![0; 0x20000]);
+        ww(&mut m, V_PLAYER.wrapping_add(OB_X), 0x200);
+        ww(&mut m, V_PLAYER.wrapping_add(OB_Y), 0x100);
+        wb(&mut m, V_PLAYER.wrapping_add(OB_STATUS), status);
+        ww(&mut m, V_RINGS, aneis);
+        wb(&mut m, V_SHIELD, escudo);
+        let a2 = V_LVLOBJSPACE.wrapping_add(OBJECT_SIZE.wrapping_mul(10));
+        wb(&mut m, a2.wrapping_add(OB_ID), 0x22);
+        ww(&mut m, a2.wrapping_add(OB_X), x_objeto);
+        (m, a2)
+    }
+
+    fn objetos_ring_loss(m: &mut Memoria) -> Vec<u32> {
+        (0..96u32)
+            .map(|i| V_LVLOBJSPACE.wrapping_add(i.wrapping_mul(OBJECT_SIZE)))
+            .filter(|&a| rb(m, a.wrapping_add(OB_ID)) == ID_RING_LOSS)
+            .collect()
+    }
+
+    #[test]
+    fn com_aneis_cria_o_objeto_ring_loss_e_toca_sfx_death() {
+        let (mut m, a2) = cenario(5, 0, 0, 0x300);
+        hurt_sonic(&mut m, a2).unwrap();
+        let slots = objetos_ring_loss(&mut m);
+        assert_eq!(slots.len(), 1);
+        assert_eq!(rb(&mut m, slots[0].wrapping_add(OB_ROUTINE)), 0);
+        assert_eq!(rw(&mut m, slots[0].wrapping_add(OB_X)), 0x200);
+        assert_eq!(rw(&mut m, slots[0].wrapping_add(OB_Y)), 0x100);
+        // Quem zera os anéis é o `RLoss_Count`, quando o objeto roda.
+        assert_eq!(rw(&mut m, V_RINGS), 5);
+        assert_eq!(rb(&mut m, V_SOUNDQUEUE1), SFX_DEATH);
+        assert_eq!(rb(&mut m, V_PLAYER.wrapping_add(OB_ROUTINE)), 4);
+        assert_eq!(rw(&mut m, V_PLAYER.wrapping_add(OB_VELY)), u16_de(-0x400));
+        // Sonic à esquerda do objeto: o empurrão fica para a esquerda.
+        assert_eq!(rw(&mut m, V_PLAYER.wrapping_add(OB_VELX)), u16_de(-0x200));
+    }
+
+    #[test]
+    fn com_escudo_perde_so_o_escudo() {
+        let (mut m, a2) = cenario(5, 1, 0, 0x100);
+        hurt_sonic(&mut m, a2).unwrap();
+        assert!(objetos_ring_loss(&mut m).is_empty());
+        assert_eq!(rb(&mut m, V_SHIELD), 0);
+        assert_eq!(rw(&mut m, V_RINGS), 5);
+        // Sonic à direita do objeto: o empurrão inverte.
+        assert_eq!(rw(&mut m, V_PLAYER.wrapping_add(OB_VELX)), 0x200);
+        assert_eq!(rb(&mut m, V_SOUNDQUEUE1), SFX_DEATH);
+    }
+
+    #[test]
+    fn embaixo_dagua_o_empurrao_e_a_metade() {
+        let (mut m, a2) = cenario(0, 1, STATUS_UNDERWATER, 0x300);
+        hurt_sonic(&mut m, a2).unwrap();
+        assert_eq!(rw(&mut m, V_PLAYER.wrapping_add(OB_VELY)), u16_de(-0x200));
+        assert_eq!(rw(&mut m, V_PLAYER.wrapping_add(OB_VELX)), u16_de(-0x100));
+    }
+
+    #[test]
+    fn sem_aneis_com_depuracao_sobrevive_e_sem_ela_morre() {
+        let (mut m, a2) = cenario(0, 0, 0, 0x300);
+        ww(&mut m, F_DEBUGMODE, 1);
+        hurt_sonic(&mut m, a2).unwrap();
+        assert_eq!(rb(&mut m, V_PLAYER.wrapping_add(OB_ROUTINE)), 4);
+
+        let (mut m, a2) = cenario(0, 0, 0, 0x300);
+        hurt_sonic(&mut m, a2).unwrap();
+        assert_eq!(rb(&mut m, V_PLAYER.wrapping_add(OB_ROUTINE)), 6);
     }
 }
