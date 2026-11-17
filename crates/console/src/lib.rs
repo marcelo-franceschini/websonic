@@ -57,6 +57,15 @@ pub struct Capturada {
     dma: Option<Vec<u16>>,
 }
 
+/// Escrita da VDP com a faixa de palavras de DMA lidas na memória neste quadro, se houver.
+#[derive(Clone, Copy, Debug)]
+struct CapturadaInterna {
+    porta: PortaVdp,
+    valor: u16,
+    tamanho: Tamanho,
+    faixa_dma: Option<(usize, usize)>,
+}
+
 /// A ponte: aplica as escritas do núcleo ao renderizador.
 pub struct Ponte {
     rend: Renderizador,
@@ -87,7 +96,8 @@ impl Ponte {
     }
 
     /// Lê as palavras de um DMA da memória para a VDP, do endereço dado pelos registradores.
-    fn palavras_do_dma(&self, mem: &mut Memoria) -> Vec<u16> {
+    fn coletar_palavras_dma(&self, mem: &mut Memoria, buffer: &mut Vec<u16>) -> (usize, usize) {
+        let inicio = buffer.len();
         let reg = |i: usize| self.regs.get(i).copied().unwrap_or(0);
         let base =
             u32::from(reg(21)) | (u32::from(reg(22)) << 8) | (u32::from(reg(23) & 0x7F) << 16);
@@ -96,12 +106,19 @@ impl Ponte {
             0 => 0x1_0000,
             n => n,
         };
-        let mut v = Vec::new();
+        buffer.reserve(usize::try_from(n).unwrap_or(0));
         for _ in 0..n {
             let w = mem.ler(a, Tamanho::Word).unwrap_or(0);
-            v.push(u16::try_from(w & 0xFFFF).unwrap_or(0));
+            buffer.push(u16::try_from(w & 0xFFFF).unwrap_or(0));
             a = a.wrapping_add(2);
         }
+        (inicio, buffer.len())
+    }
+
+    /// Lê as palavras de um DMA da memória para a VDP, do endereço dado pelos registradores.
+    fn palavras_do_dma(&self, mem: &mut Memoria) -> Vec<u16> {
+        let mut v = Vec::new();
+        self.coletar_palavras_dma(mem, &mut v);
         v
     }
 
@@ -148,6 +165,77 @@ impl Ponte {
             tamanho,
             dma,
         })
+    }
+
+    /// Variante interna que grava palavras de DMA em buffer reutilizado por quadro.
+    fn capturar_interna(
+        &mut self,
+        mem: &mut Memoria,
+        saida: &Saida,
+        palavras_dma: &mut Vec<u16>,
+    ) -> Option<CapturadaInterna> {
+        let Saida::Vdp {
+            porta,
+            valor,
+            tamanho,
+        } = *saida
+        else {
+            return None;
+        };
+        let mut faixa_dma = None;
+        if porta == PortaVdp::Controle {
+            let e_registrador = valor & 0xC000 == 0x8000;
+            if e_registrador {
+                self.primeira = None;
+                let n = usize::from((valor >> 8) & 0x1F);
+                if let Some(r) = self.regs.get_mut(n) {
+                    *r = valor.to_le_bytes()[0];
+                }
+            } else if let Some(_primeira) = self.primeira.take() {
+                if valor & 0x0080 != 0 && self.dma_de_memoria() {
+                    faixa_dma = Some(self.coletar_palavras_dma(mem, palavras_dma));
+                }
+            } else {
+                self.primeira = Some(valor);
+            }
+        }
+        Some(CapturadaInterna {
+            porta,
+            valor,
+            tamanho,
+            faixa_dma,
+        })
+    }
+
+    /// Aplica uma escrita capturada internamente, fatiando o buffer de palavras de DMA.
+    fn aplicar_capturada_interna(
+        &mut self,
+        c: &CapturadaInterna,
+        palavras_dma: &[u16],
+        linha: u16,
+        coluna: u64,
+    ) {
+        match c.porta {
+            PortaVdp::Dados => {
+                let t = if c.tamanho == Tamanho::Byte { 1 } else { 2 };
+                self.rend.aplicar(
+                    linha,
+                    coluna,
+                    Escrita::Dados {
+                        valor: c.valor,
+                        tamanho: t,
+                    },
+                );
+            }
+            PortaVdp::Controle => {
+                if let Some((inicio, fim)) = c.faixa_dma {
+                    if let Some(palavras) = palavras_dma.get(inicio..fim) {
+                        self.rend.entregar_dma(palavras);
+                    }
+                }
+                self.rend.aplicar(linha, coluna, Escrita::Controle(c.valor));
+            }
+        }
     }
 
     /// Segunda fase: entrega o DMA lido e aplica a escrita na posição dada.
@@ -223,7 +311,8 @@ impl Ponte {
 /// Captura DMA antes de o laço principal alterar a memória de origem.
 struct CapturasEventos {
     ponte: Ponte,
-    saidas: Vec<(Saida, Option<Capturada>, MomentoSaida, Option<u8>)>,
+    saidas: Vec<(Saida, Option<CapturadaInterna>, MomentoSaida, Option<u8>)>,
+    palavras_dma: Vec<u16>,
     linha_hblank: Option<u8>,
 }
 
@@ -232,13 +321,14 @@ impl CapturasEventos {
         Self {
             ponte: Ponte::nova(),
             saidas: Vec::new(),
+            palavras_dma: Vec::new(),
             linha_hblank: None,
         }
     }
 
     fn recolher(&mut self, mem: &mut Memoria, momento: MomentoSaida, novas: &[Saida]) {
         for &saida in novas {
-            let capturada = self.ponte.capturar(mem, &saida);
+            let capturada = self.ponte.capturar_interna(mem, &saida, &mut self.palavras_dma);
             let linha = if momento == MomentoSaida::HBlank {
                 self.linha_hblank
             } else {
@@ -352,6 +442,7 @@ impl Console {
     }
 
     fn executar_quadro_interno(&mut self, imagem: bool) -> Vec<u8> {
+        self.capturas.borrow_mut().palavras_dma.clear();
         // Saídas externas podem ser inseridas antes de qualquer evento do núcleo.
         let anteriores = self.ab.mem.tirar_saidas();
         self.capturas.borrow_mut().recolher(
@@ -379,28 +470,32 @@ impl Console {
         self.escritas_no_quadro = saidas.len();
 
         let n_saidas = saidas.len();
-        for (i, (s, capturada, _momento, _linha_hblank)) in saidas.iter().enumerate() {
-            let delta = if n_saidas > 0 {
-                (MCLK_POR_QUADRO_NTSC.wrapping_mul(i as u64)) / (n_saidas as u64)
-            } else {
-                0
-            };
-            let mclk_esc = mclk_inicio.wrapping_add(delta);
+        {
+            let cap = self.capturas.borrow();
+            let dma_palavras = &cap.palavras_dma;
+            for (i, (s, capturada, _momento, _linha_hblank)) in saidas.iter().enumerate() {
+                let delta = if n_saidas > 0 {
+                    (MCLK_POR_QUADRO_NTSC.wrapping_mul(i as u64)) / (n_saidas as u64)
+                } else {
+                    0
+                };
+                let mclk_esc = mclk_inicio.wrapping_add(delta);
 
-            match s {
-                Saida::Vdp { .. } => {
-                    if let Some(c) = capturada {
-                        self.ponte.aplicar_capturada(c, linha, 0);
+                match s {
+                    Saida::Vdp { .. } => {
+                        if let Some(c) = capturada {
+                            self.ponte.aplicar_capturada_interna(c, dma_palavras, linha, 0);
+                        }
                     }
+                    Saida::Ym { porta, valor } | Saida::YmZ80 { porta, valor } => {
+                        self.sint
+                            .agendar(mclk_esc, Chip::Fm, u32::from(*porta), *valor);
+                    }
+                    Saida::Psg(valor) => {
+                        self.sint.agendar(mclk_esc, Chip::Psg, 0, *valor);
+                    }
+                    _ => {}
                 }
-                Saida::Ym { porta, valor } | Saida::YmZ80 { porta, valor } => {
-                    self.sint
-                        .agendar(mclk_esc, Chip::Fm, u32::from(*porta), *valor);
-                }
-                Saida::Psg(valor) => {
-                    self.sint.agendar(mclk_esc, Chip::Psg, 0, *valor);
-                }
-                _ => {}
             }
         }
 
@@ -546,7 +641,7 @@ mod testes_captura_eventos {
         let mut ponte = Ponte::nova();
         for (_, captura, _, _) in &capturas.saidas {
             if let Some(c) = captura {
-                ponte.aplicar_capturada(c, 224, 0);
+                ponte.aplicar_capturada_interna(c, &capturas.palavras_dma, 224, 0);
             }
         }
         ponte.fechar_quadro();
