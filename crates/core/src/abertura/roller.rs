@@ -1,7 +1,7 @@
 //! Badnik Roller de Spring Yard, objeto 0x43 (REV01).
 use super::super::fisica::{obj_floor_dist, speed_to_pos};
 use super::super::ram::*;
-use super::super::{rb, rw, wb, wl, ww, ErroAbertura};
+use super::super::{ErroAbertura, rb, rw, wb, wl, ww};
 use super::{animate_sprite, remember_state};
 use crate::memoria::Memoria;
 
@@ -116,9 +116,7 @@ pub(super) fn executar(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
                     }
                 }
                 _ => {
-                    return Err(ErroAbertura::NaoImplementado(
-                        "rotina secundaria do Roller",
-                    ));
+                    return Err(ErroAbertura::NaoImplementado("rotina secundaria do Roller"));
                 }
             }
             animate_sprite(m, a, ANI_ROLL)?;
@@ -148,4 +146,3 @@ mod testes {
         assert_eq!(rb(&mut m, a0.wrapping_add(OB_HEIGHT)), 14);
     }
 }
-

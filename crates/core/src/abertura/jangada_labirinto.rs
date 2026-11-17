@@ -79,9 +79,7 @@ pub(super) fn executar(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
             mover_sonic_altura(m, a, anterior, 9);
         }
         _ => {
-            return Err(ErroAbertura::NaoImplementado(
-                "rotina do bloco movel",
-            ));
+            return Err(ErroAbertura::NaoImplementado("rotina do bloco movel"));
         }
     }
     let x = rw(m, a.wrapping_add(ORIG_X));
@@ -183,9 +181,7 @@ fn mover(m: &mut Memoria, a: u32) -> Result<bool, ErroAbertura> {
             }
         }
         _ => {
-            return Err(ErroAbertura::NaoImplementado(
-                "tipo de bloco movel",
-            ));
+            return Err(ErroAbertura::NaoImplementado("tipo de bloco movel"));
         }
     }
     Ok(true)

@@ -1,7 +1,7 @@
 //! Badnik Walking Bomb de Star Light e Scrap Brain, objeto 0x5F (REV01).
 use super::super::fisica::speed_to_pos;
 use super::super::ram::*;
-use super::super::{rb, rw, wb, wl, ww, ErroAbertura};
+use super::super::{ErroAbertura, rb, rw, wb, wl, ww};
 use super::{animate_sprite, delete_object, display_sprite, find_free_obj, remember_state};
 use crate::memoria::Memoria;
 
@@ -148,11 +148,7 @@ fn checar_pavio(m: &mut Memoria, a: u32) {
             wb(m, f.wrapping_add(OB_STATUS), bst);
             wb(m, f.wrapping_add(OB_SUBTYPE), 4);
             wb(m, f.wrapping_add(OB_ANIM), 3);
-            let vy = if bst & 2 != 0 {
-                u16_de(-0x10)
-            } else {
-                0x10
-            };
+            let vy = if bst & 2 != 0 { u16_de(-0x10) } else { 0x10 };
             ww(m, f.wrapping_add(OB_VELY), vy);
             ww(m, f.wrapping_add(BOM_TIME), 2 * 60 + 23);
         }
@@ -194,4 +190,3 @@ mod testes {
         assert_eq!(rb(&mut m, a0.wrapping_add(OB_COLTYPE)), 0x9A);
     }
 }
-

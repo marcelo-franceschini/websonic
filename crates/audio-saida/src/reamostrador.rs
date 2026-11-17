@@ -157,12 +157,14 @@ impl Reamostrador {
             let fase = ((frac * (FASES_POLIFASICO as f64)) as usize).min(FASES_POLIFASICO - 1);
             let coefs = &self.tabela.coefs[fase];
 
-            let slice_l: &[f32; TAPS_POLIFASICO] = self.buffer_in_l[idx_base..idx_base + TAPS_POLIFASICO]
+            let slice_l: &[f32; TAPS_POLIFASICO] = self.buffer_in_l
+                [idx_base..idx_base + TAPS_POLIFASICO]
                 .try_into()
-                .unwrap();
-            let slice_r: &[f32; TAPS_POLIFASICO] = self.buffer_in_r[idx_base..idx_base + TAPS_POLIFASICO]
+                .expect("a fatia tem exatamente TAPS_POLIFASICO amostras");
+            let slice_r: &[f32; TAPS_POLIFASICO] = self.buffer_in_r
+                [idx_base..idx_base + TAPS_POLIFASICO]
                 .try_into()
-                .unwrap();
+                .expect("a fatia tem exatamente TAPS_POLIFASICO amostras");
 
             let mut out_l = 0.0f32;
             let mut out_r = 0.0f32;
@@ -205,9 +207,10 @@ impl Reamostrador {
             let fase = ((frac * (FASES_POLIFASICO as f64)) as usize).min(FASES_POLIFASICO - 1);
             let coefs = &self.tabela.coefs[fase];
 
-            let slice_l: &[f32; TAPS_POLIFASICO] = self.buffer_in_l[idx_base..idx_base + TAPS_POLIFASICO]
+            let slice_l: &[f32; TAPS_POLIFASICO] = self.buffer_in_l
+                [idx_base..idx_base + TAPS_POLIFASICO]
                 .try_into()
-                .unwrap();
+                .expect("a fatia tem exatamente TAPS_POLIFASICO amostras");
 
             let mut out = 0.0f32;
 

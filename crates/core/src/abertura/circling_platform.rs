@@ -1,7 +1,7 @@
 //! Plataforma circular de Star Light, objeto 0x5A (REV01).
 use super::super::plataforma_oscilante::{detectar_altura, mover_sonic_altura, sair};
 use super::super::ram::*;
-use super::super::{rb, rw, wb, wl, ww, ErroAbertura};
+use super::super::{ErroAbertura, rb, rw, wb, wl, ww};
 use super::{delete_object, display_sprite, fora_da_janela};
 use crate::memoria::Memoria;
 
@@ -35,7 +35,11 @@ pub(super) fn executar(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
             mover(m, a);
             mover_sonic_altura(m, a, anterior, 9);
         }
-        _ => return Err(ErroAbertura::NaoImplementado("rotina da plataforma circular")),
+        _ => {
+            return Err(ErroAbertura::NaoImplementado(
+                "rotina da plataforma circular",
+            ));
+        }
     }
     let ox = rw(m, a.wrapping_add(ORIG_X));
     if fora_da_janela(m, ox) {
@@ -88,4 +92,3 @@ mod testes {
         assert_eq!(rw(&mut m, a0.wrapping_add(ORIG_Y)), 0x100);
     }
 }
-

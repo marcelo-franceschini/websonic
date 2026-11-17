@@ -7,9 +7,9 @@
 use super::fisica::{calc_sine, obj_floor_dist, speed_to_pos};
 use super::objetos::{collect_ring, delete_object, display_sprite, find_free_obj, ring_sparkle};
 use super::ram::{
-    ARTTILE_RING, ID_RING_LOSS, MAP_RING, OB_ACTWID, OB_COLTYPE, OB_FRAME, OB_GFX,
-    OB_HEIGHT, OB_ID, OB_MAP, OB_PRIORITY, OB_RENDER, OB_ROUTINE, OB_VELX, OB_VELY, OB_WIDTH,
-    OB_X, OB_Y, V_ANI3_FRAME, V_ANI3_TIME, V_LIMITBTM2, V_PLAYER, V_RINGS,
+    ARTTILE_RING, ID_RING_LOSS, MAP_RING, OB_ACTWID, OB_COLTYPE, OB_FRAME, OB_GFX, OB_HEIGHT,
+    OB_ID, OB_MAP, OB_PRIORITY, OB_RENDER, OB_ROUTINE, OB_VELX, OB_VELY, OB_WIDTH, OB_X, OB_Y,
+    V_ANI3_FRAME, V_ANI3_TIME, V_LIMITBTM2, V_PLAYER, V_RINGS,
 };
 use super::{ErroAbertura, rb, rw, wb, wl, ww};
 use crate::memoria::Memoria;
@@ -182,8 +182,8 @@ fn quicar(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
 
 #[cfg(test)]
 mod testes {
-    use super::*;
     use super::super::ram::{OBJECT_SIZE, SINE_DATA, V_LVLOBJEND, V_LVLOBJSPACE};
+    use super::*;
 
     fn criar_memoria_com_seno() -> Memoria {
         let mut rom = vec![0; 0x10000];

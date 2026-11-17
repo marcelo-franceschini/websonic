@@ -313,7 +313,11 @@ pub fn try_chaos(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
     let off_x = (i32::from(c).wrapping_mul(0x1C) >> 8) as i16;
     let off_y = (i32::from(s).wrapping_mul(0x1C) >> 8) as i16;
     ww(m, a0.wrapping_add(OB_X), orig_x.wrapping_add(off_x as u16));
-    ww(m, a0.wrapping_add(OB_SCREENY), orig_y.wrapping_add(off_y as u16));
+    ww(
+        m,
+        a0.wrapping_add(OB_SCREENY),
+        orig_y.wrapping_add(off_y as u16),
+    );
 
     objetos::display_sprite(m, a0);
     Ok(())
@@ -354,7 +358,11 @@ pub fn preparo(m: &mut Memoria) -> Result<(), ErroAbertura> {
     super::titulo::zerar(m, V_OBJSPACE, V_OBJSPACE_END);
     super::titulo::zerar(m, V_MISC_VARIABLES, V_MISC_VARIABLES_END);
     super::titulo::zerar(m, V_LEVELVARIABLES, V_LEVELVARIABLES_END);
-    super::titulo::zerar(m, V_TIMINGANDSCREENVARIABLES, V_TIMINGANDSCREENVARIABLES_END);
+    super::titulo::zerar(
+        m,
+        V_TIMINGANDSCREENVARIABLES,
+        V_TIMINGANDSCREENVARIABLES_END,
+    );
 
     super::sega::clear_screen(m)?;
     for w in [0x8B03u16, 0x8230, 0x8407, 0x857C, 0x9001, 0x8004, 0x8720] {
@@ -477,14 +485,7 @@ pub fn passo_clarear(m: &mut Memoria) -> Result<DepoisClarear, ErroAbertura> {
 }
 
 const END_DEMO_LEVELS: [u16; 8] = [
-    0x0000,
-    0x0201,
-    0x0402,
-    0x0102,
-    0x0302,
-    0x0500,
-    0x0501,
-    0x0000,
+    0x0000, 0x0201, 0x0402, 0x0102, 0x0302, 0x0500, 0x0501, 0x0000,
 ];
 
 pub fn preparar_pagina(m: &mut Memoria) -> Result<(), ErroAbertura> {
@@ -496,7 +497,11 @@ pub fn preparar_pagina(m: &mut Memoria) -> Result<(), ErroAbertura> {
     }
     wb(m, F_WTR_STATE, 0);
 
-    wl(m, VDP_CONTROLE, super::titulo::loc_vram(u32::from(ARTTILE_CREDITS_FONT)));
+    wl(
+        m,
+        VDP_CONTROLE,
+        super::titulo::loc_vram(u32::from(ARTTILE_CREDITS_FONT)),
+    );
     crate::rotinas::nem_dec(m, NEM_CREDITTEXT).map_err(ErroAbertura::Rotina)?;
 
     super::titulo::zerar(m, V_PALETTE_FADING, V_PALETTE_FADING_END);

@@ -49,7 +49,10 @@ fn simular_partida_ghz1() {
         }
     }
 
-    assert!(sonic_x_max > 4500, "Sonic deve ter percorrido a fase ate o final da Green Hill Zone Act 1 (x={sonic_x_max})");
+    assert!(
+        sonic_x_max > 4500,
+        "Sonic deve ter percorrido a fase ate o final da Green Hill Zone Act 1 (x={sonic_x_max})"
+    );
 }
 
 #[test]
@@ -120,11 +123,16 @@ fn inspecionar_gameplay_ghz1_manual() {
                 x_maximo = x;
             }
             if rel % 25 == 0 && rel <= 600 {
-                println!("rel={rel:03} x={x:04} y={y:04} vx={vx:5} vy={vy:5} in={inercia:5} ang={angulo:02X} st={status:#04x} an={anim:02} rot={rotina} lk={lock}");
+                println!(
+                    "rel={rel:03} x={x:04} y={y:04} vx={vx:5} vy={vy:5} in={inercia:5} ang={angulo:02X} st={status:#04x} an={anim:02} rot={rotina} lk={lock}"
+                );
             }
         }
     }
 
     println!("X maximo alcancado: {x_maximo}");
-    assert!(x_maximo > 1500, "Sonic deve ter ultrapassado x=1500 com os pulos nos obstaculos (x={x_maximo})");
+    assert!(
+        x_maximo > 1500,
+        "Sonic deve ter ultrapassado x=1500 com os pulos nos obstaculos (x={x_maximo})"
+    );
 }

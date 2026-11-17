@@ -443,8 +443,14 @@ mod testes {
         assert!(res.is_ok());
         assert_eq!(rb(&mut m, a0.wrapping_add(OB_ROUTINE)), 2);
         assert_eq!(rb(&mut m, a0.wrapping_add(0x21)), 8);
-        assert_eq!(rw(&mut m, a0.wrapping_add(OB_X)), BOSS_LZ_X.wrapping_add(0x30));
-        assert_eq!(rw(&mut m, a0.wrapping_add(OB_Y)), BOSS_LZ_Y.wrapping_add(0x500));
+        assert_eq!(
+            rw(&mut m, a0.wrapping_add(OB_X)),
+            BOSS_LZ_X.wrapping_add(0x30)
+        );
+        assert_eq!(
+            rw(&mut m, a0.wrapping_add(OB_Y)),
+            BOSS_LZ_Y.wrapping_add(0x500)
+        );
 
         let mut partes = 0;
         let mut slot = a0.wrapping_add(OBJECT_SIZE);

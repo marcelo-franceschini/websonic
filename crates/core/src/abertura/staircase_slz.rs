@@ -1,6 +1,6 @@
 //! Escada acionavel de Star Light, objeto 0x5B (REV01).
 use super::super::ram::*;
-use super::super::{rb, rl, rw, wb, wl, ww, ErroAbertura};
+use super::super::{ErroAbertura, rb, rl, rw, wb, wl, ww};
 use super::{delete_object, display_sprite, find_free_obj, fora_da_janela, solid_object};
 use crate::memoria::Memoria;
 
@@ -166,4 +166,3 @@ mod testes {
         assert_eq!(rb(&mut m, a0.wrapping_add(OB_ACTWID)), 16);
     }
 }
-

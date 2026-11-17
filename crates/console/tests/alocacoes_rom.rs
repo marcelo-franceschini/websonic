@@ -72,5 +72,8 @@ fn gameplay_quase_sem_alocacao_por_quadro() {
     CONTANDO.with(|x| x.set(false));
     let media = ALOCACOES.with(Cell::get) as f64 / 600.0;
     println!("alocacoes por quadro (quadros 1000 a 1599): {media:.1}");
-    assert!(media <= 2.0, "média de {media:.1} alocações por quadro (limite 2)");
+    assert!(
+        media <= 2.0,
+        "média de {media:.1} alocações por quadro (limite 2)"
+    );
 }

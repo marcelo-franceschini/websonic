@@ -221,6 +221,9 @@ mod testes {
         let proj = pai.wrapping_add(OBJECT_SIZE);
         assert_eq!(rb(&mut m, proj.wrapping_add(OB_ID)), 0x23);
         assert_eq!(rw(&mut m, proj.wrapping_add(OB_VELX)), 0xFE00);
-        assert_eq!(rl(&mut m, proj.wrapping_add(PAI)), 0xFFFF_0000 | (pai & 0xFFFF));
+        assert_eq!(
+            rl(&mut m, proj.wrapping_add(PAI)),
+            0xFFFF_0000 | (pai & 0xFFFF)
+        );
     }
 }

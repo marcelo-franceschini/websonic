@@ -80,7 +80,11 @@ impl Jogo {
 impl Jogo {
     /// Cria o jogo. Só aceita a REV01: qualquer outro arquivo é recusado.
     pub fn criar(dados: &[u8]) -> Result<Jogo, String> {
-        let limpos = if dados.len() == 524_288 + 512 { &dados[512..] } else { dados };
+        let limpos = if dados.len() == 524_288 + 512 {
+            &dados[512..]
+        } else {
+            dados
+        };
         let id = identificar_rom(limpos);
         match id.veredito {
             Veredito::Rev01 => Ok(Self::sem_validar(limpos.to_vec())),
@@ -93,7 +97,11 @@ impl Jogo {
         if !taxa_audio.is_finite() || !(3_000.0..=768_000.0).contains(&taxa_audio) {
             return Err("Taxa de áudio inválida".into());
         }
-        let limpos = if dados.len() == 524_288 + 512 { &dados[512..] } else { dados };
+        let limpos = if dados.len() == 524_288 + 512 {
+            &dados[512..]
+        } else {
+            dados
+        };
         let id = identificar_rom(limpos);
         match id.veredito {
             Veredito::Rev01 => Ok(Self {

@@ -192,10 +192,19 @@ fn ffloor_main(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
     let mut pos_x = BOSS_SBZ2_X.wrapping_sub(0x40);
     for i in 0..8u32 {
         if let Some(a1) = objetos::find_free_obj(m) {
-            ww(m, a0.wrapping_add(BLOCK_LIST_START).wrapping_add(i.wrapping_mul(2)), a1 as u16);
+            ww(
+                m,
+                a0.wrapping_add(BLOCK_LIST_START)
+                    .wrapping_add(i.wrapping_mul(2)),
+                a1 as u16,
+            );
             wb(m, a1.wrapping_add(OB_ID), 0x83);
             wl(m, a1.wrapping_add(OB_MAP), MAP_FFLOOR);
-            ww(m, a1.wrapping_add(OB_GFX), ARTTILE_EGGMAN_TRAP_FLOOR | 0x6000);
+            ww(
+                m,
+                a1.wrapping_add(OB_GFX),
+                ARTTILE_EGGMAN_TRAP_FLOOR | 0x6000,
+            );
             wb(m, a1.wrapping_add(OB_RENDER), 0x84);
             wb(m, a1.wrapping_add(OB_ACTWID), 16);
             wb(m, a1.wrapping_add(OB_HEIGHT), 16);
@@ -238,7 +247,10 @@ fn ffloor_break(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
     if estouro {
         let count = rb(m, a0.wrapping_add(OB_FRAME));
         let offset = u32::from(count).wrapping_mul(2);
-        let block_ptr = ext(rw(m, a0.wrapping_add(BLOCK_LIST_START).wrapping_add(offset)));
+        let block_ptr = ext(rw(
+            m,
+            a0.wrapping_add(BLOCK_LIST_START).wrapping_add(offset),
+        ));
         ww(m, block_ptr.wrapping_add(CHILD_CMD), CMD_GO);
         let novo_count = count.wrapping_add(1);
         wb(m, a0.wrapping_add(OB_FRAME), novo_count);
@@ -274,8 +286,16 @@ fn ffloor_block(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
 
         // Fragmento 0 fica no proprio a0
         ww(m, a0.wrapping_add(OB_VELY), FRAG_SPEED[0]);
-        ww(m, a0.wrapping_add(OB_X), base_x.wrapping_add(FRAG_POS_X[0] as u16));
-        ww(m, a0.wrapping_add(OB_Y), base_y.wrapping_add(FRAG_POS_Y[0] as u16));
+        ww(
+            m,
+            a0.wrapping_add(OB_X),
+            base_x.wrapping_add(FRAG_POS_X[0] as u16),
+        );
+        ww(
+            m,
+            a0.wrapping_add(OB_Y),
+            base_y.wrapping_add(FRAG_POS_Y[0] as u16),
+        );
         wb(m, a0.wrapping_add(OB_FRAME), 1);
 
         // Fragmentos 1, 2, 3 em novos slots
@@ -286,8 +306,16 @@ fn ffloor_block(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
                     wb(m, a1.wrapping_add(off), val);
                 }
                 ww(m, a1.wrapping_add(OB_VELY), FRAG_SPEED[i]);
-                ww(m, a1.wrapping_add(OB_X), base_x.wrapping_add(FRAG_POS_X[i] as u16));
-                ww(m, a1.wrapping_add(OB_Y), base_y.wrapping_add(FRAG_POS_Y[i] as u16));
+                ww(
+                    m,
+                    a1.wrapping_add(OB_X),
+                    base_x.wrapping_add(FRAG_POS_X[i] as u16),
+                );
+                ww(
+                    m,
+                    a1.wrapping_add(OB_Y),
+                    base_y.wrapping_add(FRAG_POS_Y[i] as u16),
+                );
                 wb(m, a1.wrapping_add(OB_FRAME), (i + 1) as u8);
                 wb(m, a1.wrapping_add(OB_ROUTINE), 10);
             }
@@ -339,8 +367,14 @@ mod testes {
         assert!(res.is_ok());
         assert_eq!(rb(&mut m, a0.wrapping_add(OB_ROUTINE)), 2);
         assert_eq!(rb(&mut m, a0.wrapping_add(OB_BOSSHITS)), 16);
-        assert_eq!(rw(&mut m, a0.wrapping_add(OB_X)), BOSS_SBZ2_X.wrapping_add(0x110));
-        assert_eq!(rw(&mut m, a0.wrapping_add(OB_Y)), BOSS_SBZ2_Y.wrapping_add(0x94));
+        assert_eq!(
+            rw(&mut m, a0.wrapping_add(OB_X)),
+            BOSS_SBZ2_X.wrapping_add(0x110)
+        );
+        assert_eq!(
+            rw(&mut m, a0.wrapping_add(OB_Y)),
+            BOSS_SBZ2_Y.wrapping_add(0x94)
+        );
 
         // Botao criado no slot livre
         let a1 = a0.wrapping_add(OBJECT_SIZE);

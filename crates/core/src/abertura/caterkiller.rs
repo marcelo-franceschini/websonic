@@ -204,7 +204,11 @@ fn virar_cabeca(m: &mut Memoria, a: u32) {
         let x = rw(m, a.wrapping_add(OB_X)).wrapping_sub(1);
         ww(m, a.wrapping_add(OB_X), x);
         p_prox = p_prox.wrapping_add(1);
-        wb(m, a.wrapping_add(PISO).wrapping_add(u32::from(p_prox & 15)), 0);
+        wb(
+            m,
+            a.wrapping_add(PISO).wrapping_add(u32::from(p_prox & 15)),
+            0,
+        );
     }
     let novo_status = status ^ 1;
     wb(m, a.wrapping_add(OB_STATUS), novo_status);
@@ -223,7 +227,11 @@ fn virar_corpo(m: &mut Memoria, a: u32, vel_x: u16) {
         let x = rw(m, a.wrapping_add(OB_X)).wrapping_sub(1);
         ww(m, a.wrapping_add(OB_X), x);
         p_prox = p_prox.wrapping_add(1);
-        wb(m, a.wrapping_add(PISO).wrapping_add(u32::from(p_prox & 15)), 0);
+        wb(
+            m,
+            a.wrapping_add(PISO).wrapping_add(u32::from(p_prox & 15)),
+            0,
+        );
     }
     let novo_status = status ^ 1;
     wb(m, a.wrapping_add(OB_STATUS), novo_status);

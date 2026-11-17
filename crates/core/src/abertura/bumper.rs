@@ -1,7 +1,7 @@
 //! Rebatedor de pinball de Spring Yard, objeto 0x47 (REV01).
 use super::super::fisica::{add_points, calc_angle, calc_sine};
 use super::super::ram::*;
-use super::super::{rb, rw, wb, wl, ww, ErroAbertura};
+use super::super::{ErroAbertura, rb, rw, wb, wl, ww};
 use super::{animate_sprite, find_free_obj, remember_state};
 use crate::memoria::Memoria;
 

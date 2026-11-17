@@ -73,11 +73,56 @@ fn boss_final_main(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
 
     // Paineis e partes da nave em fuga
     let subobjs = [
-        (4u8, BOSS_FZ_X.wrapping_add(0x160), BOSS_FZ_Y.wrapping_add(0x80), ARTTILE_FZ_BOSS, MAP_EGGCYL, 1u8, 18u8, 8u8),
-        (6u8, BOSS_FZ_X.wrapping_add(0x290), BOSS_FZ_Y.wrapping_add(0x86), ARTTILE_FZ_EGGMAN_FLEEING, MAP_FZLEGS, 3u8, 20u8, 12u8),
-        (8u8, BOSS_FZ_X.wrapping_add(0x290), BOSS_FZ_Y.wrapping_add(0x86), ARTTILE_FZ_EGGMAN_NO_VEHICLE, MAP_SEGG, 3u8, 32u8, 28u8),
-        (10u8, BOSS_FZ_X.wrapping_add(0x290), BOSS_FZ_Y.wrapping_add(0x86), ARTTILE_EGGMAN, MAP_EGGMAN, 3u8, 32u8, 32u8),
-        (12u8, BOSS_FZ_X.wrapping_add(0x290), BOSS_FZ_Y.wrapping_add(0x86), ARTTILE_EGGMAN, MAP_EGGMAN, 3u8, 8u8, 3u8),
+        (
+            4u8,
+            BOSS_FZ_X.wrapping_add(0x160),
+            BOSS_FZ_Y.wrapping_add(0x80),
+            ARTTILE_FZ_BOSS,
+            MAP_EGGCYL,
+            1u8,
+            18u8,
+            8u8,
+        ),
+        (
+            6u8,
+            BOSS_FZ_X.wrapping_add(0x290),
+            BOSS_FZ_Y.wrapping_add(0x86),
+            ARTTILE_FZ_EGGMAN_FLEEING,
+            MAP_FZLEGS,
+            3u8,
+            20u8,
+            12u8,
+        ),
+        (
+            8u8,
+            BOSS_FZ_X.wrapping_add(0x290),
+            BOSS_FZ_Y.wrapping_add(0x86),
+            ARTTILE_FZ_EGGMAN_NO_VEHICLE,
+            MAP_SEGG,
+            3u8,
+            32u8,
+            28u8,
+        ),
+        (
+            10u8,
+            BOSS_FZ_X.wrapping_add(0x290),
+            BOSS_FZ_Y.wrapping_add(0x86),
+            ARTTILE_EGGMAN,
+            MAP_EGGMAN,
+            3u8,
+            32u8,
+            32u8,
+        ),
+        (
+            12u8,
+            BOSS_FZ_X.wrapping_add(0x290),
+            BOSS_FZ_Y.wrapping_add(0x86),
+            ARTTILE_EGGMAN,
+            MAP_EGGMAN,
+            3u8,
+            8u8,
+            3u8,
+        ),
     ];
 
     for (rout, x, y, gfx, map, prio, wid, hgt) in subobjs {
@@ -107,7 +152,11 @@ fn boss_final_main(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
     for i in 0..4u32 {
         if let Some(a1) = objetos::find_free_obj(m) {
             let off = i.wrapping_mul(2);
-            ww(m, a0.wrapping_add(CYLINDER_PTR).wrapping_add(off), a1 as u16);
+            ww(
+                m,
+                a0.wrapping_add(CYLINDER_PTR).wrapping_add(off),
+                a1 as u16,
+            );
             wb(m, a1.wrapping_add(OB_ID), 0x84);
             wl(m, a1.wrapping_add(PARENT_OBJ), a0);
             wb(m, a1.wrapping_add(OB_SUBTYPE), (i * 2) as u8);
@@ -157,8 +206,16 @@ fn eggman_crush(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
             core::mem::swap(&mut c_egg, &mut c_decoy);
         }
 
-        let ptr_egg = ext(rw(m, a0.wrapping_add(CYLINDER_PTR).wrapping_add((c_egg * 2) as u32)));
-        let ptr_decoy = ext(rw(m, a0.wrapping_add(CYLINDER_PTR).wrapping_add((c_decoy * 2) as u32)));
+        let ptr_egg = ext(rw(
+            m,
+            a0.wrapping_add(CYLINDER_PTR)
+                .wrapping_add((c_egg * 2) as u32),
+        ));
+        let ptr_decoy = ext(rw(
+            m,
+            a0.wrapping_add(CYLINDER_PTR)
+                .wrapping_add((c_decoy * 2) as u32),
+        ));
 
         wb(m, ptr_egg.wrapping_add(CHILD_CMD), 0xFF);
         ww(m, ptr_egg.wrapping_add(HAS_EGGMAN), 0xFFFF);
@@ -405,7 +462,11 @@ fn eggman_escape(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
         }
     }
     if px >= BOSS_FZ_END.wrapping_add(0xE0) {
-        ww(m, V_PLAYER.wrapping_add(OB_X), BOSS_FZ_END.wrapping_add(0xE0));
+        ww(
+            m,
+            V_PLAYER.wrapping_add(OB_X),
+            BOSS_FZ_END.wrapping_add(0xE0),
+        );
     }
 
     let cur_x = rw(m, a0.wrapping_add(OB_X));

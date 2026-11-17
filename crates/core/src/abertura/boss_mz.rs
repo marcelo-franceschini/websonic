@@ -229,11 +229,7 @@ fn drop_fire(m: &mut Memoria, a: u32) {
             let by = rw(m, a.wrapping_add(BOSS_Y));
             if let Some(livre) = objetos::find_free_obj(m) {
                 ww(m, livre.wrapping_add(OB_X), bx);
-                ww(
-                    m,
-                    livre.wrapping_add(OB_Y),
-                    by.wrapping_add(0x18),
-                );
+                ww(m, livre.wrapping_add(OB_Y), by.wrapping_add(0x18));
                 wb(m, livre.wrapping_add(OB_ID), 0x74);
                 wb(m, livre.wrapping_add(OB_SUBTYPE), 1);
             }

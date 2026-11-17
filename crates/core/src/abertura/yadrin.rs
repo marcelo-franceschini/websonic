@@ -1,7 +1,7 @@
 //! Badnik Yadrin de Spring Yard, objeto 0x50 (REV01).
 use super::super::fisica::{obj_floor_dist, obj_hit_wall, speed_to_pos};
 use super::super::ram::*;
-use super::super::{rb, rw, wb, wl, ww, ErroAbertura};
+use super::super::{ErroAbertura, rb, rw, wb, wl, ww};
 use super::{animate_sprite, remember_state};
 use crate::memoria::Memoria;
 
@@ -56,7 +56,11 @@ pub(super) fn executar(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
                         ww(
                             m,
                             a.wrapping_add(OB_VELX),
-                            if status & 1 == 0 { u16_de(-0x100) } else { 0x100 },
+                            if status & 1 == 0 {
+                                u16_de(-0x100)
+                            } else {
+                                0x100
+                            },
                         );
                     }
                 }
@@ -91,9 +95,7 @@ pub(super) fn executar(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
                     }
                 }
                 _ => {
-                    return Err(ErroAbertura::NaoImplementado(
-                        "rotina secundaria do Yadrin",
-                    ));
+                    return Err(ErroAbertura::NaoImplementado("rotina secundaria do Yadrin"));
                 }
             }
             animate_sprite(m, a, ANI_YAD)?;

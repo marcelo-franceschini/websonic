@@ -7,58 +7,58 @@ use super::ram::*;
 use super::{ErroAbertura, plc, rb, rl, rw, wb, wl, ww};
 use crate::memoria::Memoria;
 
-#[path = "bloco_labirinto.rs"]
-mod bloco_labirinto;
 #[path = "arpao_labirinto.rs"]
 mod arpao_labirinto;
+#[path = "big_spike_ball.rs"]
+mod big_spike_ball;
+#[path = "bloco_labirinto.rs"]
+mod bloco_labirinto;
 #[path = "bolhas_labirinto.rs"]
 mod bolhas_labirinto;
-#[path = "boss_syz.rs"]
-mod boss_syz;
 #[path = "boss_slz.rs"]
 mod boss_slz;
 #[path = "boss_slz_bola.rs"]
 mod boss_slz_bola;
+#[path = "boss_syz.rs"]
+mod boss_syz;
+#[path = "bumper.rs"]
+mod bumper;
 #[path = "burrobot.rs"]
 mod burrobot;
 #[path = "cascata_labirinto.rs"]
 mod cascata_labirinto;
-#[path = "esteira_labirinto.rs"]
-mod esteira_labirinto;
-#[path = "gargula_labirinto.rs"]
-mod gargula_labirinto;
-#[path = "gangorra_slz.rs"]
-mod gangorra_slz;
-#[path = "corrente_espinhos.rs"]
-mod corrente_espinhos;
-#[path = "jangada_labirinto.rs"]
-mod jangada_labirinto;
-#[path = "orbinaut.rs"]
-mod orbinaut;
-#[path = "jaws.rs"]
-mod jaws;
-#[path = "portas_labirinto.rs"]
-mod portas_labirinto;
-#[path = "spinning_light.rs"]
-mod spinning_light;
-#[path = "bumper.rs"]
-mod bumper;
-#[path = "big_spike_ball.rs"]
-mod big_spike_ball;
-#[path = "yadrin.rs"]
-mod yadrin;
-#[path = "roller.rs"]
-mod roller;
-#[path = "elevador_slz.rs"]
-mod elevador_slz;
 #[path = "circling_platform.rs"]
 mod circling_platform;
-#[path = "staircase_slz.rs"]
-mod staircase_slz;
+#[path = "corrente_espinhos.rs"]
+mod corrente_espinhos;
+#[path = "elevador_slz.rs"]
+mod elevador_slz;
+#[path = "esteira_labirinto.rs"]
+mod esteira_labirinto;
 #[path = "fan_slz.rs"]
 mod fan_slz;
+#[path = "gangorra_slz.rs"]
+mod gangorra_slz;
+#[path = "gargula_labirinto.rs"]
+mod gargula_labirinto;
+#[path = "jangada_labirinto.rs"]
+mod jangada_labirinto;
+#[path = "jaws.rs"]
+mod jaws;
+#[path = "orbinaut.rs"]
+mod orbinaut;
+#[path = "portas_labirinto.rs"]
+mod portas_labirinto;
+#[path = "roller.rs"]
+mod roller;
+#[path = "spinning_light.rs"]
+mod spinning_light;
+#[path = "staircase_slz.rs"]
+mod staircase_slz;
 #[path = "walking_bomb.rs"]
 mod walking_bomb;
+#[path = "yadrin.rs"]
+mod yadrin;
 
 const SPRITES_MAX: u8 = 80;
 const SPRITELAYER_NUM: u32 = 8;

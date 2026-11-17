@@ -172,7 +172,10 @@ pub fn conveyor(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
 
     let dx = (px as i16).wrapping_sub(cx as i16).abs() as u16;
     let dy = (py as i16).wrapping_sub(cy as i16);
-    if dx < wid && (0..=32).contains(&dy) && rb(m, V_PLAYER.wrapping_add(OB_STATUS)) & STATUS_IN_AIR == 0 {
+    if dx < wid
+        && (0..=32).contains(&dy)
+        && rb(m, V_PLAYER.wrapping_add(OB_STATUS)) & STATUS_IN_AIR == 0
+    {
         let spd = s16(rw(m, a0.wrapping_add(0x36)));
         let novo_px = px.wrapping_add(spd as u16);
         ww(m, V_PLAYER.wrapping_add(OB_X), novo_px);
@@ -195,7 +198,11 @@ pub fn spin_platform(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
         } else {
             // Plataforma giratoria
             wl(m, a0.wrapping_add(OB_MAP), MAP_SPIN);
-            ww(m, a0.wrapping_add(OB_GFX), ARTTILE_SBZ_SPINNING_PLATFORM | 0x6000);
+            ww(
+                m,
+                a0.wrapping_add(OB_GFX),
+                ARTTILE_SBZ_SPINNING_PLATFORM | 0x6000,
+            );
             wb(m, a0.wrapping_add(OB_ACTWID), 32);
         }
         wb(m, a0.wrapping_add(OB_RENDER), 4);
@@ -281,7 +288,11 @@ pub fn scrap_stomp(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
     if rotina == 0 {
         wb(m, a0.wrapping_add(OB_ROUTINE), 2);
         wl(m, a0.wrapping_add(OB_MAP), MAP_STOMP);
-        ww(m, a0.wrapping_add(OB_GFX), ARTTILE_SBZ_MOVING_BLOCK_SHORT | 0x4000);
+        ww(
+            m,
+            a0.wrapping_add(OB_GFX),
+            ARTTILE_SBZ_MOVING_BLOCK_SHORT | 0x4000,
+        );
         wb(m, a0.wrapping_add(OB_RENDER), 4);
         wb(m, a0.wrapping_add(OB_PRIORITY), 4);
         wb(m, a0.wrapping_add(OB_ACTWID), 32);
@@ -300,7 +311,11 @@ pub fn vanish_platform(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
     if rotina == 0 {
         wb(m, a0.wrapping_add(OB_ROUTINE), 2);
         wl(m, a0.wrapping_add(OB_MAP), MAP_VANP);
-        ww(m, a0.wrapping_add(OB_GFX), ARTTILE_SBZ_VANISHING_BLOCK | 0x6000);
+        ww(
+            m,
+            a0.wrapping_add(OB_GFX),
+            ARTTILE_SBZ_VANISHING_BLOCK | 0x6000,
+        );
         wb(m, a0.wrapping_add(OB_RENDER), 4);
         wb(m, a0.wrapping_add(OB_PRIORITY), 4);
         wb(m, a0.wrapping_add(OB_ACTWID), 16);
@@ -334,7 +349,11 @@ pub fn flamethrower(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
     if rotina == 0 {
         wb(m, a0.wrapping_add(OB_ROUTINE), 2);
         wl(m, a0.wrapping_add(OB_MAP), MAP_FLAME);
-        ww(m, a0.wrapping_add(OB_GFX), ARTTILE_SBZ_FLAMETHROWER | 0x8000);
+        ww(
+            m,
+            a0.wrapping_add(OB_GFX),
+            ARTTILE_SBZ_FLAMETHROWER | 0x8000,
+        );
         wb(m, a0.wrapping_add(OB_RENDER), 4);
         wb(m, a0.wrapping_add(OB_PRIORITY), 1);
         wb(m, a0.wrapping_add(OB_ACTWID), 12);
@@ -404,7 +423,11 @@ pub fn spin_convey(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
     if rotina == 0 {
         wb(m, a0.wrapping_add(OB_ROUTINE), 2);
         wl(m, a0.wrapping_add(OB_MAP), MAP_SPIN);
-        ww(m, a0.wrapping_add(OB_GFX), ARTTILE_SBZ_SPINNING_PLATFORM | 0x6000);
+        ww(
+            m,
+            a0.wrapping_add(OB_GFX),
+            ARTTILE_SBZ_SPINNING_PLATFORM | 0x6000,
+        );
         wb(m, a0.wrapping_add(OB_RENDER), 4);
         wb(m, a0.wrapping_add(OB_PRIORITY), 4);
         wb(m, a0.wrapping_add(OB_ACTWID), 32);
@@ -452,14 +475,78 @@ pub fn teleport(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
 
 // Destinos dos teletransportadores por subtipo (X, Y)
 const TELE_DESTS: [[(u16, u16); 7]; 8] = [
-    [ (0x794, 0x98C), (0,0),(0,0),(0,0),(0,0),(0,0),(0,0) ],
-    [ (0x94, 0x38C), (0,0),(0,0),(0,0),(0,0),(0,0),(0,0) ],
-    [ (0x794, 0x2E8), (0x7A4, 0x2C0), (0x7D0, 0x2AC), (0x858, 0x2AC), (0x884, 0x298), (0x894, 0x270), (0x894, 0x190) ],
-    [ (0x894, 0x690), (0,0),(0,0),(0,0),(0,0),(0,0),(0,0) ],
-    [ (0x1194, 0x470), (0x1184, 0x498), (0x1158, 0x4AC), (0xFD0, 0x4AC), (0xFA4, 0x4C0), (0xF94, 0x4E8), (0xF94, 0x590) ],
-    [ (0x1294, 0x490), (0,0),(0,0),(0,0),(0,0),(0,0),(0,0) ],
-    [ (0x1594, 0xFFE8), (0x1584, 0xFFC0), (0x1560, 0xFFAC), (0x14D0, 0xFFAC), (0x14A4, 0xFF98), (0x1494, 0xFF70), (0x1494, 0xFD90) ],
-    [ (0x894, 0x90), (0,0),(0,0),(0,0),(0,0),(0,0),(0,0) ],
+    [
+        (0x794, 0x98C),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+    ],
+    [
+        (0x94, 0x38C),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+    ],
+    [
+        (0x794, 0x2E8),
+        (0x7A4, 0x2C0),
+        (0x7D0, 0x2AC),
+        (0x858, 0x2AC),
+        (0x884, 0x298),
+        (0x894, 0x270),
+        (0x894, 0x190),
+    ],
+    [
+        (0x894, 0x690),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+    ],
+    [
+        (0x1194, 0x470),
+        (0x1184, 0x498),
+        (0x1158, 0x4AC),
+        (0xFD0, 0x4AC),
+        (0xFA4, 0x4C0),
+        (0xF94, 0x4E8),
+        (0xF94, 0x590),
+    ],
+    [
+        (0x1294, 0x490),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+    ],
+    [
+        (0x1594, 0xFFE8),
+        (0x1584, 0xFFC0),
+        (0x1560, 0xFFAC),
+        (0x14D0, 0xFFAC),
+        (0x14A4, 0xFF98),
+        (0x1494, 0xFF70),
+        (0x1494, 0xFD90),
+    ],
+    [
+        (0x894, 0x90),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+    ],
 ];
 
 const TELE_COUNTS: [usize; 8] = [1, 1, 7, 1, 7, 1, 7, 1];

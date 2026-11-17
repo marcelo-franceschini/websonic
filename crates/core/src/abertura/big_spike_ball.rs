@@ -1,7 +1,7 @@
 //! Esfera gigante de espinhos de Spring Yard, objeto 0x58 (REV01).
 use super::super::fisica::calc_sine;
 use super::super::ram::*;
-use super::super::{rb, rw, wb, wl, ww, ErroAbertura};
+use super::super::{ErroAbertura, rb, rw, wb, wl, ww};
 use super::{delete_object, display_sprite, fora_da_janela};
 use crate::memoria::Memoria;
 
@@ -108,4 +108,3 @@ mod testes {
         assert_eq!(rw(&mut m, a0.wrapping_add(ORIG_Y)), 0x100);
     }
 }
-

@@ -32,7 +32,11 @@ pub(super) fn executar(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
             }
         }
         2 => {}
-        _ => return Err(ErroAbertura::NaoImplementado("rotina do bloco flutuante 56")),
+        _ => {
+            return Err(ErroAbertura::NaoImplementado(
+                "rotina do bloco flutuante 56",
+            ));
+        }
     }
 
     let anterior_x = rw(m, a.wrapping_add(OB_X));
@@ -137,7 +141,11 @@ fn iniciar(m: &mut Memoria, a: u32) -> Result<bool, ErroAbertura> {
     let y = rw(m, a.wrapping_add(OB_Y));
     ww(m, a.wrapping_add(ORIG_X), x);
     ww(m, a.wrapping_add(ORIG_Y), y);
-    ww(m, a.wrapping_add(DISTANCIA), u16::from(altura).wrapping_mul(2));
+    ww(
+        m,
+        a.wrapping_add(DISTANCIA),
+        u16::from(altura).wrapping_mul(2),
+    );
 
     // Hardcoded special treatment for horizontally moving block in SYZ3 (subtype 0x37, REV01)
     if subtype == 0x37 {

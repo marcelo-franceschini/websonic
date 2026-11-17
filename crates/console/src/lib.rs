@@ -328,7 +328,9 @@ impl CapturasEventos {
 
     fn recolher(&mut self, mem: &mut Memoria, momento: MomentoSaida, novas: &[Saida]) {
         for &saida in novas {
-            let capturada = self.ponte.capturar_interna(mem, &saida, &mut self.palavras_dma);
+            let capturada = self
+                .ponte
+                .capturar_interna(mem, &saida, &mut self.palavras_dma);
             let linha = if momento == MomentoSaida::HBlank {
                 self.linha_hblank
             } else {
@@ -504,7 +506,8 @@ impl Console {
                 match s {
                     Saida::Vdp { .. } => {
                         if let Some(c) = capturada {
-                            self.ponte.aplicar_capturada_interna(c, dma_palavras, linha, 0);
+                            self.ponte
+                                .aplicar_capturada_interna(c, dma_palavras, linha, 0);
                         }
                     }
                     Saida::Ym { porta, valor } | Saida::YmZ80 { porta, valor } => {
@@ -534,7 +537,8 @@ impl Console {
         if disp > 0 {
             let total = disp.saturating_mul(2);
             self.buffer_audio_quadro.resize(total, 0.0);
-            self.misturador.extrair_bloco_worklet(&mut self.buffer_audio_quadro);
+            self.misturador
+                .extrair_bloco_worklet(&mut self.buffer_audio_quadro);
         }
 
         let resultado = if imagem {
