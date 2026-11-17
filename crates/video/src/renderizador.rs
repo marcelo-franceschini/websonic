@@ -363,9 +363,14 @@ impl Renderizador {
     }
 
     fn drenar_cache_de_sprites(&mut self) {
-        let gravados = std::mem::take(&mut self.vdp.ao_gravar_vram);
-        for (endereco, valor) in gravados {
+        let mut gravados = std::mem::take(&mut self.vdp.ao_gravar_vram);
+        for &(endereco, valor) in &gravados {
             self.atualizar_cache_de_sprites(endereco, valor);
+        }
+        gravados.clear();
+        // Devolve a capacidade so se ninguem gravou no campo durante o laco.
+        if self.vdp.ao_gravar_vram.is_empty() {
+            self.vdp.ao_gravar_vram = gravados;
         }
     }
 
