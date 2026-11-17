@@ -288,7 +288,7 @@ Marque `[x]` no mesmo commit do item. Use `BLOQUEADO: <motivo>` quando o protoco
 | [x] | 2 | E0.2 | P0 | árvore de trabalho | 10 arquivos modificados e 4 novos da sessão anterior estão sem commit. | (1) Adicione só os 14 arquivos da seção 4.1.<br>(2) Rode o detector.<br>(3) Faça o commit `chore: linha de base da sessao anterior (frontend)`. | Fora do commit ficam só `CLAUDE.md`, `.claude/skills/`, este documento e os arquivos não rastreados de outras sessões. | Cada item seguinte pode ser revertido sozinho. |
 | [x] | 3 | E0.3 | P0 | `docs/relatorio-performance.md` | Este documento está fora do git. | Faça o commit deste documento sozinho. | Commit criado. | Checkboxes rastreáveis. |
 | [x] | 4 | E1.1 | P0 | novo `crates/console/tests/guarda_rom.rs` | Não existe guarda de comportamento que dispense o oráculo. | (1) Crie o arquivo do Anexo A.1.<br>(2) Rode com `SONIC1_ROM` e `--ignored`. | Passa no estado atual com os 9 hashes da seção 5.3. | Detecta qualquer mudança de imagem, RAM ou áudio. |
-| [ ] | 5 | E1.2 | P0 | novo `crates/console/tests/alocacoes_rom.rs` | Nenhum teste mede alocações por quadro. | (1) Crie o arquivo do Anexo A.2.<br>(2) Rode e anote a média na seção 6.2. | Falha hoje com 1.250,9 por quadro. Passa no fim do bloco de alocações. | Torna a regressão de alocação visível. |
+| [x] | 5 | E1.2 | P0 | novo `crates/console/tests/alocacoes_rom.rs` | Nenhum teste mede alocações por quadro. | (1) Crie o arquivo do Anexo A.2.<br>(2) Rode e anote a média na seção 6.2. | Falha hoje com 1.250,9 por quadro. Passa no fim do bloco de alocações. | Torna a regressão de alocação visível. |
 | [ ] | 6 | E1.3 | P0 | novo `site/tests/desempenho-wasm.test.mjs` | O teste de auditoria mede tempo simulado (`site/tests/auditoria-oraculo-web.test.mjs:126-174`). | (1) Crie o arquivo do Anexo A.3.<br>(2) Rode `cargo xtask site`.<br>(3) Rode o teste três vezes e anote a mediana. | Falha hoje com média de 15,46 ms (carga até 6). Passa com média ≤ 8,0 ms, p95 ≤ 13,0 ms e ≤ 2% acima de 16,67 ms. | Mede o tempo de parede do Wasm real do site. |
 | [ ] | 7 | E1.4 | P0 | novo `site/tests/ritmo-60hz.test.mjs` | Nenhum teste mede quadros repetidos por minuto. | Crie o arquivo do Anexo A.4. | Falha hoje com 47 ticks sem passo em 10 min. Passa com 0. | Torna o batimento visível. |
 | [ ] | 8 | E1.5 | P0 | novo `site/tests/audio-worklet-carga.test.cjs` | Nenhum teste mede a carga da thread de áudio. | Crie o arquivo do Anexo A.5. | Falha hoje com 625 mensagens em 10 s. Passa com ≤ 160. | Torna a carga do worklet visível. |
@@ -457,7 +457,7 @@ Preencha esta tabela no último commit e mostre-a no chat.
 | Medida | Antes (auditoria) | Antes (executor) | Depois |
 | --- | --- | --- | --- |
 | Quadro Wasm `partida-ghz1` (média, p95, % acima de 16,67 ms) | 15,46 ms, 23,50 ms, 27,2% | | |
-| Alocações por quadro (1000 a 1599) | 1.250,9 | | |
+| Alocações por quadro (1000 a 1599) | 1.250,9 | 1.250,9 | |
 | Bytes para a GPU por quadro | 1.486.964 | | |
 | Ticks sem passo em 10 min a 60 Hz | 47 | | |
 | Mensagens do worklet em 10 s | 625 | | |
