@@ -19,10 +19,12 @@ const seletorFps = document.getElementById("seletor-fps");
 const seletorCrt = document.getElementById("seletor-crt");
 const seletorCram = document.getElementById("seletor-cram");
 const btnFullscreen = document.getElementById("btn-fullscreen");
+const btnToque = document.getElementById("btn-toque");
 const btnHud = document.getElementById("btn-hud");
 const btnMudo = document.getElementById("btn-mudo");
 const sliderVolume = document.getElementById("slider-volume");
 const painelTeclas = document.getElementById("painel-teclas");
+const controlesToque = document.getElementById("controles-toque");
 
 // Badges de Status do Cabecalho
 const badgeAudio = document.getElementById("badge-audio");
@@ -410,6 +412,8 @@ async function carregarArquivoRom(arquivo) {
     mostrar(false, "Recusada: arquivo grande demais para ser a REV01.", "(nao calculado)", arquivo.size);
     return;
   }
+  mostrar(true, "Lendo e validando ROM...", "calculando...", arquivo.size);
+  await new Promise((resolve) => setTimeout(resolve, 0));
   const bytes = new Uint8Array(await arquivo.arrayBuffer());
   const r = identificar(bytes);
   mostrar(r.valida, r.valida ? "ROM REV01 valida." : "Recusada: " + r.motivo + ".", r.sha1, r.tamanho);
@@ -788,6 +792,88 @@ function botoesDoControle(modo = 4) {
   return mascara;
 }
 
+// Controles de Toque na Tela para Celular e Tablet
+const temSuporteToque = ("ontouchstart" in window) || (navigator.maxTouchPoints > 0);
+let toqueAtivo = temSuporteToque;
+const toquesAtivos = new Set();
+
+function tratarPonteiroBotao(el, ativo) {
+  const chave = el.getAttribute("data-dir") || el.getAttribute("data-botao");
+  if (!chave) return;
+  if (ativo) {
+    toquesAtivos.add(chave);
+    el.classList.add("ativo");
+    desbloquearAudio();
+  } else {
+    toquesAtivos.delete(chave);
+    el.classList.remove("ativo");
+  }
+}
+
+if (controlesToque) {
+  const botoesToque = controlesToque.querySelectorAll(".btn-toque");
+  botoesToque.forEach((btn) => {
+    btn.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      try { btn.setPointerCapture(e.pointerId); } catch (_) {}
+      tratarPonteiroBotao(btn, true);
+    });
+    btn.addEventListener("pointerup", (e) => {
+      e.preventDefault();
+      try { btn.releasePointerCapture(e.pointerId); } catch (_) {}
+      tratarPonteiroBotao(btn, false);
+    });
+    btn.addEventListener("pointercancel", (e) => {
+      e.preventDefault();
+      try { btn.releasePointerCapture(e.pointerId); } catch (_) {}
+      tratarPonteiroBotao(btn, false);
+    });
+  });
+}
+
+if (btnToque) {
+  if (toqueAtivo) {
+    btnToque.classList.add("btn-azul");
+    btnToque.classList.remove("btn-cinza");
+  }
+  btnToque.addEventListener("click", () => {
+    toqueAtivo = !toqueAtivo;
+    if (controlesToque && jogo) {
+      controlesToque.hidden = !toqueAtivo;
+    }
+    btnToque.classList.toggle("btn-azul", toqueAtivo);
+    btnToque.classList.toggle("btn-cinza", !toqueAtivo);
+    if (tela) tela.focus();
+  });
+}
+
+function botoesDoToque(modo = 4) {
+  if (!toqueAtivo || toquesAtivos.size === 0) return 0;
+  let mascara = 0;
+  const telaTituloOuDemo = modo === 0x00 || modo === 0x04 || modo === 0x08;
+
+  if (toquesAtivos.has("cima")) mascara |= 0x01;
+  if (toquesAtivos.has("baixo")) mascara |= 0x02;
+  if (toquesAtivos.has("esquerda")) mascara |= 0x04;
+  if (toquesAtivos.has("direita")) mascara |= 0x08;
+
+  if (toquesAtivos.has("b")) mascara |= 0x10;
+  if (toquesAtivos.has("c")) mascara |= 0x20;
+  if (toquesAtivos.has("a")) mascara |= 0x40;
+  if (toquesAtivos.has("start")) mascara |= 0x80;
+
+  // No titulo ou demo, botoes de acao tambem iniciam o jogo
+  if (telaTituloOuDemo && (mascara & 0x70) !== 0) {
+    mascara |= 0x80;
+  }
+
+  // Previne direcoes opostas simultaneas
+  if ((mascara & 0x0C) === 0x0C) mascara &= ~0x0C;
+  if ((mascara & 0x03) === 0x03) mascara &= ~0x03;
+
+  return mascara;
+}
+
 function ajustarEscala() {
   const larguraBase = 320;
   const alturaBase = 224;
@@ -881,7 +967,7 @@ function simularPassos(agora) {
     quadroNum++;
 
     const modo = jogo?.modo_jogo?.() ?? 4;
-    const estadoControles = calcularMascaraTeclado(modo) | botoesDoControle(modo);
+    const estadoControles = calcularMascaraTeclado(modo) | botoesDoControle(modo) | botoesDoToque(modo);
     jogo.botoes(estadoControles);
 
     const inicioWasm = performance.now();
@@ -1032,6 +1118,7 @@ async function iniciar(bytes) {
   tela.hidden = false;
   if (barraControles) barraControles.hidden = false;
   if (painelTeclas) painelTeclas.hidden = false;
+  if (controlesToque && toqueAtivo) controlesToque.hidden = false;
   document.getElementById("aviso").hidden = false;
   ajustarEscala();
   tela.focus();

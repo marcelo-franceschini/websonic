@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://marcelo-franceschini.github.io/websonic/sitemap.xml
