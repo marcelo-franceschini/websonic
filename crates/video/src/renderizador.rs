@@ -106,6 +106,9 @@ pub struct Renderizador {
     // Pontos coloridos da CRAM: da linha atual e da anterior (índice 0 = ponto 18).
     pontos_atual: Vec<Option<u16>>,
     pontos_anterior: Vec<Option<u16>>,
+    // Há algum ponto em cada buffer? Evita varrer 347 entradas vazias duas ou três vezes por linha.
+    marcados_atual: bool,
+    marcados_anterior: bool,
     // Planos. `chave_planos` diz para qual estado os buffers valem (linha, gravações de VRAM e
     // versão dos registradores e rolagens), para a troca de CRAM não refazer os planos.
     chave_planos: Option<(u16, u64, u64)>,
@@ -140,6 +143,8 @@ impl Renderizador {
             estado_sprites: EstadoDeSprites::default(),
             pontos_atual: vec![None; PONTOS_DA_CRAM],
             pontos_anterior: vec![None; PONTOS_DA_CRAM],
+            marcados_atual: false,
+            marcados_anterior: false,
             chave_planos: None,
             versao_planos: 0,
             buf_a: vec![PontoDeTile::default(); LARGURA],
@@ -472,23 +477,27 @@ impl Renderizador {
         let idx = usize::from(ponto.saturating_sub(INICIO_PONTOS_CRAM));
         if let Some(c) = self.pontos_atual.get_mut(idx) {
             *c = Some(cor);
+            self.marcados_atual = true;
         }
     }
 
     /// No fim de cada linha, os pontos dela passam a ser os da "linha anterior".
     fn trocar_pontos_da_cram(&mut self) {
-        let algum = self.pontos_atual.iter().any(Option::is_some)
-            || self.pontos_anterior.iter().any(Option::is_some);
-        if !algum {
+        if !self.marcados_atual && !self.marcados_anterior {
             return;
         }
         std::mem::swap(&mut self.pontos_atual, &mut self.pontos_anterior);
+        std::mem::swap(&mut self.marcados_atual, &mut self.marcados_anterior);
         self.pontos_atual.fill(None);
+        self.marcados_atual = false;
     }
 
     /// Desenha na imagem os pontos da linha anterior (como o oráculo, no início da linha atual).
     fn aplicar_pontos_da_linha_anterior(&mut self) {
         if self.linha == 0 || self.linha > LINHAS_ATIVAS {
+            return;
+        }
+        if !self.marcados_anterior {
             return;
         }
         let y = usize::from(self.linha.saturating_sub(1));
