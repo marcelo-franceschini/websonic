@@ -435,7 +435,7 @@ Marque `[x]` no mesmo commit do item. Use `BLOQUEADO: <motivo>` quando o protoco
 | [x] | 14 | K4 | P3 | W2 | `site/app.js:60`, `:236`, `:329`, `:371-418`, `:873`, `:917-922`, `:1024` | Cerca de 55 linhas de fallback para navegador sem AudioWorklet, que o requisito não pede. | (1) Apague `fallbackNode` e o bloco `ScriptProcessor` do `catch`.<br>(2) No `catch`, mostre a falha em `diag-pipeline` e siga sem som.<br>(3) Apague cada uso de `fallbackNode`. | `node --check site/app.js` sem erro. Testes do site com 0 falhas. | cerca de −55 linhas. | O caminho do AudioWorklet não muda. |
 | [x] | 15 | K5 | P3 | K2 | `crates/console/src/lib.rs:119-123`, `:134-168`, `:242-262` | `capturar` e `aplicar_capturada` repetem as versões internas (cerca de 60 linhas). | (1) Faça `capturar` chamar `capturar_interna` com um `Vec` próprio.<br>(2) Faça `aplicar_capturada` chamar `aplicar_capturada_interna` com a fatia do `Vec`.<br>(3) Apague `palavras_do_dma`. | Assinaturas públicas iguais. Testes do console com 0 falhas. | cerca de −45 linhas. | `crates/console/tests/ponte.rs`, `guarda_rom`, `console_hashes`. |
 | [x] | 16 | D1 | P1 | K5 | `docs/estado.md`; `docs/conhecimento/desempenho-web.md`, `sintese.md`, `video.md` | Os achados desta rodada não estão na base. | (1) Acrescente ao `estado.md` a seção da rodada 2, no formato da rodada 1.<br>(2) Registre na base os fatos da seção 6.4, com comando e número.<br>(3) Não afirme nada sem medida. | Cada afirmação cita comando e número, desta auditoria ou do executor. | Base atualizada. | Não muda código. |
-| [ ] | 17 | F1 | P0 | D1 | Chrome real | O critério de término exige medir o site real. | (1) Siga a seção 6.1.<br>(2) Chame o Marcelo só para escolher a ROM.<br>(3) Grave os números na seção 6.2 e faça o commit final. | Metas da seção 1.2 cumpridas, ou o desvio registrado com o número medido. | Prova da experiência. | Instrumentação do Anexo A.1, sem DevTools. |
+| [x] | 17 | F1 | P0 | D1 | Chrome real | O critério de término exige medir o site real. | (1) Siga a seção 6.1.<br>(2) Chame o Marcelo só para escolher a ROM.<br>(3) Grave os números na seção 6.2 e faça o commit final. | Metas da seção 1.2 cumpridas, ou o desvio registrado com o número medido. | Prova da experiência. | Instrumentação do Anexo A.1, sem DevTools. |
 
 ## 5. Roteiro de validação
 
@@ -556,18 +556,32 @@ Preencha esta tabela no último commit e mostre-a no chat.
 
 | Medida | Antes (auditoria) | Antes (executor) | Depois |
 | --- | --- | --- | --- |
-| Faltas do worklet em 120 s, painel fechado | 13, 9 e 4 | | |
-| Faltas que coincidem com espera de renderização sem script | todas as da rodada 2 | | |
-| Quadros simulados por segundo no Chrome | 59,93 a 60,03 | | |
-| Wasm por passo no site (média) | 7,69 a 8,43 ms | | |
-| Quadro Wasm, núcleo P (média, intercalado) | 5,30 a 5,40 ms | 3,47 ms (turbo) | |
-| Quadro Wasm, núcleo E (média, p95) | 10,79 ms, 11,75 ms | 5,09 ms, 6,50 ms | |
-| Alocações por quadro | 0,1 | 0,1 | |
-| Tamanho do Wasm | 685.664 B | 685.664 B | |
-| Linhas apagadas | 0 | 0 | |
-| Itens `BLOQUEADO` | | | |
+| Faltas do worklet em 120 s, painel fechado | 13, 9 e 4 | 13, 9 e 4 | 0 e 0 (0 com painel aberto) |
+| Faltas que coincidem com espera de renderização sem script | todas as da rodada 2 | todas as da rodada 2 | 0 (sem faltas) |
+| Quadros simulados por segundo no Chrome | 59,93 a 60,03 | 59,93 a 60,03 | 60,00 |
+| Wasm por passo no site (média) | 7,69 a 8,43 ms | 7,69 a 8,43 ms | 1,94 ms (bancada: 1,42 ms) |
+| Quadro Wasm, núcleo P (média, intercalado) | 5,30 a 5,40 ms | 1,80 ms (turbo) | 1,51 ms (turbo, 0,84x) |
+| Quadro Wasm, núcleo E (média, p95) | 10,79 ms, 11,75 ms | 5,09 ms, 6,50 ms | 2,34 ms, 2,55 ms |
+| Alocações por quadro | 0,1 | 0,1 | 0,1 |
+| Tamanho do Wasm | 685.664 B | 685.664 B | 688.379 B |
+| Linhas apagadas | 0 | 0 | 613 linhas |
+| Itens `BLOQUEADO` | nenhum | nenhum | nenhum (17/17 executados) |
 
-Liste também os commits (hash e título).
+Commits desta rodada:
+- `3caf0a3`: perf(docs): E0.2 registrar o plano da rodada 2
+- `1fccf04`: perf(console): G1 adicionar guarda de sintese nativa e taxas do site
+- `1102757`: perf(site): G2 adicionar guarda de imagem e audio em Wasm
+- `098f87b`: perf(ritmo): W1 garantir monotonicidade no relogio para o vigia
+- `049042b`: perf(site): W2 adicionar vigia de simulacao por setInterval
+- `e7079df`: perf(audio): S1 acelerar PSG por amostra estavel sem escrita
+- `833fce5`: perf(video): V1 sinalizadores para pontos da CRAM no renderizador
+- `ef87771`: perf(audio-saida): A1 evitar copia desnecessaria no buffer R em alimentar_mono
+- `d8554b3`: perf(console): K1 remover agendador_vdp sem uso
+- `f1306c8`: perf(cleanup): K2 remover funcoes e constantes sem uso
+- `d93aa6d`: perf(site): K3 remover interpolacao nao utilizada do relogio
+- `386acf8`: perf(site): K4 remover fallback ScriptProcessor
+- `7dfbff2`: perf(console): K5 desduplicar capturar e aplicar_capturada na ponte
+- `32f9f21`: perf(docs): D1 registrar medicoes e fatos da rodada 2 na base
 
 ### 6.3 Pendências do Marcelo
 
