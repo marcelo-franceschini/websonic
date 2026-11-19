@@ -117,3 +117,7 @@ Com a remoção do compositor de candidatos para GPU e a restauração da render
   - Percentil 95: 11,56 ms (meta <= 13,0 ms; antes da remediação: 23,50 ms).
   - Quadros acima de 16,67 ms: 0,6% (meta <= 2,0%; antes da remediação: 27,2%).
 - Desempenho nativo do renderizador (`WEBSONIC_BENCH=1 cargo test -p sonic1-video --release --test desempenho`): mediana de 2569 us.
+
+## Otimizações de renderização na rodada 2 (19/11/2026)
+
+- **Sinalizadores de pontos da CRAM (item V1):** em `crates/video/src/renderizador.rs`, as rotinas `trocar_pontos_da_cram` e `aplicar_pontos_da_linha_anterior` varriam 347 entradas vazias duas a tres vezes por linha ativa. A introducao dos sinalizadores booleanos `marcados_atual` e `marcados_anterior` evita essas varreduras quando nao ha pontos registrados na linha. O ganho medido em Wasm foi de cerca de 0,3 ms por quadro (razao de 0,94 a 0,95 contra o S1 no nucleo P), validado pelas guardas de fidelidade de imagem e testes unitarios do crate `sonic1-video`.

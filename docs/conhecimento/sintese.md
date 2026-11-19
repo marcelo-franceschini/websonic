@@ -10,6 +10,12 @@
 - No Chrome headless com a ROM REV01, AudioWorklet ficou ativo e informou zero faltas durante os primeiros 468 quadros observados. O navegador usou SwiftShader. Isso não comprova fidelidade da temporização dos eventos de som nem uma partida completa.
 - Medida nativa após as mudanças: `WEBSONIC_BENCH=1 cargo test --locked --offline -p sonic1-audio-saida --release --test desempenho -- --nocapture`, mediana 879 µs, p95 2473 µs e máximo 3284 µs, com outras tarefas em execução. Essa medida não representa desempenho Wasm.
 
+## Otimizações de síntese e reamostragem na rodada 2 (19/11/2026)
+
+- **PSG por amostra estavel (item S1):** quando os divisores de frequencia e canais mantem sua atenuacao e nao ha escritas pendentes, o laco de sintese em `crates/audio/src/sintetizador.rs` avanca 16 ciclos mestre de uma vez atraves de `Psg::amostra_estavel`. A fidelidade amostra a amostra contra `Psg::ciclo` e validada pelo teste `crates/audio/tests/psg_amostra_estavel.rs`. O tempo de quadro Wasm caiu cerca de 0,65 ms (razao de 0,88 a 0,90 contra a base no nucleo P).
+- **Alimentacao mono sem copia redundante (item A1):** em `crates/audio-saida/src/reamostrador.rs`, `alimentar_mono` alimenta exclusivamente `buffer_in_l`. O buffer do canal direito nao recebe copias desnecessarias e `processar_mono` drena apenas o canal esquerdo, economizando cerca de 15 us por quadro.
+- **Guarda de sintese nativa (item G1):** o teste `crates/console/tests/guarda_sintese.rs` afere as amostras nativas pre-reamostragem de FM e PSG e as taxas do site (47.938,19 Hz e 44.043,22 Hz), conferindo os 5 hashes de referencia do Anexo A.2 do relatorio da rodada 2.
+
 Plano: `docs/plano-etapa-8.md`. Cada afirmação cita o teste ou o comando. Nada aqui tem dado da ROM.
 
 ## Licenças e fontes (8.0, bloco 1 do Marcelo, 09/11/2026)

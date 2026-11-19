@@ -2,6 +2,33 @@
 
 Documento de acompanhamento do progresso das etapas.
 
+## Remediação de desempenho web, rodada 2 (19/11/2026)
+
+O plano de `docs/relatorio-performance-2.md` foi executado (itens E0.1 a D1).
+
+### Decisões
+1. **PSG por amostra estavel:** quando os canais mantem a saida e nao ha escritas pendentes, o laco do PSG avanca 16 ciclos mestre de uma vez em `Psg::amostra_estavel`, mantendo fidelidade total amostra a amostra (teste `psg_amostra_estavel`).
+2. **Sinalizadores de CRAM no renderizador:** troca e aplicacao de pontos da CRAM usam `marcados_atual` e `marcados_anterior` para evitar varrer 347 entradas vazias por linha.
+3. **Vigia de simulacao por setInterval:** no navegador, pausas do compositor atrasam o `requestAnimationFrame` em 50 a 240 ms. O vigia dispara a cada meio quadro e avanca os passos do relogio se o rAF atrasar mais de 2 quadros, garantindo continuidade do audio.
+4. **Remocao de superficies sem uso:** remocao do `agendador_vdp` (312 linhas), 17 funcoes e constantes Rust nao chamadas (K2), interpolacao futura do relogio (K3), fallback `ScriptProcessor` (K4), e desduplicacao de `capturar`/`aplicar_capturada` na ponte (K5).
+
+### Medições
+| Medida | Antes (auditoria) | Antes (executor, turbo) | Depois | Comando |
+| --- | --- | --- | --- | --- |
+| Quadro Wasm `partida-ghz1`, nucleo P (media intercalada) | 5,30 a 5,40 ms | 1,80 ms (turbo) | 1,51 ms (turbo, 0,84x) | `taskset -c 2 $(command -v node) /tmp/websonic-exec/bancada-wasm.mjs dist/pkg` |
+| Quadro Wasm, nucleo E (media, p95) | 10,79 ms, 11,75 ms | 5,09 ms, 6,50 ms | 2,34 ms, 2,55 ms | `taskset -c 6 $(command -v node) site/tests/desempenho-wasm.test.mjs` |
+| Alocacoes por quadro (quadros 1000 a 1599) | 0,1 | 0,1 | 0,1 | `cargo test --release -p sonic1-console --test alocacoes_rom -- --ignored --nocapture` |
+| Tamanho do Wasm | 685.664 B | 685.664 B | 688.379 B | `cargo xtask site && ls -l dist/pkg/sonic1_web_bg.wasm` |
+| Linhas removidas (K1 a K5) | 0 | 0 | 613 linhas | `git diff --stat ef87771..7dfbff2` |
+
+### Guardas
+- `guarda_rom`: imagem, RAM e audio identicos aos hashes gravados.
+- `guarda_sintese`: FM, PSG e audio do site identicos nos 5 hashes.
+- `console_hashes`: `28299e8d4df6fd706ceb0fc8faecd61d382966fd`.
+- `guarda-wasm.test.mjs`: `pass 1`, `fail 0`, imagem e audio iguais nas 3 entradas.
+- Testes nativos dos 5 crates: 0 falhas.
+- Testes do site: 9 de 9 passaram.
+
 ## Remediação de desempenho web e revisão pós-execução (17/11/2026)
 
 O plano de `docs/relatorio-performance.md` foi executado em 31 itens (commits `b274da4` a `beb3175`). Uma sessão de revisão conferiu cada commit, mediu de novo e corrigiu os desvios (commits `3a54493` a `fe49e48`, mais este registro).
