@@ -1,6 +1,18 @@
 #!/bin/sh
-# Antes do commit: bloqueia ROM por extensao, tamanho e hash (ver hooks/lib.sh).
+# Antes do commit: bloqueia commits diretos na main e bloqueia ROM por extensao, tamanho e hash (ver hooks/lib.sh).
 . "$(dirname "$0")/lib.sh"
+
+# Bloqueia commits diretos na branch main no repositorio oficial.
+branch=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")
+if [ "$branch" = "main" ]; then
+    remoto=$(git config --get remote.origin.url 2>/dev/null || echo "")
+    case "$remoto" in
+        *marcelo-franceschini/websonic*)
+            printf 'ERRO: Commits diretos na branch "main" estão bloqueados.\nCrie uma nova branch (ex: git checkout -b feature/...) e abra um Pull Request.\n' >&2
+            exit 1
+            ;;
+    esac
+fi
 
 tab=$(printf '\t')
 
