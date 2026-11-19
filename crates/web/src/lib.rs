@@ -112,6 +112,16 @@ impl Jogo {
         self.console.definir_botoes(mascara);
     }
 
+    /// Liga ou desliga a emulação dos pontos de CRAM analógicos do hardware original.
+    pub fn definir_pontos_cram(&mut self, ativos: bool) {
+        self.console.definir_pontos_cram(ativos);
+    }
+
+    /// Informa se a emulação dos pontos de CRAM analógicos está ativa.
+    pub fn pontos_cram_ativos(&self) -> bool {
+        self.console.pontos_cram_ativos()
+    }
+
     /// Avança simulação e áudio; a apresentação usa as camadas separadamente.
     pub fn simular_quadro(&mut self) {
         self.console.simular_quadro();

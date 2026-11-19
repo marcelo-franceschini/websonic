@@ -115,6 +115,8 @@ pub struct Renderizador {
     versao_planos: u64,
     buf_a: Vec<PontoDeTile>,
     buf_b: Vec<PontoDeTile>,
+    /// Emulação dos pontos coloridos de CRAM (analógicos do hardware original).
+    pontos_cram_ativos: bool,
 }
 
 impl Default for Renderizador {
@@ -149,7 +151,18 @@ impl Renderizador {
             versao_planos: 0,
             buf_a: vec![PontoDeTile::default(); LARGURA],
             buf_b: vec![PontoDeTile::default(); LARGURA],
+            pontos_cram_ativos: true,
         }
+    }
+
+    /// Liga ou desliga a emulação dos pontos de CRAM analógicos do hardware original.
+    pub fn definir_pontos_cram(&mut self, ativos: bool) {
+        self.pontos_cram_ativos = ativos;
+    }
+
+    /// Informa se a emulação dos pontos de CRAM analógicos está ativa.
+    pub fn pontos_cram_ativos(&self) -> bool {
+        self.pontos_cram_ativos
     }
 
     pub fn vdp(&self) -> &Vdp {
@@ -494,6 +507,9 @@ impl Renderizador {
 
     /// Desenha na imagem os pontos da linha anterior (como o oráculo, no início da linha atual).
     fn aplicar_pontos_da_linha_anterior(&mut self) {
+        if !self.pontos_cram_ativos {
+            return;
+        }
         if self.linha == 0 || self.linha > LINHAS_ATIVAS {
             return;
         }

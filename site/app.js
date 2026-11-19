@@ -17,6 +17,7 @@ const camadaCrt = document.getElementById("camada-crt");
 const barraControles = document.getElementById("barra-controles");
 const seletorFps = document.getElementById("seletor-fps");
 const seletorCrt = document.getElementById("seletor-crt");
+const seletorCram = document.getElementById("seletor-cram");
 const btnFullscreen = document.getElementById("btn-fullscreen");
 const btnHud = document.getElementById("btn-hud");
 const btnMudo = document.getElementById("btn-mudo");
@@ -221,6 +222,15 @@ if (seletorCrt && camadaCrt) {
     } else {
       camadaCrt.classList.remove("ativo");
       camadaCrt.style.display = "none";
+    }
+  });
+}
+
+// Modo de Video: Limpo (sem ruido analogo de CRAM) vs Hardware Real
+if (seletorCram) {
+  seletorCram.addEventListener("change", () => {
+    if (jogo && typeof jogo.definir_pontos_cram === "function") {
+      jogo.definir_pontos_cram(seletorCram.value === "hardware");
     }
   });
 }
@@ -972,6 +982,12 @@ function simularPassos(agora) {
       if (atualizou) apresentar();
       return null;
     }
+
+    if (ultimoWasmTime > 16 && passo < passos - 1) {
+      // Amortecimento: quadro pesado (ex: carga Kosinski/Enigma); interrompe a rajada
+      // para entregar o audio e permitir que o navegador desenhe sem engasgos.
+      break;
+    }
   }
   return atualizou;
 }
@@ -1002,6 +1018,10 @@ async function iniciar(bytes) {
     // faz o reamostrador entregar 800 pares por quadro a 48 kHz (docs/estado.md, decisao 1).
     const taxaAjustada = taxaBase * (53693175 / 896040) / 60;
     jogo = Jogo.criar_com_audio(bytes, taxaAjustada);
+    if (jogo && typeof jogo.definir_pontos_cram === "function") {
+      const usarHardwareCram = seletorCram && seletorCram.value === "hardware";
+      jogo.definir_pontos_cram(usarHardwareCram);
+    }
     vistaImagem = null;
     if (anterior) anterior.free();
   } catch (e) {

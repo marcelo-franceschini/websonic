@@ -93,6 +93,16 @@ impl Ponte {
         &self.rend
     }
 
+    /// Liga ou desliga a emulação dos pontos de CRAM analógicos do hardware original.
+    pub fn definir_pontos_cram(&mut self, ativos: bool) {
+        self.rend.definir_pontos_cram(ativos);
+    }
+
+    /// Informa se a emulação dos pontos de CRAM analógicos está ativa.
+    pub fn pontos_cram_ativos(&self) -> bool {
+        self.rend.pontos_cram_ativos()
+    }
+
     /// Lê as palavras de um DMA da memória para a VDP, do endereço dado pelos registradores.
     fn coletar_palavras_dma(&self, mem: &mut Memoria, buffer: &mut Vec<u16>) -> (usize, usize) {
         let inicio = buffer.len();
@@ -402,6 +412,16 @@ impl Console {
     /// Informa a ocupação da fila de áudio do navegador em pares estéreo.
     pub fn definir_ocupacao_audio(&mut self, pares: usize) {
         self.misturador.definir_ocupacao_externa(pares);
+    }
+
+    /// Liga ou desliga a emulação dos pontos de CRAM analógicos do hardware original.
+    pub fn definir_pontos_cram(&mut self, ativos: bool) {
+        self.ponte.definir_pontos_cram(ativos);
+    }
+
+    /// Informa se a emulação dos pontos de CRAM analógicos está ativa.
+    pub fn pontos_cram_ativos(&self) -> bool {
+        self.ponte.pontos_cram_ativos()
     }
 
     /// Roda um quadro e devolve a imagem em RGBA (320 por 224).
