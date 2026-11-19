@@ -57,7 +57,6 @@ const elDiagWorklet = document.getElementById("diag-worklet");
 let audioCtx = null;
 let ganhoMasterNode = null;
 let workletNode = null;
-let fallbackNode = null;
 let volumeAtual = 1.0;
 let mudoAtivo = false;
 
@@ -233,7 +232,6 @@ function criarAudioContext() {
     audioCtx.addEventListener("statechange", () => {
       if (audioCtx.state === "running") {
         if (workletNode) workletNode.port.postMessage({ tipo: "reset" });
-        if (fallbackNode) fallbackNode.reset();
       }
       atualizarEstadoAudioUI();
     });
@@ -326,7 +324,7 @@ btnAudio.addEventListener("click", () => {
 });
 
 async function iniciarAudio() {
-  if (audioCtx && (workletNode || fallbackNode)) return;
+  if (audioCtx && workletNode) return;
   try {
     criarAudioContext();
 
@@ -369,52 +367,14 @@ async function iniciarAudio() {
         elDiagPipeline.className = "diag-ativo";
       }
     } catch (eWorklet) {
-      console.warn("AudioWorklet indisponivel, usando ScriptProcessor:", eWorklet);
-      const spNode = audioCtx.createScriptProcessor(2048, 0, 2);
-      const tam = 16384;
-      const bL = new Float32Array(tam);
-      const bR = new Float32Array(tam);
-      let rIdx = 0;
-      let wIdx = 0;
-      let disp = 0;
-
-      spNode.onaudioprocess = (ev) => {
-        const outL = ev.outputBuffer.getChannelData(0);
-        const outR = ev.outputBuffer.getChannelData(1);
-        const len = outL.length;
-        for (let i = 0; i < len; i++) {
-          if (disp > 0) {
-            outL[i] = bL[rIdx];
-            outR[i] = bR[rIdx];
-            rIdx = (rIdx + 1) % tam;
-            disp--;
-          } else {
-            outL[i] = 0;
-            outR[i] = 0;
-          }
-        }
-      };
-      spNode.connect(ganhoMasterNode);
-      fallbackNode = {
-        reset: () => { rIdx = wIdx = disp = 0; },
-        ocupacao: () => disp,
-        enviar: (dados) => {
-          const pares = dados.length >> 1;
-          for (let i = 0; i < pares; i++) {
-            if (disp < tam) {
-              bL[wIdx] = dados[i * 2];
-              bR[wIdx] = dados[i * 2 + 1];
-              wIdx = (wIdx + 1) % tam;
-              disp++;
-            }
-          }
-        },
-      };
+      console.warn("AudioWorklet indisponivel:", eWorklet);
       if (elDiagPipeline) {
-        elDiagPipeline.textContent = "ScriptProcessor (Fallback universal)";
-        elDiagPipeline.className = "diag-azul";
+        elDiagPipeline.textContent = "AudioWorklet indisponivel";
+        elDiagPipeline.className = "diag-aviso";
       }
-      elDiagWorklet.textContent = "Usando ScriptProcessor fallback";
+      if (elDiagWorklet) {
+        elDiagWorklet.textContent = "AudioWorklet indisponivel";
+      }
     }
 
     window.addEventListener("click", desbloquearAudio);
@@ -914,8 +874,6 @@ function simularPassos(agora) {
     const estadoControles = calcularMascaraTeclado(modo) | botoesDoControle(modo);
     jogo.botoes(estadoControles);
 
-    if (fallbackNode) jogo.ocupacao_audio(fallbackNode.ocupacao());
-
     const inicioWasm = performance.now();
     jogo.simular_quadro();
     ultimoWasmTime = performance.now() - inicioWasm;
@@ -955,15 +913,8 @@ function simularPassos(agora) {
       buf.set(fatiaAudio);
       const sub = buf.subarray(0, lenAudio);
 
-      if (audioCtx && audioCtx.state === "running") {
-        if (workletNode) {
-          workletNode.port.postMessage(sub, [buf.buffer]);
-        } else if (fallbackNode) {
-          fallbackNode.enviar(sub);
-          if (poolAudio.length < POOL_AUDIO_TAMANHO) {
-            poolAudio.push(buf);
-          }
-        }
+      if (audioCtx && audioCtx.state === "running" && workletNode) {
+        workletNode.port.postMessage(sub, [buf.buffer]);
       } else if (poolAudio.length < POOL_AUDIO_TAMANHO) {
         poolAudio.push(buf);
       }
@@ -1043,7 +994,6 @@ async function iniciar(bytes) {
   if (sessao !== geracao) return;
 
   if (workletNode) workletNode.port.postMessage({ tipo: "reset" });
-  if (fallbackNode) fallbackNode.reset();
 
   try {
     const anterior = jogo;
