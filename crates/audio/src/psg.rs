@@ -127,6 +127,44 @@ impl Psg {
         }
     }
 
+    /// Os 16 ciclos de uma amostra sem escrita e fora do reset, sem passar ciclo a ciclo. Nesse
+    /// estado o divisor de 4 fases faz, a cada 4 ciclos, um `serve_canal` e um `fim_da_volta`, e
+    /// volta ao mesmo estado depois de 16 ciclos. Devolve `false`, sem mudar nada, fora desse
+    /// estado. Referência: 16 chamadas de [`Psg::ciclo`] (`tests/psg_amostra_estavel.rs`).
+    pub fn amostra_estavel(&mut self) -> bool {
+        if self.ic
+            || self.escrita_pendente
+            || self.escrita_aplicar
+            || self.reset_registradores
+            || self.ic_atraso_prescaler != 0
+            || self.ic_atraso != 0
+        {
+            return false;
+        }
+        // Descobre qual dos dois vem primeiro andando o divisor numa cópia (no máximo 4 ciclos).
+        let (mut a, mut b) = (self.prescaler_a, self.prescaler_b);
+        let mut serve_primeiro = true;
+        for _ in 0..4 {
+            let b_antes = b;
+            b = (b ^ a) & 1;
+            a ^= 1;
+            if a != 0 {
+                serve_primeiro = b_antes == 0;
+                break;
+            }
+        }
+        for _ in 0..4 {
+            if serve_primeiro {
+                self.serve_canal();
+                self.fim_da_volta();
+            } else {
+                self.fim_da_volta();
+                self.serve_canal();
+            }
+        }
+        true
+    }
+
     /// Aplica a escrita pendente (ou o reset) aos registradores.
     fn atualiza_registradores(&mut self) {
         if !self.reset_registradores && !self.escrita_aplicar {

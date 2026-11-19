@@ -330,6 +330,15 @@ impl Sintetizador {
             let limite = ciclos_alvo_psg.min(proxima_escrita);
 
             while self.ciclos_psg < limite {
+                // Amostra inteira sem escrita: os 16 ciclos de uma vez (igual a 16 `ciclo()`).
+                if self.subciclo_psg == 0
+                    && limite.saturating_sub(self.ciclos_psg) >= 16
+                    && self.psg.amostra_estavel()
+                {
+                    self.ciclos_psg = self.ciclos_psg.wrapping_add(16);
+                    ao_psg(self.psg.saida_empacotada());
+                    continue;
+                }
                 self.psg.ciclo();
                 self.subciclo_psg = self.subciclo_psg.wrapping_add(1);
                 self.ciclos_psg = self.ciclos_psg.wrapping_add(1);
