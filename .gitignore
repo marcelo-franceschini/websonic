@@ -46,6 +46,12 @@ dist/
 *~
 .idea/
 .vscode/
+.env
+.env.*
+
+# Relatorios e arquivos locais do roast
+.roast/
+roast.json
 
 
 # Pastas de ROM, disassembly e trabalho, caso alguem as crie dentro do repositorio

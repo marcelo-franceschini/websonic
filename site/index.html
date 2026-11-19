@@ -3,6 +3,23 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Sonic the Hedgehog (1991) do Mega Drive reconstruído em Rust e WebAssembly com WebGL2 e AudioWorklet.">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+
+  <!-- OpenGraph / Facebook / Discord -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://marcelo-franceschini.github.io/websonic/">
+  <meta property="og:title" content="WebSonic - Sonic the Hedgehog em Rust e WebAssembly">
+  <meta property="og:description" content="Reconstrução fiel do Sonic the Hedgehog (1991) em Rust nativo e WebAssembly, com WebGL2 e AudioWorklet.">
+  <meta property="og:image" content="https://marcelo-franceschini.github.io/websonic/favicon.svg">
+
+  <!-- Twitter / X -->
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:url" content="https://marcelo-franceschini.github.io/websonic/">
+  <meta name="twitter:title" content="WebSonic - Sonic the Hedgehog em Rust e WebAssembly">
+  <meta name="twitter:description" content="Reconstrução fiel do Sonic the Hedgehog (1991) em Rust nativo e WebAssembly, com WebGL2 e AudioWorklet.">
+  <meta name="twitter:image" content="https://marcelo-franceschini.github.io/websonic/favicon.svg">
+
   <!-- So codigo do proprio site e WebAssembly. Nada de rede, nada de script de fora. -->
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; connect-src 'self'">
@@ -613,6 +630,139 @@
       color: var(--danger-red);
       font-weight: bold;
     }
+
+    /* Controles de Toque para Celular e Tablet */
+    .controles-toque-container {
+      width: 100%;
+      max-width: 680px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      padding: 0.75rem 0.5rem;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+    }
+
+    .btn-toque {
+      background: var(--bg-card);
+      border: 2px solid var(--border-subtle);
+      color: var(--text-main);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-mono);
+      font-weight: 800;
+      cursor: pointer;
+      touch-action: none;
+      -webkit-tap-highlight-color: transparent;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+      transition: background 0.08s ease, transform 0.08s ease, border-color 0.08s ease;
+    }
+
+    .btn-toque:active, .btn-toque.ativo {
+      background: var(--sonic-cyan);
+      color: #000;
+      border-color: #fff;
+      transform: scale(0.94);
+      box-shadow: 0 0 16px rgba(0, 212, 255, 0.7);
+    }
+
+    .toque-dpad {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      touch-action: none;
+    }
+
+    .dpad-meio {
+      display: flex;
+      align-items: center;
+    }
+
+    .dpad-centro {
+      width: 44px;
+      height: 44px;
+      background: var(--bg-deep);
+    }
+
+    .dpad-btn {
+      width: 48px;
+      height: 48px;
+      border-radius: 8px;
+      font-size: 1.1rem;
+    }
+
+    .dpad-cima { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+    .dpad-baixo { border-top-left-radius: 0; border-top-right-radius: 0; }
+    .dpad-esq { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+    .dpad-dir { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+
+    .toque-centro {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .btn-toque-start {
+      padding: 0.6rem 1.2rem;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+    }
+
+    .toque-acoes {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .btn-toque-acao {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      font-size: 1.1rem;
+      background: var(--bg-card);
+    }
+
+    .acao-c {
+      margin-top: -12px;
+    }
+
+    .link-github {
+      text-decoration: none;
+      color: var(--text-muted);
+      transition: all 0.2s ease;
+    }
+
+    .link-github:hover {
+      border-color: var(--sonic-cyan);
+      color: var(--sonic-cyan);
+    }
+
+    .rodape-projeto {
+      width: 100%;
+      text-align: center;
+      margin-top: 1.5rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border-subtle);
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+
+    .rodape-projeto a {
+      color: var(--sonic-cyan);
+      text-decoration: none;
+    }
+
+    .rodape-projeto a:hover {
+      text-decoration: underline;
+    }
   </style>
 </head>
 <body>
@@ -627,6 +777,7 @@
         </div>
       </div>
       <div class="status-pills">
+        <a href="https://github.com/marcelo-franceschini/websonic" target="_blank" rel="noopener noreferrer" class="pill link-github" title="Repositório no GitHub">⚡ GitHub</a>
         <span id="badge-audio" class="pill">🔊 Áudio</span>
         <span id="badge-gamepad" class="pill">🎮 Gamepad</span>
         <span class="pill ativo">⚡ Wasm &amp; WebGL2</span>
@@ -685,6 +836,7 @@
           <button id="btn-mudo" type="button" class="btn btn-cinza" title="Alternar som">🔊</button>
           <input type="range" id="slider-volume" class="slider-volume" min="0" max="1" step="0.05" value="1" title="Volume Geral">
         </div>
+        <button id="btn-toque" type="button" class="btn btn-cinza" title="Alternar Controles de Toque na Tela">📱 Toque</button>
         <button id="btn-fullscreen" type="button" class="btn btn-cinza" title="Alternar Tela Cheia (Tecla F)">⛶ Tela Cheia</button>
       </div>
     </div>
@@ -703,6 +855,29 @@
           <span>Wasm: <b id="hud-wasm-time">0.0 ms</b></span>
         </div>
         <canvas id="hud-grafico" width="160" height="40"></canvas>
+      </div>
+    </div>
+
+    <!-- Controles Virtuais de Toque para Celular e Tablet -->
+    <div id="controles-toque" class="controles-toque-container" hidden>
+      <div class="toque-dpad" id="toque-dpad">
+        <button type="button" class="btn-toque dpad-btn dpad-cima" data-dir="cima" aria-label="Cima">▲</button>
+        <div class="dpad-meio">
+          <button type="button" class="btn-toque dpad-btn dpad-esq" data-dir="esquerda" aria-label="Esquerda">◀</button>
+          <div class="dpad-centro"></div>
+          <button type="button" class="btn-toque dpad-btn dpad-dir" data-dir="direita" aria-label="Direita">▶</button>
+        </div>
+        <button type="button" class="btn-toque dpad-btn dpad-baixo" data-dir="baixo" aria-label="Baixo">▼</button>
+      </div>
+
+      <div class="toque-centro">
+        <button type="button" class="btn-toque btn-toque-start" data-botao="start" aria-label="Start">START</button>
+      </div>
+
+      <div class="toque-acoes">
+        <button type="button" class="btn-toque btn-toque-acao acao-a" data-botao="a" aria-label="Botão A">A</button>
+        <button type="button" class="btn-toque btn-toque-acao acao-b" data-botao="b" aria-label="Botão B">B</button>
+        <button type="button" class="btn-toque btn-toque-acao acao-c" data-botao="c" aria-label="Botão C">C</button>
       </div>
     </div>
 
@@ -789,6 +964,12 @@
         </div>
       </div>
     </div>
+
+    <!-- Rodape com Informacoes e Links do Projeto -->
+    <footer class="rodape-projeto">
+      <p>WebSonic é uma reconstrução do Sonic 1 em Rust e WebAssembly, com foco em fidelidade e aprendizado.</p>
+      <p><a href="https://github.com/marcelo-franceschini/websonic" target="_blank" rel="noopener noreferrer">Repositório no GitHub</a> · <a href="https://github.com/marcelo-franceschini/websonic/blob/main/docs/requisitos.md" target="_blank" rel="noopener noreferrer">Requisitos e Fidelidade</a></p>
+    </footer>
   </div>
 
   <script type="module" src="app.js?v=5"></script>

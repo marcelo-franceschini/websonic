@@ -32,13 +32,16 @@ pub fn montar() -> Result<(), String> {
             .arg(&wasm),
     )?;
 
-    // 3. Copia a página. O .nojekyll evita que o Pages processe os arquivos.
+    // 3. Copia a página e arquivos estáticos. O .nojekyll evita que o Pages processe os arquivos.
     for nome in [
         "index.html",
         "app.js",
         "audio-worklet.js",
         "gpu.js",
         "relogio.js",
+        "favicon.svg",
+        "robots.txt",
+        "sitemap.xml",
     ] {
         fs::copy(raiz.join("site").join(nome), dist.join(nome))
             .map_err(|e| format!("copiar site/{nome}: {e}"))?;
