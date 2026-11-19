@@ -419,10 +419,10 @@ Marque `[x]` no mesmo commit do item. Use `BLOQUEADO: <motivo>` quando o protoco
 
 | Feito | Ordem | ID | P | Depende de | Arquivo:linha | Problema | Solução passo a passo | Aceitação | Ganho estimado | Prova de equivalência e guardas |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| [x] | 1 | E0.1 | P0 | | `docs/pedidos/l1-hook-detector.patch` | O hook não detecta trechos da ROM (L1 inativa). | (1) Compile o detector com a receita da seção 0.7.<br>(2) Rode os dois controles.<br>(3) Apague o arquivo positivo. | Positivo sai com 1. Negativo sai com 0. | Guarda contra cópia da ROM. | Não muda código. |
-| [x] | 2 | E0.2 | P0 | E0.1 | `docs/relatorio-performance-2.md` | Este documento está fora do git. | (1) Rode o detector sobre o arquivo.<br>(2) Faça o commit só deste arquivo: `perf(docs): E0.2 registrar o plano da rodada 2`. | Commit criado. `git status --short` mostra só os arquivos de fora listados na seção 0.5. | Checkboxes rastreáveis. | Não muda código. |
-| [ ] | 3 | E1 | P0 | E0.2 | árvore inteira | O executor precisa da própria linha de base. | (1) Rode a seção 5.2 inteira e anote os números na tabela da seção 6.2.<br>(2) Copie `dist/pkg` para `$TMP/base-pkg` (`TMP` é a pasta temporária do executor). | As guardas da seção 5.3 que já existem passam no HEAD (a `guarda_sintese` e a `guarda-wasm` nascem no G1 e no G2). | Base para comparar. | Sem commit: só medição. |
-| [ ] | 4 | G1 | P0 | E1 | `crates/console/src/lib.rs:565-567`; novo `crates/console/tests/guarda_sintese.rs` | Nenhuma guarda cobre as amostras nativas de FM e PSG nem o áudio nas taxas que o site usa. | (1) Depois de `audio_slice`, acrescente `amostras_nativas` do Anexo A.2.<br>(2) Crie o teste do Anexo A.2.<br>(3) Rode-o com `SONIC1_ROM` e `--ignored`. | O teste passa com os 5 hashes do Anexo A.2. | Detecta mudança no PSG, no FM e no reamostrador. | Só leitura de campos existentes. Guardas: todas da seção 5.3. |
+| [ ] | 1 | E0.1 | P0 | | `docs/pedidos/l1-hook-detector.patch` | O hook não detecta trechos da ROM (L1 inativa). | (1) Compile o detector com a receita da seção 0.7.<br>(2) Rode os dois controles.<br>(3) Apague o arquivo positivo. | Positivo sai com 1. Negativo sai com 0. | Guarda contra cópia da ROM. | Não muda código. |
+| [ ] | 2 | E0.2 | P0 | E0.1 | `docs/relatorio-performance-2.md` | Este documento está fora do git. | (1) Rode o detector sobre o arquivo.<br>(2) Faça o commit só deste arquivo: `perf(docs): E0.2 registrar o plano da rodada 2`. | Commit criado. `git status --short` mostra só os arquivos de fora listados na seção 0.5. | Checkboxes rastreáveis. | Não muda código. |
+| [x] | 3 | E1 | P0 | E0.2 | árvore inteira | O executor precisa da própria linha de base. | (1) Rode a seção 5.2 inteira e anote os números na tabela da seção 6.2.<br>(2) Copie `dist/pkg` para `$TMP/base-pkg` (`TMP` é a pasta temporária do executor). | As guardas da seção 5.3 que já existem passam no HEAD (a `guarda_sintese` e a `guarda-wasm` nascem no G1 e no G2). | Base para comparar. | Sem commit: só medição. |
+| [x] | 4 | G1 | P0 | E1 | `crates/console/src/lib.rs:565-567`; novo `crates/console/tests/guarda_sintese.rs` | Nenhuma guarda cobre as amostras nativas de FM e PSG nem o áudio nas taxas que o site usa. | (1) Depois de `audio_slice`, acrescente `amostras_nativas` do Anexo A.2.<br>(2) Crie o teste do Anexo A.2.<br>(3) Rode-o com `SONIC1_ROM` e `--ignored`. | O teste passa com os 5 hashes do Anexo A.2. | Detecta mudança no PSG, no FM e no reamostrador. | Só leitura de campos existentes. Guardas: todas da seção 5.3. |
 | [ ] | 5 | G2 | P0 | E1 | novo `site/tests/guarda-wasm.test.mjs` | A guarda nativa de áudio não cobre o Wasm do site (seção 3.1). | (1) Crie o arquivo do Anexo A.6.<br>(2) Rode `cargo xtask site`.<br>(3) Rode `command node --test site/tests/guarda-wasm.test.mjs`. | `ℹ pass 1` e `ℹ fail 0`, com os 6 hashes do anexo. | Detecta mudança de imagem ou áudio no Wasm real. | Não muda código. |
 | [ ] | 6 | W1 | P0 | G2 | `site/relogio.js:22-23`; `site/tests/relogio.test.mjs` | Com o vigia, o relógio recebe carimbos fora de ordem. Ele conta o mesmo tempo duas vezes (608 passos em 10 s no teste). | (1) Troque `this.ultimo = agora;` por `this.ultimo = Math.max(this.ultimo, agora);`.<br>(2) Comente o motivo, como no Anexo A.7.<br>(3) Acrescente o teste do vigia do Anexo A.7 a `site/tests/relogio.test.mjs`. | Os testes do site passam com 0 falhas. O teste novo falha sem o passo (1). | Contagem exata com o vigia. | Os testes antigos do relógio e do ritmo passam iguais. |
 | [ ] | 7 | W2 | P0 | W1 | `site/app.js:846-1013`, `:1028-1029` | O áudio só nasce no rAF. Pausas de 50 a 242 ms do navegador viram 4 a 13 faltas a cada 2 minutos. | (1) Mova o laço de passos de `laco` para `simularPassos(agora)`, como no Anexo A.7.<br>(2) Faça `simularPassos` devolver `null` quando o núcleo parar.<br>(3) Guarde `ultimoRaf` no início de `laco`.<br>(4) Acrescente o `setInterval` do vigia.<br>(5) Comente a conta da taxa ajustada na linha 1029. | Testes do site com 0 falhas. Na medição final (seção 6.1), nenhuma falta coincide com uma espera de renderização sem script. | −4 a −13 faltas a cada 2 minutos `[ESTIMADO: as faltas medidas coincidem com pausas de vsync]`. | O caminho do rAF não muda. G2 e `guarda_rom` iguais (o Wasm não muda). |
@@ -560,11 +560,11 @@ Preencha esta tabela no último commit e mostre-a no chat.
 | Faltas que coincidem com espera de renderização sem script | todas as da rodada 2 | | |
 | Quadros simulados por segundo no Chrome | 59,93 a 60,03 | | |
 | Wasm por passo no site (média) | 7,69 a 8,43 ms | | |
-| Quadro Wasm, núcleo P (média, intercalado) | 5,30 a 5,40 ms | | |
-| Quadro Wasm, núcleo E (média, p95) | 10,79 ms, 11,75 ms | | |
-| Alocações por quadro | 0,1 | | |
-| Tamanho do Wasm | 685.664 B | | |
-| Linhas apagadas | 0 | | |
+| Quadro Wasm, núcleo P (média, intercalado) | 5,30 a 5,40 ms | 3,47 ms (turbo) | |
+| Quadro Wasm, núcleo E (média, p95) | 10,79 ms, 11,75 ms | 5,09 ms, 6,50 ms | |
+| Alocações por quadro | 0,1 | 0,1 | |
+| Tamanho do Wasm | 685.664 B | 685.664 B | |
+| Linhas apagadas | 0 | 0 | |
 | Itens `BLOQUEADO` | | | |
 
 Liste também os commits (hash e título).

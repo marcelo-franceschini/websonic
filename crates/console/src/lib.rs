@@ -566,6 +566,12 @@ impl Console {
         &self.buffer_audio_quadro
     }
 
+    /// Amostras nativas do último quadro: FM misturado `(esquerda, direita)` e PSG empacotado.
+    /// Servem à guarda `guarda_sintese` (a saída de cada chip, antes de reamostrar).
+    pub fn amostras_nativas(&self) -> (&[(i16, i16)], &[u16]) {
+        (&self.amostras_fm, &self.amostras_psg)
+    }
+
     pub fn hash_da_imagem(&self) -> u64 {
         self.ponte.hash_da_imagem()
     }
