@@ -113,13 +113,6 @@ impl Ponte {
         (inicio, buffer.len())
     }
 
-    /// Lê as palavras de um DMA da memória para a VDP, do endereço dado pelos registradores.
-    fn palavras_do_dma(&self, mem: &mut Memoria) -> Vec<u16> {
-        let mut v = Vec::new();
-        self.coletar_palavras_dma(mem, &mut v);
-        v
-    }
-
     /// O DMA da memória para a VDP está permitido e pedido, pelos registradores copiados?
     fn dma_de_memoria(&self) -> bool {
         let r1 = self.regs.get(1).copied().unwrap_or(0);
@@ -130,37 +123,13 @@ impl Ponte {
     /// Primeira fase de `aplicar`: acompanha os registradores e, se a saída pede um DMA da
     /// memória, lê as palavras agora (a memória muda depois). Devolve `None` para o que não é VDP.
     pub fn capturar(&mut self, mem: &mut Memoria, saida: &Saida) -> Option<Capturada> {
-        let Saida::Vdp {
-            porta,
-            valor,
-            tamanho,
-        } = *saida
-        else {
-            return None;
-        };
-        let mut dma = None;
-        if porta == PortaVdp::Controle {
-            // Registrador (010x xxxx...): palavra única. Senão é metade de um comando.
-            let e_registrador = valor & 0xC000 == 0x8000;
-            if e_registrador {
-                self.primeira = None;
-                let n = usize::from((valor >> 8) & 0x1F);
-                if let Some(r) = self.regs.get_mut(n) {
-                    *r = valor.to_le_bytes()[0];
-                }
-            } else if let Some(_primeira) = self.primeira.take() {
-                // Segunda palavra: o bit 7 pede DMA. Se for da memória, lê as palavras.
-                if valor & 0x0080 != 0 && self.dma_de_memoria() {
-                    dma = Some(self.palavras_do_dma(mem));
-                }
-            } else {
-                self.primeira = Some(valor);
-            }
-        }
+        let mut palavras = Vec::new();
+        let c = self.capturar_interna(mem, saida, &mut palavras)?;
+        let dma = c.faixa_dma.map(|_| palavras);
         Some(Capturada {
-            porta,
-            valor,
-            tamanho,
+            porta: c.porta,
+            valor: c.valor,
+            tamanho: c.tamanho,
             dma,
         })
     }
@@ -238,25 +207,15 @@ impl Ponte {
 
     /// Segunda fase: entrega o DMA lido e aplica a escrita na posição dada.
     pub fn aplicar_capturada(&mut self, c: &Capturada, linha: u16, coluna: u64) {
-        match c.porta {
-            PortaVdp::Dados => {
-                let t = if c.tamanho == Tamanho::Byte { 1 } else { 2 };
-                self.rend.aplicar(
-                    linha,
-                    coluna,
-                    Escrita::Dados {
-                        valor: c.valor,
-                        tamanho: t,
-                    },
-                );
-            }
-            PortaVdp::Controle => {
-                if let Some(palavras) = &c.dma {
-                    self.rend.entregar_dma(palavras);
-                }
-                self.rend.aplicar(linha, coluna, Escrita::Controle(c.valor));
-            }
-        }
+        let palavras = c.dma.as_deref().unwrap_or(&[]);
+        let faixa_dma = c.dma.as_ref().map(|v| (0, v.len()));
+        let interna = CapturadaInterna {
+            porta: c.porta,
+            valor: c.valor,
+            tamanho: c.tamanho,
+            faixa_dma,
+        };
+        self.aplicar_capturada_interna(&interna, palavras, linha, coluna);
     }
 
     /// Aplica uma saída do núcleo na posição dada. Só as escritas da VDP interessam aqui.
