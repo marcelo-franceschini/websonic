@@ -131,13 +131,11 @@ impl Reamostrador {
         }
     }
 
-    /// Adiciona amostras de entrada mono ao buffer de convolucao (duplica em L e R).
+    /// Adiciona amostras de entrada mono ao buffer de convolucao (grava apenas em L).
     pub fn alimentar_mono(&mut self, amostras: &[f32]) {
         self.buffer_in_l.reserve(amostras.len());
-        self.buffer_in_r.reserve(amostras.len());
         for &m in amostras {
             self.buffer_in_l.push(m);
-            self.buffer_in_r.push(m);
         }
     }
 
@@ -150,6 +148,7 @@ impl Reamostrador {
 
         let limite = n_in - TAPS_POLIFASICO;
         let passo = self.passo_base * (1.0 + self.ajuste_fino);
+        let mono = self.buffer_in_r.len() < self.buffer_in_l.len();
 
         while (self.offset_base as f64) + self.pos_frac < (limite as f64) {
             let idx_base = self.offset_base + (self.pos_frac as usize);
@@ -161,10 +160,13 @@ impl Reamostrador {
                 [idx_base..idx_base + TAPS_POLIFASICO]
                 .try_into()
                 .expect("a fatia tem exatamente TAPS_POLIFASICO amostras");
-            let slice_r: &[f32; TAPS_POLIFASICO] = self.buffer_in_r
-                [idx_base..idx_base + TAPS_POLIFASICO]
-                .try_into()
-                .expect("a fatia tem exatamente TAPS_POLIFASICO amostras");
+            let slice_r: &[f32; TAPS_POLIFASICO] = if mono {
+                slice_l
+            } else {
+                self.buffer_in_r[idx_base..idx_base + TAPS_POLIFASICO]
+                    .try_into()
+                    .expect("a fatia tem exatamente TAPS_POLIFASICO amostras")
+            };
 
             let mut out_l = 0.0f32;
             let mut out_r = 0.0f32;
@@ -186,7 +188,9 @@ impl Reamostrador {
         // Compacta o buffer apenas quando o offset_base acumula mais de 2048 amostras
         if self.offset_base > 2048 {
             self.buffer_in_l.drain(..self.offset_base);
-            self.buffer_in_r.drain(..self.offset_base);
+            if self.buffer_in_r.len() >= self.offset_base {
+                self.buffer_in_r.drain(..self.offset_base);
+            }
             self.offset_base = 0;
         }
     }
@@ -230,7 +234,6 @@ impl Reamostrador {
         // Compacta o buffer apenas quando o offset_base acumula mais de 2048 amostras
         if self.offset_base > 2048 {
             self.buffer_in_l.drain(..self.offset_base);
-            self.buffer_in_r.drain(..self.offset_base);
             self.offset_base = 0;
         }
     }
