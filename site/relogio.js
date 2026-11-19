@@ -19,8 +19,9 @@ export class Relogio {
   }
 
   avancar(agora) {
+    // O vigia (app.js) chama com performance.now() entre dois rAF: o tempo do relogio nunca volta.
     this.acumulado += Math.max(0, agora - this.ultimo);
-    this.ultimo = agora;
+    this.ultimo = Math.max(this.ultimo, agora);
     if (this.acumulado > PERIODO_QUADRO * 10) {
       this.acumulado = PERIODO_QUADRO * 10;
     }

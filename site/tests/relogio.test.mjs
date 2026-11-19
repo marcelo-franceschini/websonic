@@ -69,3 +69,28 @@ test("funções de interpolação interpolam escalares e vetores de posição", 
   const vetor = interpolarPosicao([10, 20], [30, 60], 0.5);
   assert.deepEqual(vetor, [20, 40]);
 });
+
+test("rAF com pausas e vigia: 60 passos por segundo, sem contar tempo duas vezes", () => {
+  const r = new Relogio();
+  r.iniciar(0);
+  let total = 0, naPausa = 0, ultimoRaf = 0;
+  // 10 s de rAF a 165 Hz, com uma pausa de 100 ms a cada 500 ms. O vigia (site/app.js) roda a
+  // cada 8,33 ms e le o performance.now() 12 ms depois da grade do rAF: o carimbo do rAF
+  // seguinte fica no passado. Sem o tempo monotonico, o relogio conta 608 passos.
+  const pausado = (t) => t % 500 > 400;
+  for (let t = 0; t <= 10000; t += 1000 / 120) {
+    const raf = Math.floor(t / (1000 / 165)) * (1000 / 165);
+    if (raf > ultimoRaf && !pausado(raf)) {
+      total += r.avancar(raf);
+      ultimoRaf = raf;
+    }
+    if (t - ultimoRaf > 2 * PERIODO_QUADRO) {
+      const n = r.avancar(t + 12);
+      total += n;
+      naPausa += n;
+    }
+  }
+  assert.ok(Math.abs(total - 600) <= 1, `${total} passos em 10 s`);
+  assert.ok(naPausa >= 60, `${naPausa} passos durante as pausas`);
+});
+
