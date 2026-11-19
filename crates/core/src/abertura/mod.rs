@@ -435,6 +435,22 @@ impl Abertura {
         self.parar_no_fim_abertura = false;
     }
 
+    /// Configura diretamente o modo Special Stage para testes e inspeção.
+    pub fn forcar_special_stage(&mut self) -> Result<(), ErroAbertura> {
+        self.parar_no_fim_abertura = false;
+        wb(&mut self.mem, ram::V_GAMEMODE, ram::ID_SPECIAL);
+        ww(&mut self.mem, ram::V_VDP_BUFFER1, 0x8134);
+        ww(&mut self.mem, ram::VDP_CONTROLE, 0x8004);
+        ww(&mut self.mem, ram::VDP_CONTROLE, 0x8134);
+        self.iniciar_especial();
+        Ok(())
+    }
+
+    /// Retorna o nome do modo atual para teste e depuração.
+    pub fn modo_nome(&self) -> String {
+        format!("{:?}", self.modo)
+    }
+
     /// O que o laço principal espera agora. O modo nominal usa isto para criar o tempo.
     pub fn espera(&self) -> Espera {
         match self.modo {

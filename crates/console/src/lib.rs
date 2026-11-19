@@ -424,6 +424,11 @@ impl Console {
         self.ponte.pontos_cram_ativos()
     }
 
+    /// Configura diretamente o modo Special Stage para testes e inspeção.
+    pub fn forcar_special_stage(&mut self) -> Result<(), sonic1_core::abertura::ErroAbertura> {
+        self.ab.forcar_special_stage()
+    }
+
     /// Roda um quadro e devolve a imagem em RGBA (320 por 224).
     pub fn executar_quadro(&mut self) -> Vec<u8> {
         self.executar_quadro_interno(true)
