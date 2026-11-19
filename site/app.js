@@ -843,9 +843,13 @@ tela.addEventListener("click", () => {
   desbloquearAudio();
 });
 
+// Instante (performance.now) do ultimo rAF. O vigia usa para saber se o navegador parou de chamar o rAF.
+let ultimoRaf = 0;
+
 function laco(agora, sessao) {
   animacao = 0;
   if (!jogo || sessao !== geracao || document.hidden) return;
+  ultimoRaf = performance.now();
 
   const inicioQuadro = performance.now();
   if (ultimoTimestampRaf > 0) {
@@ -860,6 +864,46 @@ function laco(agora, sessao) {
   }
   ultimoTimestampRaf = agora;
 
+  const atualizou = simularPassos(agora);
+  // O nucleo parou: simularPassos ja apresentou o ultimo quadro e o laco nao continua.
+  if (atualizou === null) return;
+
+  if (fpsDesbloqueado) {
+    // Apresenta na taxa nativa do monitor
+    apresentar();
+  } else if (atualizou) {
+    // Apresenta estritamente no ritmo de 60Hz
+    apresentar();
+  }
+
+  const fimQuadro = performance.now();
+  ultimoFrameTime = fimQuadro - inicioQuadro;
+  historicoFrameTime[indiceHistorico] = ultimoFrameTime;
+  indiceHistorico = (indiceHistorico + 1) % HISTORICO_TEMPOS_MAX;
+  totalHistorico = Math.min(totalHistorico + 1, HISTORICO_TEMPOS_MAX);
+
+  if (agora - ultimoTempoHz >= 500) {
+    const deltaQuadros = quadroNum - ultimoQuadroSim;
+    const deltaTempo = agora - ultimoTempoHz;
+    simulacaoHz = deltaTempo > 0 ? (deltaQuadros * 1000) / deltaTempo : 60.0;
+    ultimoQuadroSim = quadroNum;
+    ultimoTempoHz = agora;
+  }
+
+  if (hudVisivel) {
+    if (elHudFps) elHudFps.textContent = `${fpsApresentado.toFixed(1)} FPS`;
+    if (elHudHz) elHudHz.textContent = `${simulacaoHz.toFixed(1)} Hz sim`;
+    if (elHudFrameTime) elHudFrameTime.textContent = `${ultimoFrameTime.toFixed(1)} ms`;
+    if (elHudWasmTime) elHudWasmTime.textContent = `${ultimoWasmTime.toFixed(1)} ms`;
+    desenharGraficoHud();
+  }
+
+  if (funcaoRafAtual) animacao = requestAnimationFrame(funcaoRafAtual);
+}
+
+// Roda os passos que o relogio pede: entrada, Wasm, audio e painel. Devolve se algum passo rodou,
+// ou null se o nucleo parou (nesse caso ja apresentou o ultimo quadro).
+function simularPassos(agora) {
   const passos = relogio.avancar(agora);
   let atualizou = false;
 
@@ -975,42 +1019,20 @@ function laco(agora, sessao) {
       p.hidden = false;
       p.textContent = "O nucleo parou: " + erro;
       if (atualizou) apresentar();
-      return;
+      return null;
     }
   }
-
-  if (fpsDesbloqueado) {
-    // Apresenta na taxa nativa do monitor
-    apresentar();
-  } else if (atualizou) {
-    // Apresenta estritamente no ritmo de 60Hz
-    apresentar();
-  }
-
-  const fimQuadro = performance.now();
-  ultimoFrameTime = fimQuadro - inicioQuadro;
-  historicoFrameTime[indiceHistorico] = ultimoFrameTime;
-  indiceHistorico = (indiceHistorico + 1) % HISTORICO_TEMPOS_MAX;
-  totalHistorico = Math.min(totalHistorico + 1, HISTORICO_TEMPOS_MAX);
-
-  if (agora - ultimoTempoHz >= 500) {
-    const deltaQuadros = quadroNum - ultimoQuadroSim;
-    const deltaTempo = agora - ultimoTempoHz;
-    simulacaoHz = deltaTempo > 0 ? (deltaQuadros * 1000) / deltaTempo : 60.0;
-    ultimoQuadroSim = quadroNum;
-    ultimoTempoHz = agora;
-  }
-
-  if (hudVisivel) {
-    if (elHudFps) elHudFps.textContent = `${fpsApresentado.toFixed(1)} FPS`;
-    if (elHudHz) elHudHz.textContent = `${simulacaoHz.toFixed(1)} Hz sim`;
-    if (elHudFrameTime) elHudFrameTime.textContent = `${ultimoFrameTime.toFixed(1)} ms`;
-    if (elHudWasmTime) elHudWasmTime.textContent = `${ultimoWasmTime.toFixed(1)} ms`;
-    desenharGraficoHud();
-  }
-
-  if (funcaoRafAtual) animacao = requestAnimationFrame(funcaoRafAtual);
+  return atualizou;
 }
+
+// Vigia: o navegador as vezes para de chamar o rAF por 50 a 240 ms, mesmo com o jogo parado
+// (pausa do compositor, docs/relatorio-performance-2.md, secao 3.1). O audio nasce na simulacao
+// e faltaria. Se o rAF atrasar mais de 2 quadros, simula pelo temporizador. A imagem segue no rAF.
+setInterval(() => {
+  if (!jogo || !animacao || document.hidden || contextoPerdido) return;
+  if (performance.now() - ultimoRaf < 2 * PERIODO_QUADRO) return;
+  simularPassos(performance.now());
+}, PERIODO_QUADRO / 2);
 
 async function iniciar(bytes) {
   const sessao = ++geracao;
@@ -1026,6 +1048,8 @@ async function iniciar(bytes) {
   try {
     const anterior = jogo;
     const taxaBase = audioCtx ? audioCtx.sampleRate : 48000;
+    // O console roda a 53693175 / 896040 = 59,92 Hz; o site roda a 60 Hz exatos. A taxa ajustada
+    // faz o reamostrador entregar 800 pares por quadro a 48 kHz (docs/estado.md, decisao 1).
     const taxaAjustada = taxaBase * (53693175 / 896040) / 60;
     jogo = Jogo.criar_com_audio(bytes, taxaAjustada);
     vistaImagem = null;
