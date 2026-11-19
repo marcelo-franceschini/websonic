@@ -5,8 +5,6 @@
 //! No navegador a posição é nominal (sem tempo gravado, D7.5). No comparador a posição vem do
 //! oráculo (D7.3).
 
-pub mod agendador_vdp;
-
 use std::cell::RefCell;
 use std::rc::Rc;
 
