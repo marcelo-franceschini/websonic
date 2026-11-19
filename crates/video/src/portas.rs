@@ -250,11 +250,6 @@ impl Vdp {
         self.fifo.len()
     }
 
-    /// Informa se uma palavra de dados pode entrar sem formar uma escrita pendente.
-    pub fn pode_admitir_dados(&self) -> bool {
-        self.fifo.len() < TAMANHO_FIFO && self.fifo_pendentes.is_empty()
-    }
-
     /// O barramento da CPU aguarda o DMA de memória ou uma escrita pendente na FIFO.
     pub fn cpu_bloqueada(&self) -> bool {
         (self.dma_de_memoria() && !self.fila_dma.is_empty()) || !self.fifo_pendentes.is_empty()

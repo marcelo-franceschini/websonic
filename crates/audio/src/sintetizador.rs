@@ -360,16 +360,4 @@ impl Sintetizador {
 
         self.mclk = mclk_alvo;
     }
-
-    /// Avanca ambos os chips ate `mclk_alvo`, devolvendo o PSG como `u16` bruto.
-    pub fn avancar_ate_u16(
-        &mut self,
-        mclk_alvo: u64,
-        saida_fm: &mut Vec<AmostraFm>,
-        saida_psg: &mut Vec<u16>,
-    ) {
-        let mut psg_aux = Vec::new();
-        self.avancar_ate(mclk_alvo, saida_fm, &mut psg_aux);
-        saida_psg.extend(psg_aux.into_iter().map(u16::from));
-    }
 }

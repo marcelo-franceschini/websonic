@@ -70,10 +70,6 @@ impl Jogo {
             console: Console::novo(rom),
         }
     }
-
-    pub fn console(&self) -> &Console {
-        &self.console
-    }
 }
 
 #[wasm_bindgen]

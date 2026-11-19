@@ -73,8 +73,6 @@ impl TabelaFiltro {
 #[derive(Clone, Debug)]
 pub struct Reamostrador {
     tabela: TabelaFiltro,
-    taxa_entrada: f64,
-    taxa_saida: f64,
     passo_base: f64,
     ajuste_fino: f64,
     pos_frac: f64,
@@ -95,8 +93,6 @@ impl Reamostrador {
 
         Self {
             tabela,
-            taxa_entrada,
-            taxa_saida,
             passo_base,
             ajuste_fino: 0.0,
             pos_frac: 0.0,
@@ -104,16 +100,6 @@ impl Reamostrador {
             buffer_in_l,
             buffer_in_r,
         }
-    }
-
-    /// Taxa de amostragem de entrada nominal.
-    pub fn taxa_entrada(&self) -> f64 {
-        self.taxa_entrada
-    }
-
-    /// Taxa de amostragem de saida desejada.
-    pub fn taxa_saida(&self) -> f64 {
-        self.taxa_saida
     }
 
     /// Ajuste fino da razao de reamostragem (limitado a ±0.5%).

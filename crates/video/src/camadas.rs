@@ -8,12 +8,8 @@ use crate::registros::{Registros, RolagemH, RolagemV, TamanhoPlano};
 
 /// Largura nominal da área ativa.
 pub const LARGURA: usize = 320;
-/// Largura expandida para widescreen 16:9 (426x224).
-pub const LARGURA_WIDESCREEN: usize = 426;
 /// Altura nominal da área ativa.
 pub const ALTURA: usize = 224;
-/// Altura expandida para 240 linhas.
-pub const ALTURA_EXPANDIDA: usize = 240;
 /// Colunas de 16 pontos na área ativa.
 const COLUNAS: i32 = 20;
 /// Início da área de exibição dos sprites (coordenada de sprite que cai no ponto 0).

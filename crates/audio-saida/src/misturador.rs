@@ -24,7 +24,6 @@ pub struct MisturadorSaida {
     reamostrador_fm: Reamostrador,
     reamostrador_psg: Reamostrador,
     filtro_analogico: FiltroAnalogico,
-    taxa_saida: f64,
 
     ganho_fm: f32,
     ganho_psg: f32,
@@ -60,7 +59,6 @@ impl MisturadorSaida {
             reamostrador_fm,
             reamostrador_psg,
             filtro_analogico,
-            taxa_saida,
             ganho_fm: 0.75,
             ganho_psg: 0.50,
             buffer_audio: Vec::with_capacity(tamanho_alvo_buffer * 4),
@@ -79,40 +77,11 @@ impl MisturadorSaida {
         }
     }
 
-    /// Altera a frequencia de corte do filtro analogico (APROXIMADO).
-    pub fn definir_corte_analogico(&mut self, corte_hz: f32) {
-        self.filtro_analogico.definir_corte(corte_hz);
-    }
-
-    /// Taxa de saida configurada (ex: 48000.0 ou 44100.0).
-    pub fn taxa_saida(&self) -> f64 {
-        self.taxa_saida
-    }
-
-    /// Ativa ou desativa o filtro analogico pos-DAC (APROXIMADO).
-    pub fn definir_filtro_ligado(&mut self, ligado: bool) {
-        self.filtro_analogico.definir_ligado(ligado);
-    }
-
-    /// Altera os ganhos relativos de FM e PSG.
-    pub fn definir_ganhos(&mut self, ganho_fm: f32, ganho_psg: f32) {
-        self.ganho_fm = ganho_fm;
-        self.ganho_psg = ganho_psg;
-    }
-
     /// Alimenta um lote de amostras nativas de FM e PSG geradas por um quadro.
     pub fn alimentar_quadro(&mut self, amostras_fm: &[AmostraFm], amostras_psg: &[AmostraPsg]) {
         self.alimentar_com(
             amostras_fm.iter().map(|a| a.misturado),
             amostras_psg.iter().map(|p| p.canais),
-        );
-    }
-
-    /// Alimenta o quadro com amostras de PSG em formato bruto `u16`.
-    pub fn alimentar_quadro_u16(&mut self, amostras_fm: &[AmostraFm], amostras_psg: &[u16]) {
-        self.alimentar_com(
-            amostras_fm.iter().map(|a| a.misturado),
-            amostras_psg.iter().map(|&e| AmostraPsg::from(e).canais),
         );
     }
 
@@ -244,11 +213,6 @@ impl MisturadorSaida {
     /// Contador de falhas (quantas chamadas do worklet encontraram buffer vazio).
     pub fn falhas(&self) -> u64 {
         self.falhas
-    }
-
-    /// Contadores acumulados: (amostras FM de entrada, amostras PSG de entrada, amostras de saida).
-    pub fn contadores(&self) -> (u64, u64, u64) {
-        (self.cont_fm_in, self.cont_psg_in, self.cont_saida)
     }
 
     /// Reseta o misturador e esvazia o buffer.

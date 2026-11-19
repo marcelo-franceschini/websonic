@@ -36,29 +36,6 @@ impl FiltroAnalogico {
         s
     }
 
-    /// Filtro desativado (bypass limpo).
-    pub fn bypass(taxa_amostragem: f32) -> Self {
-        let mut s = Self::novo(taxa_amostragem);
-        s.ligado = false;
-        s
-    }
-
-    /// Altera a frequencia de corte em Hz.
-    pub fn definir_corte(&mut self, corte_hz: f32) {
-        self.frequencia_corte = corte_hz;
-        self.recalcular();
-    }
-
-    /// Altera o ganho linear.
-    pub fn definir_ganho(&mut self, ganho: f32) {
-        self.ganho = ganho;
-    }
-
-    /// Liga ou desliga a filtragem.
-    pub fn definir_ligado(&mut self, ligado: bool) {
-        self.ligado = ligado;
-    }
-
     fn recalcular(&mut self) {
         let rc = 1.0 / (2.0 * PI * self.frequencia_corte);
         let dt = 1.0 / self.taxa_amostragem;
