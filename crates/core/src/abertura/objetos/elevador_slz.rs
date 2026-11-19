@@ -16,21 +16,21 @@ const SPAWN_DELAY: u32 = 0x3C;
 const SPAWN_DELAY_BASE: u32 = 0x3E;
 
 const ELEV_VAR2: [(u8, u8); 15] = [
-    ((0x80u16 / 8) as u8, 1),
-    ((0x100u16 / 8) as u8, 1),
-    ((0x1A0u16 / 8) as u8, 1),
-    ((0x80u16 / 8) as u8, 3),
-    ((0x100u16 / 8) as u8, 3),
-    ((0x1A0u16 / 8) as u8, 3),
-    ((0xA0u16 / 8) as u8, 1),
-    ((0x120u16 / 8) as u8, 1),
-    ((0x160u16 / 8) as u8, 1),
-    ((0xA0u16 / 8) as u8, 3),
-    ((0x120u16 / 8) as u8, 3),
-    ((0x160u16 / 8) as u8, 3),
-    ((0x100u16 / 8) as u8, 5),
-    ((0x100u16 / 8) as u8, 7),
-    ((0x180u16 / 8) as u8, 9),
+    (0x10, 1),
+    (0x20, 1),
+    (0x34, 1),
+    (0x10, 3),
+    (0x20, 3),
+    (0x34, 3),
+    (0x14, 1),
+    (0x24, 1),
+    (0x2C, 1),
+    (0x14, 3),
+    (0x24, 3),
+    (0x2C, 3),
+    (0x20, 5),
+    (0x20, 7),
+    (0x30, 9),
 ];
 
 pub(super) fn executar(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
@@ -46,7 +46,7 @@ pub(super) fn executar(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
         }
         rotina = 2;
         wb(m, a.wrapping_add(OB_ROUTINE), rotina);
-        let idx = usize::from((sub & 0x0F) as usize);
+        let idx = usize::from(sub & 0x0F);
         let (half_base, act_type) = if idx < ELEV_VAR2.len() {
             ELEV_VAR2[idx]
         } else {

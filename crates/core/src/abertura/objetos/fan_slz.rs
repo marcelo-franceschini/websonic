@@ -32,7 +32,7 @@ pub(super) fn executar(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
             wb(m, a.wrapping_add(FAN_SWITCH), sw);
             time = if sw == 0 { 2 * 60 } else { 3 * 60 };
         }
-        ww(m, a.wrapping_add(FAN_TIME), time as u16);
+        ww(m, a.wrapping_add(FAN_TIME), time.cast_unsigned());
     }
 
     if rb(m, a.wrapping_add(FAN_SWITCH)) == 0 && rw(m, V_DEBUGUSE) == 0 {
@@ -54,9 +54,9 @@ pub(super) fn executar(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
                 if rb(m, a.wrapping_add(OB_STATUS)) & 1 == 0 {
                     force = force.wrapping_neg();
                 }
-                let low = (force as u8).wrapping_neg();
-                let f_signed = ((force & 0xFF00) | u16::from(low)) as i16;
-                let mut shift = (f_signed >> 4) as u16;
+                let low = u8::try_from(force & 0xff).unwrap_or(0).wrapping_neg();
+                let f_signed = ((force & 0xFF00) | u16::from(low)).cast_signed();
+                let mut shift = (f_signed >> 4).cast_unsigned();
                 if sub & 1 != 0 {
                     shift = shift.wrapping_neg();
                 }
@@ -66,7 +66,9 @@ pub(super) fn executar(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
         }
     }
 
-    let time = (rb(m, a.wrapping_add(OB_TIMEFRAME)) as i8).wrapping_sub(1);
+    let time = rb(m, a.wrapping_add(OB_TIMEFRAME))
+        .cast_signed()
+        .wrapping_sub(1);
     if time < 0 {
         wb(m, a.wrapping_add(OB_TIMEFRAME), 0);
         let mut ani = rb(m, a.wrapping_add(OB_ANI_FRAME)).wrapping_add(1);
@@ -77,7 +79,7 @@ pub(super) fn executar(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
         let base: u8 = if sub & 1 != 0 { 2 } else { 0 };
         wb(m, a.wrapping_add(OB_FRAME), base.wrapping_add(ani));
     } else {
-        wb(m, a.wrapping_add(OB_TIMEFRAME), time as u8);
+        wb(m, a.wrapping_add(OB_TIMEFRAME), time.cast_unsigned());
     }
 
     let x = rw(m, a.wrapping_add(OB_X));

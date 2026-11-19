@@ -77,7 +77,8 @@ pub(super) fn executar(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
                         let y = rw(m, a.wrapping_add(OB_Y)).wrapping_add(distancia);
                         ww(m, a.wrapping_add(OB_Y), y);
 
-                        let idx = (a.wrapping_sub(V_OBJSPACE) / OBJECT_SIZE) as u16;
+                        let idx = u16::try_from((a.wrapping_sub(V_OBJSPACE) / OBJECT_SIZE) & 0x7f)
+                            .unwrap_or(0);
                         if (rw(m, V_FRAMECOUNT).wrapping_add(idx) & 3) == 0 {
                             let velx = s16(rw(m, a.wrapping_add(OB_VELX)));
                             let dist = if velx < 0 {

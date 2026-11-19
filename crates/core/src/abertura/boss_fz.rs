@@ -144,7 +144,11 @@ fn boss_final_main(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
     // Gerador de plasma (objeto 0x86)
     if let Some(a1) = objetos::find_free_obj(m) {
         wb(m, a1.wrapping_add(OB_ID), 0x86);
-        ww(m, a0.wrapping_add(PLASMA_PTR), a1 as u16);
+        ww(
+            m,
+            a0.wrapping_add(PLASMA_PTR),
+            u16::try_from(a1 & 0xffff).unwrap_or(0),
+        );
         wl(m, a1.wrapping_add(PARENT_OBJ), a0);
     }
 
@@ -155,11 +159,15 @@ fn boss_final_main(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
             ww(
                 m,
                 a0.wrapping_add(CYLINDER_PTR).wrapping_add(off),
-                a1 as u16,
+                u16::try_from(a1 & 0xffff).unwrap_or(0),
             );
             wb(m, a1.wrapping_add(OB_ID), 0x84);
             wl(m, a1.wrapping_add(PARENT_OBJ), a0);
-            wb(m, a1.wrapping_add(OB_SUBTYPE), (i * 2) as u8);
+            wb(
+                m,
+                a1.wrapping_add(OB_SUBTYPE),
+                u8::try_from(i.wrapping_mul(2)).unwrap_or(0),
+            );
         }
     }
 
@@ -206,16 +214,10 @@ fn eggman_crush(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
             core::mem::swap(&mut c_egg, &mut c_decoy);
         }
 
-        let ptr_egg = ext(rw(
-            m,
-            a0.wrapping_add(CYLINDER_PTR)
-                .wrapping_add((c_egg * 2) as u32),
-        ));
-        let ptr_decoy = ext(rw(
-            m,
-            a0.wrapping_add(CYLINDER_PTR)
-                .wrapping_add((c_decoy * 2) as u32),
-        ));
+        let off_egg = u32::try_from(c_egg.wrapping_mul(2)).unwrap_or(0);
+        let off_decoy = u32::try_from(c_decoy.wrapping_mul(2)).unwrap_or(0);
+        let ptr_egg = ext(rw(m, a0.wrapping_add(CYLINDER_PTR).wrapping_add(off_egg)));
+        let ptr_decoy = ext(rw(m, a0.wrapping_add(CYLINDER_PTR).wrapping_add(off_decoy)));
 
         wb(m, ptr_egg.wrapping_add(CHILD_CMD), 0xFF);
         ww(m, ptr_egg.wrapping_add(HAS_EGGMAN), 0xFFFF);
@@ -223,7 +225,11 @@ fn eggman_crush(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
         wb(m, ptr_decoy.wrapping_add(CHILD_CMD), 1);
         ww(m, ptr_decoy.wrapping_add(HAS_EGGMAN), 0);
 
-        ww(m, a0.wrapping_add(ATTACK_STATE), c_egg as u16);
+        ww(
+            m,
+            a0.wrapping_add(ATTACK_STATE),
+            u16::try_from(c_egg).unwrap_or(0),
+        );
         ww(m, a0.wrapping_add(CHILD_COUNTER), 1);
         wb(m, a0.wrapping_add(HIT_FLASH), 0);
         wb(m, V_SOUNDQUEUE1, SFX_RUMBLING);
@@ -733,18 +739,18 @@ fn cylinder_update_pos(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
     // Calcula frame do cilindro conforme extensao
     let mut frame = 0u8;
     if rb(m, a0.wrapping_add(OB_SUBTYPE)) <= 2 {
-        let mut d1 = s16(pixel_disp).abs() as u16;
+        let mut d1 = s16(pixel_disp).unsigned_abs();
         if d1 >= 8 {
             frame = 1;
             d1 = d1.wrapping_sub(8);
-            frame = frame.wrapping_add((d1 >> 4) as u8);
+            frame = frame.wrapping_add(u8::try_from(d1 >> 4).unwrap_or(0));
         }
     } else {
         let mut d1 = pixel_disp;
         if d1 >= 0x27 {
             frame = 1;
             d1 = d1.wrapping_sub(0x27);
-            frame = frame.wrapping_add((d1 >> 4) as u8);
+            frame = frame.wrapping_add(u8::try_from(d1 >> 4).unwrap_or(0));
         }
     }
     wb(m, a0.wrapping_add(OB_FRAME), frame.min(4));
@@ -806,7 +812,9 @@ fn plasma_make_balls(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
                 wb(m, a1.wrapping_add(OB_RENDER), 0x84);
                 wl(m, a1.wrapping_add(PARENT_OBJ), a0);
 
-                let target = BOSS_FZ_X.wrapping_add(0x128).wrapping_sub(i as u16 * 0x4F);
+                let target = BOSS_FZ_X
+                    .wrapping_add(0x128)
+                    .wrapping_sub(u16::try_from(i).unwrap_or(0).wrapping_mul(0x4F));
                 ww(m, a1.wrapping_add(TARGET_X), target);
                 let c = rw(m, a0.wrapping_add(CHILD_COUNTER)).wrapping_add(1);
                 ww(m, a0.wrapping_add(CHILD_COUNTER), c);
@@ -849,7 +857,12 @@ fn plasma_balls(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
                 fisica::speed_to_pos(m, a0);
                 let tx = rw(m, a0.wrapping_add(TARGET_X));
                 let cur_x = rw(m, a0.wrapping_add(OB_X));
-                if (cur_x as i16 - tx as i16).abs() <= 8 {
+                if cur_x
+                    .cast_signed()
+                    .wrapping_sub(tx.cast_signed())
+                    .unsigned_abs()
+                    <= 8
+                {
                     ww(m, a0.wrapping_add(OB_X), tx);
                     ww(m, a0.wrapping_add(OB_VELX), 0);
                     let parent = ext(rw(m, a0.wrapping_add(PARENT_OBJ)));

@@ -185,10 +185,10 @@ mod testes {
     fn memoria_com_seno() -> Memoria {
         let mut rom = vec![0; 0x10000];
         let base = usize::try_from(SINE_DATA).unwrap();
-        for i in 0..320 {
+        for i in 0usize..320 {
             let valor: i16 = if i < 128 { 0x100 } else { -0x100 };
-            let posicao = base + i * 2;
-            rom[posicao..posicao + 2].copy_from_slice(&valor.to_be_bytes());
+            let posicao = base.wrapping_add(i.wrapping_mul(2));
+            rom[posicao..posicao.wrapping_add(2)].copy_from_slice(&valor.to_be_bytes());
         }
         Memoria::nova(rom)
     }

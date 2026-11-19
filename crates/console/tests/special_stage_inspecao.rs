@@ -14,7 +14,7 @@ fn inspecionar_special_stage_quadro() {
         assert!(c.ab.erro.is_none(), "erro na abertura no quadro {i}");
         if i == 119 {
             assert_eq!(c.ab.modo_nome(), "Especial(Jogando)");
-            let sprites = c.ab.mem.ram()[(0xF62C) as usize];
+            let sprites = c.ab.mem.ram()[0xF62C_usize];
             assert!(
                 sprites >= 20,
                 "esperado pelo menos 20 sprites no Special Stage, obtido {sprites}"

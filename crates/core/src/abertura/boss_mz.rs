@@ -182,8 +182,8 @@ fn chg_dir(m: &mut Memoria, a: u32) {
             wb(m, livre.wrapping_add(OB_ID), 0x14); // LavaBall
             ww(m, livre.wrapping_add(OB_Y), BOSS_MZ_Y.wrapping_add(0xD8));
             let rnd = fisica::random_number(m);
-            let rem = (rnd & 0xFFFF) % 0x50;
-            let spawn_x = BOSS_MZ_X.wrapping_add(0x78).wrapping_add(rem as u16);
+            let rem = rnd % 0x50;
+            let spawn_x = BOSS_MZ_X.wrapping_add(0x78).wrapping_add(rem);
             ww(m, livre.wrapping_add(OB_X), spawn_x);
             ww(m, livre.wrapping_add(OB_SUBTYPE), 0x00FF);
         }
@@ -369,7 +369,7 @@ fn rosto(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
         if (sub == 2 || sub == 6) && rw(m, pai.wrapping_add(OB_VELY)) == 0 {
             anim = 4; // Laugh
         }
-    } else if r2 >= 4 && r2 < 8 {
+    } else if (4..8).contains(&r2) {
         anim = 0x0A; // Defeated
     } else if r2 >= 8 {
         anim = 6; // Panic

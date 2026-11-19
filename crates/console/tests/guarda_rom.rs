@@ -50,7 +50,8 @@ fn hashes(rom: &[u8], entradas: &[u8]) -> (u64, u64, u64) {
 #[ignore = "requer SONIC1_ROM"]
 fn imagem_ram_e_audio_nao_mudam() {
     let rom = std::fs::read(std::env::var_os("SONIC1_ROM").expect("SONIC1_ROM")).expect("ROM");
-    let casos: [(&str, Vec<u8>, (u64, u64, u64)); 3] = [
+    type Caso = (&'static str, Vec<u8>, (u64, u64, u64));
+    let casos: [Caso; 3] = [
         (
             "boot-demos",
             vec![0; 7200],

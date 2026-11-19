@@ -43,7 +43,7 @@ pub(super) fn executar(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
                 0 => {
                     checar_pavio(m, a);
                     let tempo = s16(rw(m, a.wrapping_add(BOM_TIME))).wrapping_sub(1);
-                    ww(m, a.wrapping_add(BOM_TIME), tempo as u16);
+                    ww(m, a.wrapping_add(BOM_TIME), tempo.cast_unsigned());
                     if tempo < 0 {
                         wb(m, a.wrapping_add(OB_ROUTINE_2), 2);
                         ww(m, a.wrapping_add(BOM_TIME), 25 * 60 + 35);
@@ -60,7 +60,7 @@ pub(super) fn executar(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
                 2 => {
                     checar_pavio(m, a);
                     let tempo = s16(rw(m, a.wrapping_add(BOM_TIME))).wrapping_sub(1);
-                    ww(m, a.wrapping_add(BOM_TIME), tempo as u16);
+                    ww(m, a.wrapping_add(BOM_TIME), tempo.cast_unsigned());
                     if tempo < 0 {
                         wb(m, a.wrapping_add(OB_ROUTINE_2), 0);
                         ww(m, a.wrapping_add(BOM_TIME), 3 * 60 - 1);
@@ -72,7 +72,7 @@ pub(super) fn executar(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
                 }
                 4 => {
                     let tempo = s16(rw(m, a.wrapping_add(BOM_TIME))).wrapping_sub(1);
-                    ww(m, a.wrapping_add(BOM_TIME), tempo as u16);
+                    ww(m, a.wrapping_add(BOM_TIME), tempo.cast_unsigned());
                     if tempo < 0 {
                         wb(m, a.wrapping_add(OB_ID), ID_EXPLOSION_ITEM);
                         wb(m, a.wrapping_add(OB_ROUTINE), 0);
@@ -87,7 +87,7 @@ pub(super) fn executar(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
         }
         4 => {
             let tempo = s16(rw(m, a.wrapping_add(BOM_TIME))).wrapping_sub(1);
-            ww(m, a.wrapping_add(BOM_TIME), tempo as u16);
+            ww(m, a.wrapping_add(BOM_TIME), tempo.cast_unsigned());
             if tempo < 0 {
                 let speeds: [(i16, i16); 4] = [
                     (-0x200, -0x300),
@@ -97,9 +97,9 @@ pub(super) fn executar(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
                 ];
                 let bx = rw(m, a.wrapping_add(OB_X));
                 let by = rw(m, a.wrapping_add(BOM_ORIG_Y));
-                for i in 1..4 {
+                for &(spx, spy) in &speeds[1..4] {
                     if let Some(s) = find_free_obj(m) {
-                        setup_estilhaco(m, s, bx, by, speeds[i].0, speeds[i].1);
+                        setup_estilhaco(m, s, bx, by, spx, spy);
                     }
                 }
                 setup_estilhaco(m, a, bx, by, speeds[0].0, speeds[0].1);

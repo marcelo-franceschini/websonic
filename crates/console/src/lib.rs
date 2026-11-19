@@ -205,10 +205,11 @@ impl Ponte {
                 );
             }
             PortaVdp::Controle => {
-                if let Some((inicio, fim)) = c.faixa_dma {
-                    if let Some(palavras) = palavras_dma.get(inicio..fim) {
-                        self.rend.entregar_dma(palavras);
-                    }
+                if let Some(palavras) = c
+                    .faixa_dma
+                    .and_then(|(inicio, fim)| palavras_dma.get(inicio..fim))
+                {
+                    self.rend.entregar_dma(palavras);
                 }
                 self.rend.aplicar(linha, coluna, Escrita::Controle(c.valor));
             }
@@ -523,14 +524,12 @@ impl Console {
                 .extrair_bloco_worklet(&mut self.buffer_audio_quadro);
         }
 
-        let resultado = if imagem {
+        if imagem {
             self.ponte.fechar_quadro()
         } else {
             self.ponte.rend.fechar_quadro();
             Vec::new()
-        };
-
-        resultado
+        }
     }
 
     /// Modo atual de jogo (0 = Sega, 4 = Titulo, 8 = Demo, 0x0C = Level, etc).

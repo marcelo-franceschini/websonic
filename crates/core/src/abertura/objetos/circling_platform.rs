@@ -67,8 +67,8 @@ fn mover(m: &mut Memoria, a: u32) {
     }
     let ox = rw(m, a.wrapping_add(ORIG_X));
     let oy = rw(m, a.wrapping_add(ORIG_Y));
-    ww(m, a.wrapping_add(OB_X), ox.wrapping_add(d1 as u16));
-    ww(m, a.wrapping_add(OB_Y), oy.wrapping_add(d2 as u16));
+    ww(m, a.wrapping_add(OB_X), ox.wrapping_add(d1.cast_unsigned()));
+    ww(m, a.wrapping_add(OB_Y), oy.wrapping_add(d2.cast_unsigned()));
 }
 
 #[cfg(test)]

@@ -166,8 +166,9 @@ fn iniciar(m: &mut Memoria, a: u32) -> Result<bool, ErroAbertura> {
     if rb(m, V_ZONE) != ID_LZ {
         let sub_low = subtype & 0x0F;
         if sub_low >= 8 {
-            let osc_rate_offset = 0x2A + 2 + u32::from(sub_low.wrapping_sub(8)).wrapping_mul(4);
-            let rate = rw(m, V_OSCILLATE.wrapping_add(osc_rate_offset)) as i16;
+            let osc_rate_offset =
+                0x2Cu32.wrapping_add(u32::from(sub_low.wrapping_sub(8)).wrapping_mul(4));
+            let rate = rw(m, V_OSCILLATE.wrapping_add(osc_rate_offset)).cast_signed();
             if rate < 0 {
                 let st = rb(m, a.wrapping_add(OB_STATUS)) ^ 1;
                 wb(m, a.wrapping_add(OB_STATUS), st);
@@ -245,7 +246,7 @@ fn mover_lz_porta_pequena_fechar(m: &mut Memoria, a: u32) {
     let chave = rb(m, a.wrapping_add(CHAVE));
     if !movendo {
         let acionada = rb(m, F_SWITCH.wrapping_add(u32::from(chave)));
-        if (acionada as i8) < 0 {
+        if acionada.cast_signed() < 0 {
             movendo = true;
             wb(m, a.wrapping_add(MOVENDO), 1);
         }
@@ -314,7 +315,7 @@ fn mover_lz_porta_grande_fechar(m: &mut Memoria, a: u32) {
     let chave = rb(m, a.wrapping_add(CHAVE));
     if !movendo {
         let acionada = rb(m, F_SWITCH.wrapping_add(u32::from(chave)));
-        if (acionada as i8) < 0 {
+        if acionada.cast_signed() < 0 {
             movendo = true;
             wb(m, a.wrapping_add(MOVENDO), 1);
         }
@@ -345,12 +346,10 @@ fn mover_lz_porta_grande_fechar(m: &mut Memoria, a: u32) {
 
 fn mover_syz3_horizontal(m: &mut Memoria, a: u32) {
     let mut movendo = rb(m, a.wrapping_add(MOVENDO)) != 0;
-    if !movendo {
-        if rb(m, F_SWITCH.wrapping_add(0x0F)) != 0 {
-            movendo = true;
-            wb(m, a.wrapping_add(MOVENDO), 1);
-            ww(m, a.wrapping_add(DISTANCIA), 0);
-        }
+    if !movendo && rb(m, F_SWITCH.wrapping_add(0x0F)) != 0 {
+        movendo = true;
+        wb(m, a.wrapping_add(MOVENDO), 1);
+        ww(m, a.wrapping_add(DISTANCIA), 0);
     }
     if movendo {
         let x = rw(m, a.wrapping_add(OB_X)).wrapping_add(1);
@@ -378,7 +377,7 @@ fn mover_slz_stair(m: &mut Memoria, a: u32, tipo: u8) {
     if div2 {
         d0 >>= 1;
     }
-    let d3 = rw(m, V_OSCILLATE.wrapping_add(rate_off)) as i16;
+    let d3 = rw(m, V_OSCILLATE.wrapping_add(rate_off)).cast_signed();
     if d3 == 0 {
         let st = rb(m, a.wrapping_add(OB_STATUS)).wrapping_add(1) & 3;
         wb(m, a.wrapping_add(OB_STATUS), st);

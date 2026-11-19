@@ -11,6 +11,10 @@ const ORIG_X: u32 = 0x3A;
 const RAIO: u32 = 0x3C;
 const VELOCIDADE: u32 = 0x3E;
 
+fn u16_de(i: i16) -> u16 {
+    u16::from_be_bytes(i.to_be_bytes())
+}
+
 pub(super) fn executar(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
     let mut rotina = rb(m, a.wrapping_add(OB_ROUTINE));
     if rotina == 0 {
@@ -29,7 +33,7 @@ pub(super) fn executar(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
         wb(m, a.wrapping_add(OB_COLTYPE), 0x86);
 
         let sub = rb(m, a.wrapping_add(OB_SUBTYPE));
-        let speed = (i16::from((sub & 0xF0) as i8) << 3) as u16;
+        let speed = (i16::from((sub & 0xF0).cast_signed()) << 3).cast_unsigned();
         ww(m, a.wrapping_add(VELOCIDADE), speed);
 
         let status = rb(m, a.wrapping_add(OB_STATUS));
@@ -66,12 +70,12 @@ pub(super) fn executar(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
                 let angulo = (ang_w >> 8) as u8;
                 let (seno, cosseno) = calc_sine(m, angulo);
                 let raio = i32::from(rb(m, a.wrapping_add(RAIO)));
-                let dy = raio.wrapping_mul(i32::from(seno)) >> 8;
-                let dx = raio.wrapping_mul(i32::from(cosseno)) >> 8;
+                let dy = i16::try_from(raio.wrapping_mul(i32::from(seno)) >> 8).unwrap_or(0);
+                let dx = i16::try_from(raio.wrapping_mul(i32::from(cosseno)) >> 8).unwrap_or(0);
                 let orig_y = rw(m, a.wrapping_add(ORIG_Y));
                 let orig_x = rw(m, a.wrapping_add(ORIG_X));
-                ww(m, a.wrapping_add(OB_Y), orig_y.wrapping_add(dy as u16));
-                ww(m, a.wrapping_add(OB_X), orig_x.wrapping_add(dx as u16));
+                ww(m, a.wrapping_add(OB_Y), orig_y.wrapping_add(u16_de(dy)));
+                ww(m, a.wrapping_add(OB_X), orig_x.wrapping_add(u16_de(dx)));
             }
             _ => {}
         }

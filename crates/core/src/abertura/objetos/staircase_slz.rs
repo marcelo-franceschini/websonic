@@ -27,14 +27,14 @@ pub(super) fn executar(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
         let base_y = rw(m, a.wrapping_add(OB_Y));
         let sub = rb(m, a.wrapping_add(OB_SUBTYPE));
 
-        setup_bloco(m, a, 2, base_x, base_y, sub, y_idx, a);
-        y_idx = (y_idx as i8).wrapping_add(y_step) as u8;
+        setup_bloco(m, a, 2, (base_x, base_y), sub, y_idx, a);
+        y_idx = y_idx.cast_signed().wrapping_add(y_step).cast_unsigned();
 
         for i in 1..=3u16 {
             let Some(filho) = find_free_obj(m) else { break };
             let bx = base_x.wrapping_add(i.wrapping_mul(32));
-            setup_bloco(m, filho, 4, bx, base_y, sub, y_idx, a);
-            y_idx = (y_idx as i8).wrapping_add(y_step) as u8;
+            setup_bloco(m, filho, 4, (bx, base_y), sub, y_idx, a);
+            y_idx = y_idx.cast_signed().wrapping_add(y_step).cast_unsigned();
         }
     }
 
@@ -54,7 +54,7 @@ pub(super) fn executar(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
 
     let col = solid_object(m, a, 16, 16, 17)?;
     if col < 0 {
-        wb(m, parent.wrapping_add(STAIR_TOUCH), col as u8);
+        wb(m, parent.wrapping_add(STAIR_TOUCH), col.cast_unsigned());
     }
     if rb(m, a.wrapping_add(OB_STATUS)) & STATUS_ON_OBJECT != 0 {
         wb(m, parent.wrapping_add(STAIR_TOUCH), 1);
@@ -73,8 +73,7 @@ fn setup_bloco(
     m: &mut Memoria,
     bloco: u32,
     rotina: u8,
-    x: u16,
-    y: u16,
+    (x, y): (u16, u16),
     sub: u8,
     y_idx: u8,
     pai: u32,
@@ -119,13 +118,21 @@ fn mover_pai(m: &mut Memoria, a: u32) {
                 if d == 0 {
                     wb(m, a.wrapping_add(OB_SUBTYPE), 3);
                 } else {
-                    let seed = (d >> 2) & 1;
-                    wb(m, a.wrapping_add(STAIR_CHILDREN_Y), seed as u8);
-                    wb(m, a.wrapping_add(STAIR_CHILDREN_Y + 1), (seed ^ 1) as u8);
-                    wb(m, a.wrapping_add(STAIR_CHILDREN_Y + 2), seed as u8);
-                    wb(m, a.wrapping_add(STAIR_CHILDREN_Y + 3), (seed ^ 1) as u8);
+                    let seed = u8::try_from((d >> 2) & 1).unwrap_or(0);
+                    wb(m, a.wrapping_add(STAIR_CHILDREN_Y), seed);
+                    wb(
+                        m,
+                        a.wrapping_add(STAIR_CHILDREN_Y.wrapping_add(1)),
+                        seed ^ 1,
+                    );
+                    wb(m, a.wrapping_add(STAIR_CHILDREN_Y.wrapping_add(2)), seed);
+                    wb(
+                        m,
+                        a.wrapping_add(STAIR_CHILDREN_Y.wrapping_add(3)),
+                        seed ^ 1,
+                    );
                 }
-            } else if (rb(m, a.wrapping_add(STAIR_TOUCH)) as i8) < 0 {
+            } else if rb(m, a.wrapping_add(STAIR_TOUCH)).cast_signed() < 0 {
                 ww(m, a.wrapping_add(STAIR_DELAY), 60);
             }
         }
@@ -135,12 +142,12 @@ fn mover_pai(m: &mut Memoria, a: u32) {
                 y0 = y0.wrapping_add(1);
                 wb(m, a.wrapping_add(STAIR_CHILDREN_Y), y0);
                 let d1 = u16::from(y0);
-                let y1 = (d1.wrapping_mul(3) / 4) as u8;
-                let y2 = (d1 / 2) as u8;
-                let y3 = (d1 / 4) as u8;
-                wb(m, a.wrapping_add(STAIR_CHILDREN_Y + 1), y1);
-                wb(m, a.wrapping_add(STAIR_CHILDREN_Y + 2), y2);
-                wb(m, a.wrapping_add(STAIR_CHILDREN_Y + 3), y3);
+                let y1 = u8::try_from(d1.wrapping_mul(3) / 4).unwrap_or(0);
+                let y2 = u8::try_from(d1 / 2).unwrap_or(0);
+                let y3 = u8::try_from(d1 / 4).unwrap_or(0);
+                wb(m, a.wrapping_add(STAIR_CHILDREN_Y.wrapping_add(1)), y1);
+                wb(m, a.wrapping_add(STAIR_CHILDREN_Y.wrapping_add(2)), y2);
+                wb(m, a.wrapping_add(STAIR_CHILDREN_Y.wrapping_add(3)), y3);
             }
         }
         _ => {}

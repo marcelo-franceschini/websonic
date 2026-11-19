@@ -50,11 +50,9 @@ pub fn auto_door(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
     let xflip = rb(m, a0.wrapping_add(OB_STATUS)) & STATUS_XFLIP != 0;
 
     wb(m, a0.wrapping_add(OB_ANIM), 0); // Fechando por padrao
-    let dist = (px as i16).wrapping_sub(door_x as i16);
-    if dist.abs() < 64 {
-        if (xflip && dist < 0) || (!xflip && dist >= 0) {
-            wb(m, a0.wrapping_add(OB_ANIM), 1); // Abrindo
-        }
+    let dist = px.cast_signed().wrapping_sub(door_x.cast_signed());
+    if dist.abs() < 64 && ((xflip && dist < 0) || (!xflip && dist >= 0)) {
+        wb(m, a0.wrapping_add(OB_ANIM), 1); // Abrindo
     }
 
     let _ = objetos::animate_sprite(m, a0, ANI_ADOOR);
@@ -84,7 +82,7 @@ pub fn junction(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
     let dir = rb(m, a0.wrapping_add(0x34));
     if rw(m, V_FRAMECOUNT) & 3 == 0 {
         let novo_frame = if dir == 1 {
-            (frame + 1) & 0x0F
+            frame.wrapping_add(1) & 0x0F
         } else {
             (frame.wrapping_sub(1)) & 0x0F
         };
@@ -142,10 +140,18 @@ pub fn running_disc(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
     let (s, c) = fisica::calc_sine(m, ang);
     let orig_x = rw(m, a0.wrapping_add(0x32));
     let orig_y = rw(m, a0.wrapping_add(0x30));
-    let off_x = (i32::from(c).wrapping_mul(0x18) >> 8) as i16;
-    let off_y = (i32::from(s).wrapping_mul(0x18) >> 8) as i16;
-    ww(m, a0.wrapping_add(OB_X), orig_x.wrapping_add(off_x as u16));
-    ww(m, a0.wrapping_add(OB_Y), orig_y.wrapping_add(off_y as u16));
+    let off_x = i16::try_from(i32::from(c).wrapping_mul(0x18) >> 8).unwrap_or(0);
+    let off_y = i16::try_from(i32::from(s).wrapping_mul(0x18) >> 8).unwrap_or(0);
+    ww(
+        m,
+        a0.wrapping_add(OB_X),
+        orig_x.wrapping_add(off_x.cast_unsigned()),
+    );
+    ww(
+        m,
+        a0.wrapping_add(OB_Y),
+        orig_y.wrapping_add(off_y.cast_unsigned()),
+    );
 
     objetos::display_sprite(m, a0);
     Ok(())
@@ -159,7 +165,7 @@ pub fn conveyor(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
         let sub = rb(m, a0.wrapping_add(OB_SUBTYPE));
         let width = if sub & 0x0F == 0 { 128 } else { 56 };
         wb(m, a0.wrapping_add(0x38), width);
-        let spd = ((sub as i8) >> 4) as i16;
+        let spd = i16::from(sub.cast_signed() >> 4);
         ww(m, a0.wrapping_add(0x36), u16_de(spd));
     }
 
@@ -170,14 +176,17 @@ pub fn conveyor(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
     let cy = rw(m, a0.wrapping_add(OB_Y));
     let wid = u16::from(rb(m, a0.wrapping_add(0x38)));
 
-    let dx = (px as i16).wrapping_sub(cx as i16).abs() as u16;
-    let dy = (py as i16).wrapping_sub(cy as i16);
+    let dx = px
+        .cast_signed()
+        .wrapping_sub(cx.cast_signed())
+        .unsigned_abs();
+    let dy = py.cast_signed().wrapping_sub(cy.cast_signed());
     if dx < wid
         && (0..=32).contains(&dy)
         && rb(m, V_PLAYER.wrapping_add(OB_STATUS)) & STATUS_IN_AIR == 0
     {
         let spd = s16(rw(m, a0.wrapping_add(0x36)));
-        let novo_px = px.wrapping_add(spd as u16);
+        let novo_px = px.wrapping_add(spd.cast_unsigned());
         ww(m, V_PLAYER.wrapping_add(OB_X), novo_px);
     }
 
@@ -258,16 +267,24 @@ pub fn saws(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
             let ang = (rw(m, V_FRAMECOUNT) & 0xFF) as u8;
             let (_, c) = fisica::calc_sine(m, ang);
             let orig_x = rw(m, a0.wrapping_add(0x3A));
-            let off = (i32::from(c).wrapping_mul(0x40) >> 8) as i16;
-            ww(m, a0.wrapping_add(OB_X), orig_x.wrapping_add(off as u16));
+            let off = i16::try_from(i32::from(c).wrapping_mul(0x40) >> 8).unwrap_or(0);
+            ww(
+                m,
+                a0.wrapping_add(OB_X),
+                orig_x.wrapping_add(off.cast_unsigned()),
+            );
         }
         2 => {
             // Move cima/baixo oscilando
             let ang = (rw(m, V_FRAMECOUNT) & 0xFF) as u8;
             let (s, _) = fisica::calc_sine(m, ang);
             let orig_y = rw(m, a0.wrapping_add(0x38));
-            let off = (i32::from(s).wrapping_mul(0x40) >> 8) as i16;
-            ww(m, a0.wrapping_add(OB_Y), orig_y.wrapping_add(off as u16));
+            let off = i16::try_from(i32::from(s).wrapping_mul(0x40) >> 8).unwrap_or(0);
+            ww(
+                m,
+                a0.wrapping_add(OB_Y),
+                orig_y.wrapping_add(off.cast_unsigned()),
+            );
         }
         3..=4 => {
             // Serra veloz em linha reta
@@ -276,7 +293,7 @@ pub fn saws(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
         _ => {}
     }
 
-    let fr = (rb(m, a0.wrapping_add(OB_FRAME)) + 1) & 1;
+    let fr = rb(m, a0.wrapping_add(OB_FRAME)).wrapping_add(1) & 1;
     wb(m, a0.wrapping_add(OB_FRAME), fr);
     objetos::display_sprite(m, a0);
     Ok(())
@@ -567,8 +584,14 @@ fn tele_action(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
     let tx = rw(m, a0.wrapping_add(OB_X));
     let ty = rw(m, a0.wrapping_add(OB_Y));
 
-    let dx = (px as i16).wrapping_sub(tx as i16).abs();
-    let dy = (py as i16).wrapping_sub(ty as i16).abs();
+    let dx = px
+        .cast_signed()
+        .wrapping_sub(tx.cast_signed())
+        .unsigned_abs();
+    let dy = py
+        .cast_signed()
+        .wrapping_sub(ty.cast_signed())
+        .unsigned_abs();
 
     if dx < 16 && dy < 32 && rb(m, F_PLAYERCTRL) == 0 {
         let sub = rb(m, a0.wrapping_add(OB_SUBTYPE));
@@ -605,7 +628,7 @@ fn tele_prebump(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
 fn tele_teleporting(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
     let t = rw(m, a0.wrapping_add(0x2E));
     if t == 0 {
-        let curr = (rb(m, a0.wrapping_add(0x3A)) + 1) as usize;
+        let curr = usize::from(rb(m, a0.wrapping_add(0x3A)).wrapping_add(1));
         let sub = (rb(m, a0.wrapping_add(OB_SUBTYPE)) & 7) as usize;
         if curr >= TELE_COUNTS[sub] {
             // Sai do teletransporte
@@ -617,7 +640,7 @@ fn tele_teleporting(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
             ww(m, V_PLAYER.wrapping_add(OB_VELY), 0x200);
             return Ok(());
         }
-        wb(m, a0.wrapping_add(0x3A), curr as u8);
+        wb(m, a0.wrapping_add(0x3A), u8::try_from(curr).unwrap_or(0));
         let (tx, ty) = TELE_DESTS[sub][curr];
         ww(m, a0.wrapping_add(0x36), tx);
         ww(m, a0.wrapping_add(0x38), ty);
@@ -636,23 +659,35 @@ fn tele_next_direction(m: &mut Memoria, a0: u32) {
     let tx = rw(m, a0.wrapping_add(0x36));
     let ty = rw(m, a0.wrapping_add(0x38));
 
-    let dx = (tx as i16).wrapping_sub(px as i16);
-    let dy = (ty as i16).wrapping_sub(py as i16);
+    let dx = tx.cast_signed().wrapping_sub(px.cast_signed());
+    let dy = ty.cast_signed().wrapping_sub(py.cast_signed());
 
-    let abs_dx = dx.abs() as u16;
-    let abs_dy = dy.abs() as u16;
+    let abs_dx = dx.unsigned_abs();
+    let abs_dy = dy.unsigned_abs();
 
     if abs_dx >= abs_dy {
         let vx = if dx >= 0 { 0x1000i16 } else { -0x1000i16 };
         let steps = abs_dx.max(1);
-        let vy = ((i32::from(dy) << 12) / i32::from(steps)) as i16;
+        let vy = i16::try_from(
+            i32::from(dy)
+                .wrapping_shl(12)
+                .checked_div(i32::from(steps))
+                .unwrap_or(0),
+        )
+        .unwrap_or(0);
         ww(m, V_PLAYER.wrapping_add(OB_VELX), u16_de(vx));
         ww(m, V_PLAYER.wrapping_add(OB_VELY), u16_de(vy));
         ww(m, a0.wrapping_add(0x2E), steps >> 4);
     } else {
         let vy = if dy >= 0 { 0x1000i16 } else { -0x1000i16 };
         let steps = abs_dy.max(1);
-        let vx = ((i32::from(dx) << 12) / i32::from(steps)) as i16;
+        let vx = i16::try_from(
+            i32::from(dx)
+                .wrapping_shl(12)
+                .checked_div(i32::from(steps))
+                .unwrap_or(0),
+        )
+        .unwrap_or(0);
         ww(m, V_PLAYER.wrapping_add(OB_VELX), u16_de(vx));
         ww(m, V_PLAYER.wrapping_add(OB_VELY), u16_de(vy));
         ww(m, a0.wrapping_add(0x2E), steps >> 4);

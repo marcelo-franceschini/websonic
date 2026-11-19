@@ -18,8 +18,10 @@ pub(super) fn executar(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
         wb(m, a.wrapping_add(OB_PRIORITY), 6);
     }
     if rotina == 2 {
-        let tempo = (rb(m, a.wrapping_add(OB_TIMEFRAME)) as i8).wrapping_sub(1);
-        wb(m, a.wrapping_add(OB_TIMEFRAME), tempo as u8);
+        let tempo = rb(m, a.wrapping_add(OB_TIMEFRAME))
+            .cast_signed()
+            .wrapping_sub(1);
+        wb(m, a.wrapping_add(OB_TIMEFRAME), tempo.cast_unsigned());
         if tempo < 0 {
             wb(m, a.wrapping_add(OB_TIMEFRAME), 7);
             let mut frame = rb(m, a.wrapping_add(OB_FRAME)).wrapping_add(1);

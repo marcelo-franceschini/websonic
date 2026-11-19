@@ -228,10 +228,10 @@ fn ship_move3(m: &mut Memoria, a: u32) {
     if dist > 0 {
         dist = dist.wrapping_sub(72);
         if dist > 0 {
-            vy = vy >> 1;
+            vy >>= 1;
             dist = dist.wrapping_sub(40);
             if dist > 0 {
-                vy = vy >> 1;
+                vy >>= 1;
                 dist = dist.wrapping_sub(40);
                 if dist > 0 {
                     vy = 0;

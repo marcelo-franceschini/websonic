@@ -9,6 +9,10 @@ const MAP_BUMP: u32 = 0xF18C;
 const ANI_BUMP: u32 = 0xF17C;
 const SFX_BUMPER: u8 = 0xB4;
 
+fn u16_de(i: i16) -> u16 {
+    u16::from_be_bytes(i.to_be_bytes())
+}
+
 pub(super) fn executar(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
     let mut rotina = rb(m, a.wrapping_add(OB_ROUTINE));
     if rotina == 0 {
@@ -35,11 +39,11 @@ pub(super) fn executar(m: &mut Memoria, a: u32) -> Result<(), ErroAbertura> {
             let angulo = calc_angle(m, dx, dy);
             let (seno, cosseno) = calc_sine(m, angulo);
 
-            let vx = (i32::from(cosseno).wrapping_mul(-0x700)) >> 8;
-            let vy = (i32::from(seno).wrapping_mul(-0x700)) >> 8;
+            let vx = i16::try_from((i32::from(cosseno).wrapping_mul(-0x700)) >> 8).unwrap_or(0);
+            let vy = i16::try_from((i32::from(seno).wrapping_mul(-0x700)) >> 8).unwrap_or(0);
 
-            ww(m, V_PLAYER.wrapping_add(OB_VELX), vx as u16);
-            ww(m, V_PLAYER.wrapping_add(OB_VELY), vy as u16);
+            ww(m, V_PLAYER.wrapping_add(OB_VELX), u16_de(vx));
+            ww(m, V_PLAYER.wrapping_add(OB_VELY), u16_de(vy));
 
             let mut st = rb(m, V_PLAYER.wrapping_add(OB_STATUS));
             st |= STATUS_IN_AIR;

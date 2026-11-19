@@ -196,7 +196,7 @@ fn ffloor_main(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
                 m,
                 a0.wrapping_add(BLOCK_LIST_START)
                     .wrapping_add(i.wrapping_mul(2)),
-                a1 as u16,
+                u16::try_from(a1 & 0xffff).unwrap_or(0),
             );
             wb(m, a1.wrapping_add(OB_ID), 0x83);
             wl(m, a1.wrapping_add(OB_MAP), MAP_FFLOOR);
@@ -234,7 +234,11 @@ fn ffloor_solid(m: &mut Memoria, a0: u32) {
     let restantes = 8u16.saturating_sub(quebrados);
     let largura = restantes.wrapping_shl(4); // restantes * 16
     let d4 = BOSS_SBZ2_X.wrapping_add(0xB0).wrapping_sub(largura);
-    wb(m, a0.wrapping_add(OB_ACTWID), largura as u8);
+    wb(
+        m,
+        a0.wrapping_add(OB_ACTWID),
+        u8::try_from(largura & 0xff).unwrap_or(0),
+    );
     ww(m, a0.wrapping_add(OB_X), d4);
     let d1 = largura.wrapping_add(SONIC_SOLID_WIDTH);
     let _ = objetos::solid_object(m, a0, d1, 16, 17);
@@ -289,12 +293,12 @@ fn ffloor_block(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
         ww(
             m,
             a0.wrapping_add(OB_X),
-            base_x.wrapping_add(FRAG_POS_X[0] as u16),
+            base_x.wrapping_add(FRAG_POS_X[0].cast_unsigned()),
         );
         ww(
             m,
             a0.wrapping_add(OB_Y),
-            base_y.wrapping_add(FRAG_POS_Y[0] as u16),
+            base_y.wrapping_add(FRAG_POS_Y[0].cast_unsigned()),
         );
         wb(m, a0.wrapping_add(OB_FRAME), 1);
 
@@ -309,14 +313,18 @@ fn ffloor_block(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
                 ww(
                     m,
                     a1.wrapping_add(OB_X),
-                    base_x.wrapping_add(FRAG_POS_X[i] as u16),
+                    base_x.wrapping_add(FRAG_POS_X[i].cast_unsigned()),
                 );
                 ww(
                     m,
                     a1.wrapping_add(OB_Y),
-                    base_y.wrapping_add(FRAG_POS_Y[i] as u16),
+                    base_y.wrapping_add(FRAG_POS_Y[i].cast_unsigned()),
                 );
-                wb(m, a1.wrapping_add(OB_FRAME), (i + 1) as u8);
+                wb(
+                    m,
+                    a1.wrapping_add(OB_FRAME),
+                    u8::try_from(i.wrapping_add(1)).unwrap_or(0),
+                );
                 wb(m, a1.wrapping_add(OB_ROUTINE), 10);
             }
         }

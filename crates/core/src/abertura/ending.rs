@@ -174,9 +174,13 @@ pub fn end_chaos(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
             wb(m, slot.wrapping_add(OB_PRIORITY), 1);
             ww(m, slot.wrapping_add(0x38), son_x); // origX
             ww(m, slot.wrapping_add(0x3A), son_y); // origY
-            wb(m, slot.wrapping_add(OB_FRAME), (i + 1) as u8);
+            wb(
+                m,
+                slot.wrapping_add(OB_FRAME),
+                u8::try_from(i.wrapping_add(1)).unwrap_or(0),
+            );
             wb(m, slot.wrapping_add(OB_ANGLE), angle);
-            angle = angle.wrapping_add((256 / 6) as u8);
+            angle = angle.wrapping_add(42);
         }
     }
 
@@ -189,10 +193,18 @@ pub fn end_chaos(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
     let orig_x = rw(m, a0.wrapping_add(0x38));
     let orig_y = rw(m, a0.wrapping_add(0x3A));
 
-    let off_x = (i32::from(c).wrapping_mul(i32::from(radius)) >> 8) as i16;
-    let off_y = (i32::from(s).wrapping_mul(i32::from(radius)) >> 8) as i16;
-    ww(m, a0.wrapping_add(OB_X), orig_x.wrapping_add(off_x as u16));
-    ww(m, a0.wrapping_add(OB_Y), orig_y.wrapping_add(off_y as u16));
+    let off_x = i16::try_from(i32::from(c).wrapping_mul(i32::from(radius)) >> 8).unwrap_or(0);
+    let off_y = i16::try_from(i32::from(s).wrapping_mul(i32::from(radius)) >> 8).unwrap_or(0);
+    ww(
+        m,
+        a0.wrapping_add(OB_X),
+        orig_x.wrapping_add(off_x.cast_unsigned()),
+    );
+    ww(
+        m,
+        a0.wrapping_add(OB_Y),
+        orig_y.wrapping_add(off_y.cast_unsigned()),
+    );
 
     let rad = rw(m, a0.wrapping_add(0x3C));
     if rad < 0x2000 {
@@ -310,13 +322,17 @@ pub fn try_chaos(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
     let (s, c) = fisica::calc_sine(m, ang);
     let orig_x = rw(m, a0.wrapping_add(0x38));
     let orig_y = rw(m, a0.wrapping_add(0x3A));
-    let off_x = (i32::from(c).wrapping_mul(0x1C) >> 8) as i16;
-    let off_y = (i32::from(s).wrapping_mul(0x1C) >> 8) as i16;
-    ww(m, a0.wrapping_add(OB_X), orig_x.wrapping_add(off_x as u16));
+    let off_x = i16::try_from(i32::from(c).wrapping_mul(0x1C) >> 8).unwrap_or(0);
+    let off_y = i16::try_from(i32::from(s).wrapping_mul(0x1C) >> 8).unwrap_or(0);
+    ww(
+        m,
+        a0.wrapping_add(OB_X),
+        orig_x.wrapping_add(off_x.cast_unsigned()),
+    );
     ww(
         m,
         a0.wrapping_add(OB_SCREENY),
-        orig_y.wrapping_add(off_y as u16),
+        orig_y.wrapping_add(off_y.cast_unsigned()),
     );
 
     objetos::display_sprite(m, a0);
@@ -341,7 +357,11 @@ pub fn credits_text(m: &mut Memoria, a0: u32) -> Result<(), ErroAbertura> {
         wl(m, a0.wrapping_add(OB_MAP), MAP_CRED);
         ww(m, a0.wrapping_add(OB_GFX), ARTTILE_CREDITS_FONT);
         let d0 = rw(m, V_CREDITSNUM);
-        wb(m, a0.wrapping_add(OB_FRAME), d0 as u8);
+        wb(
+            m,
+            a0.wrapping_add(OB_FRAME),
+            u8::try_from(d0 & 0xff).unwrap_or(0),
+        );
         wb(m, a0.wrapping_add(OB_RENDER), 0);
         wb(m, a0.wrapping_add(OB_PRIORITY), 0);
         if rb(m, V_GAMEMODE) == GM_TITLE_ID {
@@ -523,7 +543,7 @@ pub fn ending_demo_load(m: &mut Memoria) -> Result<(), ErroAbertura> {
     let zone_act = END_DEMO_LEVELS[num.min(7)];
     ww(m, V_ZONE_ACT, zone_act);
 
-    let next_num = (num as u16).wrapping_add(1);
+    let next_num = rw(m, V_CREDITSNUM).wrapping_add(1);
     ww(m, V_CREDITSNUM, next_num);
 
     if next_num < 9 {
@@ -599,10 +619,7 @@ pub fn try_again_passo(m: &mut Memoria) -> Result<bool, ErroAbertura> {
 
     let t = rw(m, V_GENERICTIMER);
     let start_pressed = rb(m, V_JPADPRESS1) & BTN_START != 0;
-    if t == 0 || start_pressed {
-        return Ok(true);
-    }
-    Ok(false)
+    Ok(t == 0 || start_pressed)
 }
 
 #[cfg(test)]
