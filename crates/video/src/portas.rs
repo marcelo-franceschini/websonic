@@ -408,6 +408,10 @@ impl Vdp {
         }
         // Todo acesso à porta de dados zera a marca de "segunda palavra".
         self.segunda_palavra = false;
+        if self.dma_ativo && self.registros.modo_dma() == ModoDma::PreenchimentoDeVram {
+            self.executar_preenchimento_dma(palavra);
+            return;
+        }
         let entrada = EntradaFifo {
             sentido: self.sentido,
             alvo: self.alvo,
@@ -424,6 +428,68 @@ impl Vdp {
         } else {
             self.empurrar(entrada);
         }
+    }
+
+    fn esvaziar_fifo(&mut self) {
+        let mut ef = Efeitos::default();
+        while !self.fifo.is_empty() || !self.fifo_pendentes.is_empty() {
+            if self.fifo.is_empty()
+                && let Some(p) = self.fifo_pendentes.pop_front()
+            {
+                self.empurrar(p);
+            }
+            if let Some(f) = self.fifo.front_mut() {
+                f.latencia = 0;
+            }
+            self.sair_da_fifo(&mut ef);
+        }
+    }
+
+    fn executar_preenchimento_dma(&mut self, palavra: u16) {
+        self.esvaziar_fifo();
+        if self.alvo != Alvo::Vram && self.alvo != Alvo::Vram8Bits {
+            self.avisos.dma_preenchimento_fora_da_vram =
+                self.avisos.dma_preenchimento_fora_da_vram.saturating_add(1);
+            self.dma_ativo = false;
+            return;
+        }
+        let a = usize::from(u16::try_from(self.endereco_de_dados & 0xffff).unwrap_or(0));
+        let [hi, lo] = palavra.to_be_bytes();
+        self.gravar_byte_vram(a, hi);
+        self.gravar_byte_vram(a ^ 1, lo);
+        self.ao_gravar_vram.push((self.endereco_de_dados, hi));
+        self.ao_gravar_vram.push((self.endereco_de_dados ^ 1, lo));
+        self.endereco_de_dados = self
+            .endereco_de_dados
+            .wrapping_add(u32::from(self.registros.incremento()));
+
+        let byte = hi;
+        let mut restante = self.dma_comprimento;
+        if restante == 0 {
+            for _ in 0..0x1_0000 {
+                let addr = usize::try_from((self.endereco_de_dados ^ 1) & 0xffff).unwrap_or(0);
+                self.gravar_byte_vram(addr, byte);
+                self.ao_gravar_vram
+                    .push((u32::try_from(addr).unwrap_or(0), byte));
+                self.endereco_de_dados = self
+                    .endereco_de_dados
+                    .wrapping_add(u32::from(self.registros.incremento()));
+            }
+        } else {
+            while restante > 0 {
+                let addr = usize::try_from((self.endereco_de_dados ^ 1) & 0xffff).unwrap_or(0);
+                self.gravar_byte_vram(addr, byte);
+                self.ao_gravar_vram
+                    .push((u32::try_from(addr).unwrap_or(0), byte));
+                self.endereco_de_dados = self
+                    .endereco_de_dados
+                    .wrapping_add(u32::from(self.registros.incremento()));
+                restante = restante.wrapping_sub(1);
+            }
+        }
+        self.dma_comprimento = 0;
+        self.dma_ativo = false;
+        self.preenchimento = None;
     }
 
     /// Põe na FIFO. O cache de sprites vê a escrita neste momento (como no oráculo).

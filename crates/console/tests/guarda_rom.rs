@@ -1,8 +1,8 @@
 //! Guarda de comportamento sem o oráculo: hashes agregados da imagem de 9 bits, da RAM do 68000 e
 //! do áudio de saída, quadro a quadro, nas três entradas do corpus. Uma correção de desempenho não
 //! pode mudar nenhum deles. Os valores só mudam por uma mudança de comportamento aprovada pelo
-//! Marcelo: em 17/11/2026, o RingLoss e o HurtSonic fiéis ao disassembly (revisão R6), ainda
-//! sem prova no oráculo. Os valores anteriores à rodada de performance estão no git (6a24f16).
+//! Marcelo: em 17/11/2026, o RingLoss e o HurtSonic fiéis ao disassembly (revisão R6); em
+//! 19/11/2026, o DMA Fill síncrono no VDP corrigindo pixels espúrios da abertura e transições.
 use sonic1_console::Console;
 
 const CORPUS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../corpus");
@@ -56,7 +56,7 @@ fn imagem_ram_e_audio_nao_mudam() {
             "boot-demos",
             vec![0; 7200],
             (
-                0xc42c_9374_82ce_693b,
+                0x31ff_a080_6c6b_f089,
                 0x53dc_aed7_42e5_4cba,
                 0xa566_fb94_9619_7a58,
             ),
@@ -65,7 +65,7 @@ fn imagem_ram_e_audio_nao_mudam() {
             "partida-ghz1",
             ler_s1in("partida-ghz1.s1in"),
             (
-                0x60e2_58d3_c5e5_54fc,
+                0x3b7f_c415_150a_6e91,
                 0x5068_4ee5_3074_a4d8,
                 0x0cdc_57e4_c3cf_af1b,
             ),
@@ -74,7 +74,7 @@ fn imagem_ram_e_audio_nao_mudam() {
             "lz-agua",
             ler_s1in("lz-agua.s1in"),
             (
-                0x40ba_0d3e_3b00_edc7,
+                0x7fe1_8c6c_4143_34d9,
                 0x41b8_ca12_0d65_ba8e,
                 0xc6f7_7b45_fbd5_4140,
             ),
