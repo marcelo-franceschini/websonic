@@ -6,8 +6,8 @@
 //! Referência de comportamento: jgenesis `386db855`, `vdp.rs` e `vdp/render.rs`.
 
 use crate::camadas::{
-    LARGURA, ParametrosDosPlanos, PontoDeTile, Sprite, SpriteEmCache, desenhar_planos,
-    desenhar_sprites, ler_rolagem_h, resolver_ponto, varrer_sprites,
+    LARGURA, ParametrosDosPlanos, Sprite, SpriteEmCache, desenhar_planos_compacto,
+    desenhar_sprites_compacto, ler_rolagem_h, resolver_ponto_compacto, varrer_sprites,
 };
 use crate::cor::da_palavra_cram;
 use crate::portas::{Efeitos, PontoDaCram, Vdp};
@@ -101,7 +101,7 @@ pub struct Renderizador {
     cache_travado: Vec<SpriteEmCache>,
     varridos: Vec<u8>,
     sprites: Vec<Sprite>,
-    pontos_de_sprite: Vec<PontoDeTile>,
+    pontos_de_sprite: [u8; LARGURA],
     estado_sprites: EstadoDeSprites,
     // Pontos coloridos da CRAM: da linha atual e da anterior (índice 0 = ponto 18).
     pontos_atual: Vec<Option<u16>>,
@@ -113,8 +113,8 @@ pub struct Renderizador {
     // versão dos registradores e rolagens), para a troca de CRAM não refazer os planos.
     chave_planos: Option<(u16, u64, u64)>,
     versao_planos: u64,
-    buf_a: Vec<PontoDeTile>,
-    buf_b: Vec<PontoDeTile>,
+    buf_a: [u8; LARGURA],
+    buf_b: [u8; LARGURA],
     /// Emulação dos pontos coloridos de CRAM (analógicos do hardware original).
     pontos_cram_ativos: bool,
 }
@@ -141,7 +141,7 @@ impl Renderizador {
             cache_travado: vec![SpriteEmCache::default(); 80],
             varridos: Vec::new(),
             sprites: Vec::new(),
-            pontos_de_sprite: vec![PontoDeTile::default(); LARGURA],
+            pontos_de_sprite: [0; LARGURA],
             estado_sprites: EstadoDeSprites::default(),
             pontos_atual: vec![None; PONTOS_DA_CRAM],
             pontos_anterior: vec![None; PONTOS_DA_CRAM],
@@ -149,8 +149,8 @@ impl Renderizador {
             marcados_anterior: false,
             chave_planos: None,
             versao_planos: 0,
-            buf_a: vec![PontoDeTile::default(); LARGURA],
-            buf_b: vec![PontoDeTile::default(); LARGURA],
+            buf_a: [0; LARGURA],
+            buf_b: [0; LARGURA],
             pontos_cram_ativos: true,
         }
     }
@@ -194,18 +194,13 @@ impl Renderizador {
     pub fn aplicar(&mut self, linha: u16, coluna: u64, escrita: Escrita) {
         self.fechado = false;
         self.avancar_ate(linha, coluna);
-        let antes = self.vdp.registros.brutos;
-        match escrita {
-            Escrita::Controle(v) => self.vdp.escrever_controle(v),
-            Escrita::Dados { valor, tamanho } => self.vdp.escrever_dados(valor, tamanho),
-        }
-        let mudou = self
-            .vdp
-            .registros
-            .brutos
-            .iter()
-            .zip(antes.iter())
-            .position(|(a, b)| a != b);
+        let mudou = match escrita {
+            Escrita::Controle(v) => self.vdp.escrever_controle_com_reg(v),
+            Escrita::Dados { valor, tamanho } => {
+                self.vdp.escrever_dados(valor, tamanho);
+                None
+            }
+        };
         self.depois_da_escrita(mudou);
     }
 
@@ -571,8 +566,8 @@ impl Renderizador {
     // ---- Desenho de uma linha ----
 
     fn cor_do_fundo(&self) -> u16 {
-        let idx = usize::from(self.vdp.registros.indice_do_fundo());
-        da_palavra_cram(self.vdp.cram.get(idx).copied().unwrap_or(0))
+        let idx = usize::from(self.vdp.registros.indice_do_fundo()) & 63;
+        self.vdp.cram_9bits[idx]
     }
 
     fn desenhar_linha(&mut self, linha: u16, ponto_inicial: u16) {
@@ -592,12 +587,12 @@ impl Renderizador {
                     self.quadro.definir(x, y, fundo);
                 }
             }
-            self.pontos_de_sprite.fill(PontoDeTile::default());
+            self.pontos_de_sprite.fill(0);
             return;
         }
         if ponto_inicial == 0 {
             let pular_tiles = self.estado_sprites.pontos_desligados.div_ceil(2);
-            let estouro = desenhar_sprites(
+            let estouro = desenhar_sprites_compacto(
                 &self.vdp.vram,
                 &self.sprites,
                 linha,
@@ -623,7 +618,7 @@ impl Renderizador {
                 ini: i32::from(ponto_inicial),
                 fim: fim_linha,
             };
-            desenhar_planos(&par, &mut self.buf_a, &mut self.buf_b);
+            desenhar_planos_compacto(&par, &mut self.buf_a, &mut self.buf_b);
             // Só o desenho da linha inteira deixa os buffers válidos para a linha toda.
             self.chave_planos = if ponto_inicial == 0 {
                 Some(chave)
@@ -632,11 +627,7 @@ impl Renderizador {
             };
         }
         let fundo = self.vdp.registros.indice_do_fundo();
-        // As 64 cores da CRAM já na cor de 9 bits, uma vez por linha.
-        let mut paleta = [0u16; 64];
-        for (p, c) in paleta.iter_mut().zip(self.vdp.cram.iter()) {
-            *p = da_palavra_cram(*c);
-        }
+        let paleta = &self.vdp.cram_9bits;
         let inicio = usize::from(ponto_inicial);
         if let Some(linha_do_quadro) = self.quadro.linha_mut(y) {
             let pontos = self
@@ -644,8 +635,8 @@ impl Renderizador {
                 .iter()
                 .zip(self.buf_a.iter())
                 .zip(self.buf_b.iter());
-            for (destino, ((s, a), b)) in linha_do_quadro.iter_mut().zip(pontos).skip(inicio) {
-                let idx = usize::from(resolver_ponto(*s, *a, *b, fundo)) & 63;
+            for (destino, ((&s, &a), &b)) in linha_do_quadro.iter_mut().zip(pontos).skip(inicio) {
+                let idx = usize::from(resolver_ponto_compacto(s, a, b, fundo)) & 63;
                 *destino = paleta[idx];
             }
         }

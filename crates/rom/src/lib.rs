@@ -4,6 +4,8 @@
 //! usuário escolheu e devolve um veredito. Não guarda nem envia a ROM.
 #![forbid(unsafe_code)]
 
+use std::borrow::Cow;
+
 mod sha1;
 
 pub use sha1::{em_hex, sha1};
@@ -54,6 +56,57 @@ pub struct Identificacao {
     pub veredito: Veredito,
 }
 
+/// Tamanho do cabeçalho de copiador Super Magic Drive (.smd), em bytes.
+pub const CABECALHO_SMD: usize = 512;
+
+/// Tamanho de cada bloco intercalado no formato Super Magic Drive (16 KiB).
+const BLOCO_SMD: usize = 16_384;
+
+/// Identifica cabeçalho Super Magic Drive (.smd) com blocos intercalados de 16 KiB.
+pub fn eh_smd_intercalado(dados: &[u8]) -> bool {
+    let Some(corpo_len) = dados.len().checked_sub(CABECALHO_SMD) else {
+        return false;
+    };
+    corpo_len >= BLOCO_SMD
+        && corpo_len.is_multiple_of(BLOCO_SMD)
+        && dados[8] == 0xAA
+        && dados[9] == 0xBB
+}
+
+/// Desintercala blocos de 16 KiB do formato SMD (8 KiB ímpares seguidos de 8 KiB pares).
+pub fn desintercalar_smd(corpo: &[u8]) -> Vec<u8> {
+    let metade = BLOCO_SMD / 2;
+    let mut saida = vec![0u8; corpo.len()];
+    for (bloco_in, bloco_out) in corpo
+        .chunks_exact(BLOCO_SMD)
+        .zip(saida.chunks_exact_mut(BLOCO_SMD))
+    {
+        let (impares, pares) = bloco_in.split_at(metade);
+        for i in 0..metade {
+            bloco_out[i * 2] = pares[i];
+            bloco_out[i * 2 + 1] = impares[i];
+        }
+    }
+    saida
+}
+
+/// Remove o cabeçalho SMD de 512 bytes e desintercala os blocos de 16 KiB quando necessário.
+pub fn normalizar_rom(dados: &[u8], tamanho_esperado: usize) -> Cow<'_, [u8]> {
+    if dados.len() == tamanho_esperado.saturating_add(CABECALHO_SMD) {
+        let corpo = &dados[CABECALHO_SMD..];
+        if eh_smd_intercalado(dados) {
+            return Cow::Owned(desintercalar_smd(corpo));
+        }
+        return Cow::Borrowed(corpo);
+    }
+    Cow::Borrowed(dados)
+}
+
+/// Normaliza uma ROM REV01 (remove cabeçalho SMD e desintercala se aplicável).
+pub fn normalizar_rev01(dados: &[u8]) -> Cow<'_, [u8]> {
+    normalizar_rom(dados, TAMANHO_REV01)
+}
+
 /// Confere se `dados` é a ROM REV01.
 pub fn identificar(dados: &[u8]) -> Identificacao {
     identificar_com(dados, TAMANHO_REV01, SHA1_REV01)
@@ -66,13 +119,8 @@ pub fn identificar_com(
     tamanho_esperado: usize,
     sha1_esperado: &str,
 ) -> Identificacao {
-    // Descarta cabecalho SMD de 512 bytes se presente (copiadores Super Magic Drive).
-    let conteudo = if dados.len() == tamanho_esperado.saturating_add(512) {
-        &dados[512..]
-    } else {
-        dados
-    };
-    let hash = em_hex(&sha1(conteudo));
+    let conteudo = normalizar_rom(dados, tamanho_esperado);
+    let hash = em_hex(&sha1(&conteudo));
     let veredito = if conteudo.is_empty() {
         Veredito::Recusada(Motivo::Vazia)
     } else if conteudo.len() != tamanho_esperado {
@@ -159,6 +207,32 @@ mod testes {
         let r = identificar_com(&dados, 3, "a9993e364706816aba3e25717850c26c9cd0d89d");
         assert_eq!(r.veredito, Veredito::Rev01);
         assert_eq!(r.tamanho, 3);
+    }
+
+    #[test]
+    fn aceita_smd_intercalado_em_blocos_de_16kib() {
+        let linear: Vec<u8> = (0..BLOCO_SMD).map(|i| ((i * 7 + 3) & 0xFF) as u8).collect();
+        let hash_linear = em_hex(&sha1(&linear));
+
+        let mut smd = vec![0u8; CABECALHO_SMD + BLOCO_SMD];
+        smd[0] = 1; // 1 bloco de 16 KiB
+        smd[1] = 0x03;
+        smd[8] = 0xAA;
+        smd[9] = 0xBB;
+        smd[10] = 0x06;
+        let metade = BLOCO_SMD / 2;
+        for i in 0..metade {
+            smd[CABECALHO_SMD + i] = linear[i * 2 + 1];
+            smd[CABECALHO_SMD + metade + i] = linear[i * 2];
+        }
+
+        let norm = normalizar_rom(&smd, BLOCO_SMD);
+        assert_eq!(norm.as_ref(), linear.as_slice());
+
+        let r = identificar_com(&smd, BLOCO_SMD, &hash_linear);
+        assert_eq!(r.veredito, Veredito::Rev01);
+        assert_eq!(r.tamanho, BLOCO_SMD);
+        assert_eq!(r.sha1, hash_linear);
     }
 
     #[test]

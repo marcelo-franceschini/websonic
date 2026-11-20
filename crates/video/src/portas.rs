@@ -4,6 +4,7 @@
 //! `write_data`, `pop_fifo` e os DMAs. Nesta camada as escritas valem na hora; o atraso da FIFO
 //! entra na camada de tempo (4.6).
 
+use crate::cor::da_palavra_cram;
 use crate::registros::{ModoDma, QUANTIDADE, Registros};
 use std::collections::VecDeque;
 
@@ -159,6 +160,7 @@ pub struct Vdp {
     pub registros: Registros,
     pub(crate) vram: Vec<u8>,
     pub(crate) cram: [u16; PALAVRAS_CRAM],
+    pub(crate) cram_9bits: [u16; PALAVRAS_CRAM],
     pub(crate) vsram: [u16; PALAVRAS_VSRAM],
     pub avisos: Avisos,
     // Porta de controle.
@@ -203,6 +205,7 @@ impl Vdp {
             registros: Registros::novo(),
             vram: vec![0; TAMANHO_VRAM],
             cram: [0; PALAVRAS_CRAM],
+            cram_9bits: [0; PALAVRAS_CRAM],
             vsram: [0; PALAVRAS_VSRAM],
             avisos: Avisos::default(),
             segunda_palavra: false,
@@ -271,11 +274,20 @@ impl Vdp {
 
     // ---- Porta de controle ----
 
+    pub fn cram_9bits(&self) -> &[u16; PALAVRAS_CRAM] {
+        &self.cram_9bits
+    }
+
     pub fn escrever_controle(&mut self, valor: u16) {
+        let _ = self.escrever_controle_com_reg(valor);
+    }
+
+    /// Igual a [`Self::escrever_controle`], retornando o índice do registrador alterado (se houver).
+    pub(crate) fn escrever_controle_com_reg(&mut self, valor: u16) -> Option<usize> {
         if self.dma_de_memoria() {
             // O DMA trava o barramento: a escrita espera o fim dele.
             self.pendentes.push(Pendente::Controle(valor));
-            return;
+            return None;
         }
         if !self.segunda_palavra {
             // A primeira palavra sempre mexe no endereço, mesmo quando é escrita de registrador.
@@ -290,10 +302,10 @@ impl Vdp {
             self.bits_do_alvo = (self.bits_do_alvo & !1) | u8::from(valor & 0x8000 != 0);
             self.alvo = alvo_dos_bits(self.bits_do_alvo, self.sentido);
             if valor & 0xc000 == 0x8000 {
-                self.escrever_registrador(valor);
-            } else {
-                self.segunda_palavra = true;
+                return self.escrever_registrador(valor);
             }
+            self.segunda_palavra = true;
+            None
         } else {
             self.endereco_de_controle =
                 (self.endereco_de_controle & 0x3fff) | (u32::from(valor & 7) << 14);
@@ -319,22 +331,27 @@ impl Vdp {
                     }
                 }
             }
+            None
         }
     }
 
-    fn escrever_registrador(&mut self, valor: u16) {
+    fn escrever_registrador(&mut self, valor: u16) -> Option<usize> {
         let reg = usize::from((valor >> 8) & 0x1f);
         if reg >= QUANTIDADE {
-            return;
+            return None;
         }
         // Em modo 4 do Master System, registradores acima de 10 não mudam (como no oráculo).
         if self.registros.modo4 && reg > 10 {
             self.avisos.modo4 = self.avisos.modo4.saturating_add(1);
-            return;
+            return None;
         }
         let byte = valor.to_le_bytes()[0];
-        if let Some(r) = self.registros.brutos.get_mut(reg) {
+        let mut mudou = None;
+        if let Some(r) = self.registros.brutos.get_mut(reg)
+            && *r != byte
+        {
             *r = byte;
+            mudou = Some(reg);
         }
         match reg {
             1 => {
@@ -355,6 +372,7 @@ impl Vdp {
             _ => {}
         }
         self.notar_recursos_fora_do_inventario(reg);
+        mudou
     }
 
     fn notar_recursos_fora_do_inventario(&mut self, reg: usize) {
@@ -453,39 +471,38 @@ impl Vdp {
             self.dma_ativo = false;
             return;
         }
+        let tabela_sprites = self.registros.tabela_de_sprites();
+        let fim_sprites = tabela_sprites.saturating_add(8 * 80);
+        let incremento = u32::from(self.registros.incremento());
+
         let a = usize::from(u16::try_from(self.endereco_de_dados & 0xffff).unwrap_or(0));
         let [hi, lo] = palavra.to_be_bytes();
         self.gravar_byte_vram(a, hi);
         self.gravar_byte_vram(a ^ 1, lo);
-        self.ao_gravar_vram.push((self.endereco_de_dados, hi));
-        self.ao_gravar_vram.push((self.endereco_de_dados ^ 1, lo));
-        self.endereco_de_dados = self
-            .endereco_de_dados
-            .wrapping_add(u32::from(self.registros.incremento()));
+        let a0 = self.endereco_de_dados;
+        let a1 = a0 ^ 1;
+        if (a0 & 4) == 0 && a0 >= tabela_sprites && a0 < fim_sprites {
+            self.ao_gravar_vram.push((a0, hi));
+        }
+        if (a1 & 4) == 0 && a1 >= tabela_sprites && a1 < fim_sprites {
+            self.ao_gravar_vram.push((a1, lo));
+        }
+        self.endereco_de_dados = self.endereco_de_dados.wrapping_add(incremento);
 
         let byte = hi;
-        let mut restante = self.dma_comprimento;
-        if restante == 0 {
-            for _ in 0..0x1_0000 {
-                let addr = usize::try_from((self.endereco_de_dados ^ 1) & 0xffff).unwrap_or(0);
-                self.gravar_byte_vram(addr, byte);
-                self.ao_gravar_vram
-                    .push((u32::try_from(addr).unwrap_or(0), byte));
-                self.endereco_de_dados = self
-                    .endereco_de_dados
-                    .wrapping_add(u32::from(self.registros.incremento()));
-            }
+        let total: u32 = if self.dma_comprimento == 0 {
+            0x1_0000
         } else {
-            while restante > 0 {
-                let addr = usize::try_from((self.endereco_de_dados ^ 1) & 0xffff).unwrap_or(0);
-                self.gravar_byte_vram(addr, byte);
-                self.ao_gravar_vram
-                    .push((u32::try_from(addr).unwrap_or(0), byte));
-                self.endereco_de_dados = self
-                    .endereco_de_dados
-                    .wrapping_add(u32::from(self.registros.incremento()));
-                restante = restante.wrapping_sub(1);
+            u32::from(self.dma_comprimento)
+        };
+        for _ in 0..total {
+            let addr_u32 = (self.endereco_de_dados ^ 1) & 0xffff;
+            let addr = usize::try_from(addr_u32).unwrap_or(0);
+            self.gravar_byte_vram(addr, byte);
+            if (addr_u32 & 4) == 0 && addr_u32 >= tabela_sprites && addr_u32 < fim_sprites {
+                self.ao_gravar_vram.push((addr_u32, byte));
             }
+            self.endereco_de_dados = self.endereco_de_dados.wrapping_add(incremento);
         }
         self.dma_comprimento = 0;
         self.dma_ativo = false;
@@ -636,6 +653,9 @@ impl Vdp {
                     let i = usize::try_from((frente.endereco & 0x7f) >> 1).unwrap_or(0);
                     if let Some(c) = self.cram.get_mut(i) {
                         *c = frente.palavra;
+                    }
+                    if let Some(c9) = self.cram_9bits.get_mut(i) {
+                        *c9 = da_palavra_cram(frente.palavra);
                     }
                     ef.cram = true;
                     ef.ponto_da_cram = Some(PontoDaCram {

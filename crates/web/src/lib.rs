@@ -1,6 +1,8 @@
 //! Camada fina entre o JavaScript e os crates do projeto. Sem lógica própria.
+#![forbid(unsafe_code)]
+
 use sonic1_console::Console;
-use sonic1_rom::{Veredito, identificar as identificar_rom};
+use sonic1_rom::{Veredito, identificar as identificar_rom, normalizar_rev01};
 use wasm_bindgen::prelude::*;
 
 /// O que o JavaScript recebe de volta.
@@ -55,8 +57,7 @@ pub fn identificar(dados: &[u8]) -> Resultado {
     }
 }
 
-/// O jogo rodando: o núcleo com tempo nominal, a ponte de vídeo e a imagem do último quadro.
-/// A síntese de som é a Etapa 8: aqui não há som.
+/// O jogo rodando: núcleo com tempo nominal, ponte de vídeo e síntese de áudio.
 #[wasm_bindgen]
 pub struct Jogo {
     console: Console,
@@ -64,7 +65,7 @@ pub struct Jogo {
 
 impl Jogo {
     /// Cria o jogo sem conferir a ROM (para testes com ROM sintética). A página só chama
-    /// [`Jogo::criar`].
+    /// [`Jogo::criar`] ou [`Jogo::criar_com_audio`].
     pub fn sem_validar(rom: Vec<u8>) -> Self {
         Self {
             console: Console::novo(rom),
@@ -76,14 +77,10 @@ impl Jogo {
 impl Jogo {
     /// Cria o jogo. Só aceita a REV01: qualquer outro arquivo é recusado.
     pub fn criar(dados: &[u8]) -> Result<Jogo, String> {
-        let limpos = if dados.len() == 524_288 + 512 {
-            &dados[512..]
-        } else {
-            dados
-        };
-        let id = identificar_rom(limpos);
+        let limpos = normalizar_rev01(dados);
+        let id = identificar_rom(&limpos);
         match id.veredito {
-            Veredito::Rev01 => Ok(Self::sem_validar(limpos.to_vec())),
+            Veredito::Rev01 => Ok(Self::sem_validar(limpos.into_owned())),
             Veredito::Recusada(m) => Err(m.descricao()),
         }
     }
@@ -93,15 +90,11 @@ impl Jogo {
         if !taxa_audio.is_finite() || !(3_000.0..=768_000.0).contains(&taxa_audio) {
             return Err("Taxa de áudio inválida".into());
         }
-        let limpos = if dados.len() == 524_288 + 512 {
-            &dados[512..]
-        } else {
-            dados
-        };
-        let id = identificar_rom(limpos);
+        let limpos = normalizar_rev01(dados);
+        let id = identificar_rom(&limpos);
         match id.veredito {
             Veredito::Rev01 => Ok(Self {
-                console: Console::com_taxa_audio(limpos.to_vec(), taxa_audio),
+                console: Console::com_taxa_audio(limpos.into_owned(), taxa_audio),
             }),
             Veredito::Recusada(m) => Err(m.descricao()),
         }

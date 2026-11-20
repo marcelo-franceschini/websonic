@@ -41,7 +41,7 @@ const SCEN_VALUES: u32 = 0x8EAC;
 
 /// Estende o sinal de uma palavra, como `movea.w` e `adda.w` fazem.
 fn ext(a: u16) -> u32 {
-    u32::from_be_bytes(i32::from(i16::from_be_bytes(a.to_be_bytes())).to_be_bytes())
+    crate::aritmetica::estender_sinal_u16(a)
 }
 
 /// `DeleteObject`: zera as 16 longas do objeto.
@@ -132,99 +132,99 @@ fn rodar_objeto(m: &mut Memoria, a0: u32, id: u8) -> Result<(), ErroAbertura> {
         ID_SPIKES => super::spikes::executar(m, a0),
         ID_COLLAPSE_LEDGE => super::collapse_ledge::executar(m, a0),
         ID_SIGNPOST => super::signpost::executar(m, a0),
-        0x79 => super::lamppost::executar(m, a0),
-        0x08 => super::splash::executar(m, a0),
-        0x0A => super::afogamento::executar(m, a0),
-        0x3E => super::capsula::executar(m, a0),
-        0x3D => super::boss_ghz::executar(m, a0),
-        0x48 => super::boss_ghz::bola(m, a0),
-        0x73 => super::boss_mz::executar(m, a0),
-        0x74 => super::boss_mz::fogo(m, a0),
-        0x75 => boss_syz::chefe(m, a0),
-        0x76 => boss_syz::bloco(m, a0),
-        0x77 => super::boss_lz::executar(m, a0),
-        0x7A => boss_slz::executar(m, a0),
-        0x7B => boss_slz_bola::executar(m, a0),
-        0x3C => super::parede_quebravel::executar(m, a0),
-        0x15 => super::plataforma_oscilante::executar(m, a0),
-        0x18 => super::plataforma_basica::executar(m, a0),
-        0x17 => super::ghz_extras::helix(m, a0),
-        0x7D => super::ghz_extras::bonus(m, a0),
-        0x4B => super::ghz_extras::anel_gigante(m, a0),
-        0x7C => super::ghz_extras::brilho_anel(m, a0),
-        0x2F => super::marble_plataformas::plataforma(m, a0),
-        0x35 => super::marble_plataformas::fogo(m, a0),
-        0x54 => super::marble_plataformas::lava(m, a0),
-        0x42 => super::badniks::newtron(m, a0),
-        0x1E => super::badniks::ball_hog(m, a0),
-        0x20 => super::badniks::cannonball(m, a0),
-        0x3F => super::badniks::explosao(m, a0),
-        0x39 => super::game_over::executar(m, a0),
-        0x80 => super::continue_screen::item(m, a0),
-        0x81 => super::continue_screen::sonic(m, a0),
-        0x78 => super::caterkiller::executar(m, a0),
-        0x13 => super::marble_fogo::gerador(m, a0),
-        0x14 => super::marble_fogo::bola(m, a0),
-        0x31 => super::marble_stomper::executar(m, a0),
-        0x1B => super::labirinto::superficie(m, a0),
-        0x61 => bloco_labirinto::executar(m, a0),
-        0x2D => burrobot::executar(m, a0),
-        0x57 => corrente_espinhos::executar(m, a0),
-        0x56 => portas_labirinto::executar(m, a0),
-        0x64 => bolhas_labirinto::executar(m, a0),
-        0x65 => cascata_labirinto::executar(m, a0),
-        0x63 => esteira_labirinto::executar(m, a0),
-        0x62 => gargula_labirinto::executar(m, a0),
-        0x5E => gangorra_slz::executar(m, a0),
-        0x60 => orbinaut::executar(m, a0),
-        0x16 => arpao_labirinto::executar(m, a0),
-        0x2C => jaws::executar(m, a0),
-        0x2E => power_up(m, a0),
-        0x38 => escudo_estrelas(m, a0),
-        0x52 => jangada_labirinto::executar(m, a0),
-        0x33 => super::marble_bloco::executar(m, a0),
-        0x32 => super::botao::executar(m, a0),
-        0x55 => super::basaran::executar(m, a0),
-        0x71 => super::barreira_invisivel::executar(m, a0),
-        0x30 => super::vidro_marble::executar(m, a0),
-        0x46 => super::tijolo_marble::executar(m, a0),
+        ID_LAMPPOST => super::lamppost::executar(m, a0),
+        ID_SPLASH => super::splash::executar(m, a0),
+        ID_DROWNING_COUNTDOWN => super::afogamento::executar(m, a0),
+        ID_PRISON => super::capsula::executar(m, a0),
+        ID_BOSS_GHZ => super::boss_ghz::executar(m, a0),
+        ID_BOSS_BALL => super::boss_ghz::bola(m, a0),
+        ID_BOSS_MZ => super::boss_mz::executar(m, a0),
+        ID_BOSS_FIRE => super::boss_mz::fogo(m, a0),
+        ID_BOSS_SYZ => boss_syz::chefe(m, a0),
+        ID_BOSS_SYZ_BLOCK => boss_syz::bloco(m, a0),
+        ID_BOSS_LZ => super::boss_lz::executar(m, a0),
+        ID_BOSS_SLZ => boss_slz::executar(m, a0),
+        ID_BOSS_SLZ_SPIKEBALL => boss_slz_bola::executar(m, a0),
+        ID_SMASH_WALL => super::parede_quebravel::executar(m, a0),
+        ID_SWINGING_PLATFORM => super::plataforma_oscilante::executar(m, a0),
+        ID_BASIC_PLATFORM => super::plataforma_basica::executar(m, a0),
+        ID_HELIX => super::ghz_extras::helix(m, a0),
+        ID_HIDDEN_BONUS => super::ghz_extras::bonus(m, a0),
+        ID_GIANT_RING => super::ghz_extras::anel_gigante(m, a0),
+        ID_RING_FLASH => super::ghz_extras::brilho_anel(m, a0),
+        ID_LARGE_GRASS => super::marble_plataformas::plataforma(m, a0),
+        ID_BURNING_GRASS => super::marble_plataformas::fogo(m, a0),
+        ID_LAVA_TAG => super::marble_plataformas::lava(m, a0),
+        ID_NEWTRON => super::badniks::newtron(m, a0),
+        ID_BALL_HOG => super::badniks::ball_hog(m, a0),
+        ID_CANNONBALL => super::badniks::cannonball(m, a0),
+        ID_EXPLOSION_BOMB => super::badniks::explosao(m, a0),
+        ID_GAME_OVER_CARD => super::game_over::executar(m, a0),
+        ID_CONT_SCR_ITEM => super::continue_screen::item(m, a0),
+        ID_CONT_SCR_SONIC => super::continue_screen::sonic(m, a0),
+        ID_CATERKILLER => super::caterkiller::executar(m, a0),
+        ID_LAVA_MAKER => super::marble_fogo::gerador(m, a0),
+        ID_LAVA_BALL => super::marble_fogo::bola(m, a0),
+        ID_CHAINED_STOMPER => super::marble_stomper::executar(m, a0),
+        ID_WATER_SURFACE => super::labirinto::superficie(m, a0),
+        ID_LABYRINTH_BLOCK => bloco_labirinto::executar(m, a0),
+        ID_BURROBOT => burrobot::executar(m, a0),
+        ID_SPIKED_BALL_CHAIN => corrente_espinhos::executar(m, a0),
+        ID_FLOATING_BLOCK_LZ => portas_labirinto::executar(m, a0),
+        ID_BUBBLE => bolhas_labirinto::executar(m, a0),
+        ID_WATERFALL => cascata_labirinto::executar(m, a0),
+        ID_LABYRINTH_CONVEY => esteira_labirinto::executar(m, a0),
+        ID_GARGOYLE => gargula_labirinto::executar(m, a0),
+        ID_SEESAW_SLZ => gangorra_slz::executar(m, a0),
+        ID_ORBINAUT => orbinaut::executar(m, a0),
+        ID_HARPOON => arpao_labirinto::executar(m, a0),
+        ID_JAWS => jaws::executar(m, a0),
+        ID_POWER_UP => power_up(m, a0),
+        ID_SHIELD_ITEM => escudo_estrelas(m, a0),
+        ID_MOVING_BLOCK_LZ => jangada_labirinto::executar(m, a0),
+        ID_PUSH_BLOCK => super::marble_bloco::executar(m, a0),
+        ID_BUTTON => super::botao::executar(m, a0),
+        ID_BASARAN => super::basaran::executar(m, a0),
+        ID_INVIS_BARRIER => super::barreira_invisivel::executar(m, a0),
+        ID_GLASS_BLOCK => super::vidro_marble::executar(m, a0),
+        ID_MZ_BRICK => super::tijolo_marble::executar(m, a0),
         ID_GOT_THROUGH_CARD => super::got_through::executar(m, a0),
-        0x40 => super::motobug::executar(m, a0),
-        0x22 => super::buzz::executar(m, a0),
-        0x23 => super::buzz::missil(m, a0),
-        0x2A => super::sbz_objetos::auto_door(m, a0),
-        0x66 => super::sbz_objetos::junction(m, a0),
-        0x67 => super::sbz_objetos::running_disc(m, a0),
-        0x68 => super::sbz_objetos::conveyor(m, a0),
-        0x69 => super::sbz_objetos::spin_platform(m, a0),
-        0x6A => super::sbz_objetos::saws(m, a0),
-        0x6B => super::sbz_objetos::scrap_stomp(m, a0),
-        0x6C => super::sbz_objetos::vanish_platform(m, a0),
-        0x6D => super::sbz_objetos::flamethrower(m, a0),
-        0x6E => super::sbz_objetos::electro(m, a0),
-        0x6F => super::sbz_objetos::spin_convey(m, a0),
-        0x70 => super::sbz_objetos::girder(m, a0),
-        0x72 => super::sbz_objetos::teleport(m, a0),
-        0x82 => super::boss_sbz::scrap_eggman(m, a0),
-        0x83 => super::boss_sbz::false_floor(m, a0),
-        0x84 => super::boss_fz::eggman_cylinder(m, a0),
-        0x85 => super::boss_fz::boss_final(m, a0),
-        0x86 => super::boss_fz::boss_plasma(m, a0),
-        0x87 => super::ending::end_sonic(m, a0),
-        0x88 => super::ending::end_chaos(m, a0),
-        0x89 => super::ending::end_sth(m, a0),
-        0x8B => super::ending::end_eggman(m, a0),
-        0x8C => super::ending::try_chaos(m, a0),
-        0x12 => spinning_light::executar(m, a0),
-        0x47 => bumper::executar(m, a0),
-        0x58 => big_spike_ball::executar(m, a0),
-        0x50 => yadrin::executar(m, a0),
-        0x43 => roller::executar(m, a0),
-        0x59 => elevador_slz::executar(m, a0),
-        0x5A => circling_platform::executar(m, a0),
-        0x5B => staircase_slz::executar(m, a0),
-        0x5D => fan_slz::executar(m, a0),
-        0x5F => walking_bomb::executar(m, a0),
+        ID_MOTOBUG => super::motobug::executar(m, a0),
+        ID_BUZZ_BOMBER => super::buzz::executar(m, a0),
+        ID_BUZZ_MISSILE => super::buzz::missil(m, a0),
+        ID_AUTO_DOOR => super::sbz_objetos::auto_door(m, a0),
+        ID_JUNCTION => super::sbz_objetos::junction(m, a0),
+        ID_RUNNING_DISC => super::sbz_objetos::running_disc(m, a0),
+        ID_CONVEYOR => super::sbz_objetos::conveyor(m, a0),
+        ID_SPIN_PLATFORM => super::sbz_objetos::spin_platform(m, a0),
+        ID_SAWS => super::sbz_objetos::saws(m, a0),
+        ID_SCRAP_STOMP => super::sbz_objetos::scrap_stomp(m, a0),
+        ID_VANISH_PLATFORM => super::sbz_objetos::vanish_platform(m, a0),
+        ID_FLAMETHROWER => super::sbz_objetos::flamethrower(m, a0),
+        ID_ELECTRO => super::sbz_objetos::electro(m, a0),
+        ID_SPIN_CONVEY => super::sbz_objetos::spin_convey(m, a0),
+        ID_GIRDER => super::sbz_objetos::girder(m, a0),
+        ID_TELEPORT => super::sbz_objetos::teleport(m, a0),
+        ID_SCRAP_EGGMAN => super::boss_sbz::scrap_eggman(m, a0),
+        ID_FALSE_FLOOR => super::boss_sbz::false_floor(m, a0),
+        ID_EGGMAN_CYLINDER => super::boss_fz::eggman_cylinder(m, a0),
+        ID_BOSS_FINAL => super::boss_fz::boss_final(m, a0),
+        ID_BOSS_PLASMA => super::boss_fz::boss_plasma(m, a0),
+        ID_END_SONIC => super::ending::end_sonic(m, a0),
+        ID_END_CHAOS => super::ending::end_chaos(m, a0),
+        ID_END_STH => super::ending::end_sth(m, a0),
+        ID_END_EGGMAN => super::ending::end_eggman(m, a0),
+        ID_TRY_CHAOS => super::ending::try_chaos(m, a0),
+        ID_SPINNING_LIGHT => spinning_light::executar(m, a0),
+        ID_BUMPER => bumper::executar(m, a0),
+        ID_BIG_SPIKE_BALL => big_spike_ball::executar(m, a0),
+        ID_YADRIN => yadrin::executar(m, a0),
+        ID_ROLLER => roller::executar(m, a0),
+        ID_ELEVATOR_SLZ => elevador_slz::executar(m, a0),
+        ID_CIRCLING_PLATFORM => circling_platform::executar(m, a0),
+        ID_STAIRCASE_SLZ => staircase_slz::executar(m, a0),
+        ID_FAN_SLZ => fan_slz::executar(m, a0),
+        ID_WALKING_BOMB => walking_bomb::executar(m, a0),
         outro => Err(ErroAbertura::ObjetoNaoImplementado(outro)),
     }
 }
@@ -240,6 +240,7 @@ pub fn objeto_existe(id: u8) -> bool {
             | ID_SONIC
             | ID_HUD
             | ID_RINGS
+            | ID_RING_LOSS
             | ID_MONITOR
             | ID_SPRING
             | ID_SCENERY
@@ -255,99 +256,99 @@ pub fn objeto_existe(id: u8) -> bool {
             | ID_SPIKES
             | ID_COLLAPSE_LEDGE
             | ID_SIGNPOST
-            | 0x79
-            | 0x08
-            | 0x0A
-            | 0x15
-            | 0x18
-            | 0x17
-            | 0x7D
-            | 0x4B
-            | 0x7C
-            | 0x2F
-            | 0x35
-            | 0x54
-            | 0x3C
-            | 0x3D
-            | 0x48
-            | 0x3E
-            | 0x42
-            | 0x1E
-            | 0x20
-            | 0x3F
-            | 0x39
-            | 0x80
-            | 0x81
-            | 0x78
-            | 0x13
-            | 0x14
-            | 0x31
-            | 0x1B
-            | 0x61
-            | 0x2D
-            | 0x57
-            | 0x56
-            | 0x64
-            | 0x65
-            | 0x63
-            | 0x62
-            | 0x5E
-            | 0x60
-            | 0x16
-            | 0x2C
-            | 0x2E
-            | 0x38
-            | 0x52
-            | 0x73
-            | 0x74
-            | 0x75
-            | 0x76
-            | 0x77
-            | 0x7A
-            | 0x7B
-            | 0x33
-            | 0x32
-            | 0x55
-            | 0x71
-            | 0x30
-            | 0x46
+            | ID_LAMPPOST
+            | ID_SPLASH
+            | ID_DROWNING_COUNTDOWN
+            | ID_SWINGING_PLATFORM
+            | ID_BASIC_PLATFORM
+            | ID_HELIX
+            | ID_HIDDEN_BONUS
+            | ID_GIANT_RING
+            | ID_RING_FLASH
+            | ID_LARGE_GRASS
+            | ID_BURNING_GRASS
+            | ID_LAVA_TAG
+            | ID_SMASH_WALL
+            | ID_BOSS_GHZ
+            | ID_BOSS_BALL
+            | ID_PRISON
+            | ID_NEWTRON
+            | ID_BALL_HOG
+            | ID_CANNONBALL
+            | ID_EXPLOSION_BOMB
+            | ID_GAME_OVER_CARD
+            | ID_CONT_SCR_ITEM
+            | ID_CONT_SCR_SONIC
+            | ID_CATERKILLER
+            | ID_LAVA_MAKER
+            | ID_LAVA_BALL
+            | ID_CHAINED_STOMPER
+            | ID_WATER_SURFACE
+            | ID_LABYRINTH_BLOCK
+            | ID_BURROBOT
+            | ID_SPIKED_BALL_CHAIN
+            | ID_FLOATING_BLOCK_LZ
+            | ID_BUBBLE
+            | ID_WATERFALL
+            | ID_LABYRINTH_CONVEY
+            | ID_GARGOYLE
+            | ID_SEESAW_SLZ
+            | ID_ORBINAUT
+            | ID_HARPOON
+            | ID_JAWS
+            | ID_POWER_UP
+            | ID_SHIELD_ITEM
+            | ID_MOVING_BLOCK_LZ
+            | ID_BOSS_MZ
+            | ID_BOSS_FIRE
+            | ID_BOSS_SYZ
+            | ID_BOSS_SYZ_BLOCK
+            | ID_BOSS_LZ
+            | ID_BOSS_SLZ
+            | ID_BOSS_SLZ_SPIKEBALL
+            | ID_PUSH_BLOCK
+            | ID_BUTTON
+            | ID_BASARAN
+            | ID_INVIS_BARRIER
+            | ID_GLASS_BLOCK
+            | ID_MZ_BRICK
             | ID_GOT_THROUGH_CARD
-            | 0x40
-            | 0x22
-            | 0x23
-            | 0x2A
-            | 0x66
-            | 0x67
-            | 0x68
-            | 0x69
-            | 0x6A
-            | 0x6B
-            | 0x6C
-            | 0x6D
-            | 0x6E
-            | 0x6F
-            | 0x70
-            | 0x72
-            | 0x82
-            | 0x83
-            | 0x84
-            | 0x85
-            | 0x86
-            | 0x87
-            | 0x88
-            | 0x89
-            | 0x8B
-            | 0x8C
-            | 0x12
-            | 0x47
-            | 0x58
-            | 0x50
-            | 0x43
-            | 0x59
-            | 0x5A
-            | 0x5B
-            | 0x5D
-            | 0x5F
+            | ID_MOTOBUG
+            | ID_BUZZ_BOMBER
+            | ID_BUZZ_MISSILE
+            | ID_AUTO_DOOR
+            | ID_JUNCTION
+            | ID_RUNNING_DISC
+            | ID_CONVEYOR
+            | ID_SPIN_PLATFORM
+            | ID_SAWS
+            | ID_SCRAP_STOMP
+            | ID_VANISH_PLATFORM
+            | ID_FLAMETHROWER
+            | ID_ELECTRO
+            | ID_SPIN_CONVEY
+            | ID_GIRDER
+            | ID_TELEPORT
+            | ID_SCRAP_EGGMAN
+            | ID_FALSE_FLOOR
+            | ID_EGGMAN_CYLINDER
+            | ID_BOSS_FINAL
+            | ID_BOSS_PLASMA
+            | ID_END_SONIC
+            | ID_END_CHAOS
+            | ID_END_STH
+            | ID_END_EGGMAN
+            | ID_TRY_CHAOS
+            | ID_SPINNING_LIGHT
+            | ID_BUMPER
+            | ID_BIG_SPIKE_BALL
+            | ID_YADRIN
+            | ID_ROLLER
+            | ID_ELEVATOR_SLZ
+            | ID_CIRCLING_PLATFORM
+            | ID_STAIRCASE_SLZ
+            | ID_FAN_SLZ
+            | ID_WALKING_BOMB
     )
 }
 

@@ -1,0 +1,12 @@
+{
+  "name": "websonic",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "node server.mjs",
+    "start": "node server.mjs",
+    "build": "node --check server.mjs site/app.js site/entrada.js site/hud.js site/sim-worker.js site/audio-worklet.js site/gpu.js site/relogio.js",
+    "lint": "node --check server.mjs site/app.js site/entrada.js site/hud.js site/sim-worker.js site/audio-worklet.js site/gpu.js site/relogio.js",
+    "test": "node --test site/tests/relogio.test.mjs site/tests/ritmo-60hz.test.mjs site/tests/audio-worklet.test.cjs site/tests/audio-worklet-carga.test.cjs site/tests/entrada.test.mjs site/tests/audio-worklet-canal.test.cjs"
+  }
+}

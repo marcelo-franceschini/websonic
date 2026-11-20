@@ -102,6 +102,25 @@ impl Reamostrador {
         }
     }
 
+    /// Cria um reamostrador apenas mono (nao aloca o buffer do canal direito).
+    pub fn novo_mono(taxa_entrada: f64, taxa_saida: f64) -> Self {
+        let corte = (taxa_saida / taxa_entrada).min(1.0) as f32;
+        let tabela = TabelaFiltro::gerar_com_corte(corte);
+        let passo_base = taxa_entrada / taxa_saida;
+        let mut buffer_in_l = Vec::with_capacity(16_384);
+        buffer_in_l.resize(TAPS_POLIFASICO, 0.0);
+
+        Self {
+            tabela,
+            passo_base,
+            ajuste_fino: 0.0,
+            pos_frac: 0.0,
+            offset_base: 0,
+            buffer_in_l,
+            buffer_in_r: Vec::new(),
+        }
+    }
+
     /// Ajuste fino da razao de reamostragem (limitado a ±0.5%).
     pub fn definir_ajuste_fino(&mut self, ajuste: f64) {
         self.ajuste_fino = ajuste.clamp(-0.005, 0.005);
@@ -119,10 +138,7 @@ impl Reamostrador {
 
     /// Adiciona amostras de entrada mono ao buffer de convolucao (grava apenas em L).
     pub fn alimentar_mono(&mut self, amostras: &[f32]) {
-        self.buffer_in_l.reserve(amostras.len());
-        for &m in amostras {
-            self.buffer_in_l.push(m);
-        }
+        self.buffer_in_l.extend_from_slice(amostras);
     }
 
     /// Converte as amostras pendentes gerando saida estereo interpolada.
@@ -137,9 +153,9 @@ impl Reamostrador {
         let mono = self.buffer_in_r.len() < self.buffer_in_l.len();
 
         while (self.offset_base as f64) + self.pos_frac < (limite as f64) {
-            let idx_base = self.offset_base + (self.pos_frac as usize);
-            let frac = self.pos_frac.fract();
-            let fase = ((frac * (FASES_POLIFASICO as f64)) as usize).min(FASES_POLIFASICO - 1);
+            let idx_base = self.offset_base;
+            let fase =
+                ((self.pos_frac * (FASES_POLIFASICO as f64)) as usize).min(FASES_POLIFASICO - 1);
             let coefs = &self.tabela.coefs[fase];
 
             let slice_l: &[f32; TAPS_POLIFASICO] = self.buffer_in_l
@@ -192,9 +208,9 @@ impl Reamostrador {
         let passo = self.passo_base * (1.0 + self.ajuste_fino);
 
         while (self.offset_base as f64) + self.pos_frac < (limite as f64) {
-            let idx_base = self.offset_base + (self.pos_frac as usize);
-            let frac = self.pos_frac.fract();
-            let fase = ((frac * (FASES_POLIFASICO as f64)) as usize).min(FASES_POLIFASICO - 1);
+            let idx_base = self.offset_base;
+            let fase =
+                ((self.pos_frac * (FASES_POLIFASICO as f64)) as usize).min(FASES_POLIFASICO - 1);
             let coefs = &self.tabela.coefs[fase];
 
             let slice_l: &[f32; TAPS_POLIFASICO] = self.buffer_in_l
@@ -217,8 +233,8 @@ impl Reamostrador {
             }
         }
 
-        // Compacta o buffer apenas quando o offset_base acumula mais de 2048 amostras
-        if self.offset_base > 2048 {
+        // PSG gera ~3733 amostras por quadro: compactar acima de 8192 evita drenar todo quadro.
+        if self.offset_base > 8192 {
             self.buffer_in_l.drain(..self.offset_base);
             self.offset_base = 0;
         }
@@ -230,8 +246,10 @@ impl Reamostrador {
         self.offset_base = 0;
         self.ajuste_fino = 0.0;
         self.buffer_in_l.clear();
-        self.buffer_in_r.clear();
         self.buffer_in_l.resize(TAPS_POLIFASICO, 0.0);
-        self.buffer_in_r.resize(TAPS_POLIFASICO, 0.0);
+        if !self.buffer_in_r.is_empty() {
+            self.buffer_in_r.clear();
+            self.buffer_in_r.resize(TAPS_POLIFASICO, 0.0);
+        }
     }
 }

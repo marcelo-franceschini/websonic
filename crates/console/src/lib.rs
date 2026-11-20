@@ -476,7 +476,7 @@ impl Console {
         {
             let cap = self.capturas.borrow();
             let dma_palavras = &cap.palavras_dma;
-            for (i, (s, capturada, _momento, _linha_hblank)) in
+            for (i, (s, capturada, momento, linha_hblank)) in
                 self.saidas_reserva.iter().enumerate()
             {
                 let delta = if n_saidas > 0 {
@@ -489,8 +489,16 @@ impl Console {
                 match s {
                     Saida::Vdp { .. } => {
                         if let Some(c) = capturada {
-                            self.ponte
-                                .aplicar_capturada_interna(c, dma_palavras, linha, 0);
+                            let linha_escrita = match (*momento, *linha_hblank) {
+                                (MomentoSaida::HBlank, Some(l)) => u16::from(l).min(223),
+                                _ => linha,
+                            };
+                            self.ponte.aplicar_capturada_interna(
+                                c,
+                                dma_palavras,
+                                linha_escrita,
+                                0,
+                            );
                         }
                     }
                     Saida::Ym { porta, valor } | Saida::YmZ80 { porta, valor } => {

@@ -30,8 +30,9 @@ pub struct MisturadorSaida {
 
     buffer_audio: Vec<(f32, f32)>,
     pendentes_fm: VecDeque<(f32, f32)>,
-    pendentes_psg: VecDeque<(f32, f32)>,
+    pendentes_psg: VecDeque<f32>,
     ocupacao_externa: Option<usize>,
+    ocupacao_externa_atualizada: bool,
     tamanho_alvo_buffer: usize,
 
     cont_fm_in: u64,
@@ -49,7 +50,7 @@ impl MisturadorSaida {
     /// Cria o misturador configurado para a taxa de saida do navegador (ex: 48000.0 ou 44100.0).
     pub fn novo(taxa_saida: f64) -> Self {
         let reamostrador_fm = Reamostrador::novo(TAXA_FM_NATIVA, taxa_saida);
-        let reamostrador_psg = Reamostrador::novo(TAXA_PSG_NATIVA, taxa_saida);
+        let reamostrador_psg = Reamostrador::novo_mono(TAXA_PSG_NATIVA, taxa_saida);
         let filtro_analogico = FiltroAnalogico::novo(taxa_saida as f32);
 
         // Alvo de buffer: 3 quadros nominais de 60 Hz (~50 ms)
@@ -65,6 +66,7 @@ impl MisturadorSaida {
             pendentes_fm: VecDeque::new(),
             pendentes_psg: VecDeque::new(),
             ocupacao_externa: None,
+            ocupacao_externa_atualizada: false,
             tamanho_alvo_buffer,
             cont_fm_in: 0,
             cont_psg_in: 0,
@@ -134,18 +136,18 @@ impl MisturadorSaida {
 
         // Combina as saidas interpoladas e passa pelo filtro analogico
         self.pendentes_fm.extend(self.saida_fm.iter().copied());
-        self.pendentes_psg
-            .extend(self.saida_psg.iter().copied().map(|p| (p, p)));
+        self.pendentes_psg.extend(self.saida_psg.iter().copied());
         while !self.pendentes_fm.is_empty() && !self.pendentes_psg.is_empty() {
             let (fml, fmr) = self.pendentes_fm.pop_front().expect("FM disponível");
-            let (psgl, psgr) = self.pendentes_psg.pop_front().expect("PSG disponível");
+            let psg = self.pendentes_psg.pop_front().expect("PSG disponível");
 
-            let mist_l = (fml + psgl).clamp(-1.0, 1.0);
-            let mist_r = (fmr + psgr).clamp(-1.0, 1.0);
+            let mist_l = (fml + psg).clamp(-1.0, 1.0);
+            let mist_r = (fmr + psg).clamp(-1.0, 1.0);
 
+            // Como o passa-baixas de 1a ordem e combinacao convexa de entradas em [-1, 1],
+            // a saida ja permanece dentro de [-1.0, 1.0].
             let filtrado = self.filtro_analogico.processar(mist_l, mist_r);
-            self.buffer_audio
-                .push((filtrado.0.clamp(-1.0, 1.0), filtrado.1.clamp(-1.0, 1.0)));
+            self.buffer_audio.push(filtrado);
         }
 
         // Controlador proporcional de baixa banda para ajustar a taxa de amostragem
@@ -153,14 +155,23 @@ impl MisturadorSaida {
     }
 
     fn atualizar_controlador_taxa(&mut self) {
-        let ocupacao = self.ocupacao_externa.unwrap_or(self.buffer_audio.len());
+        let ocupacao = match self.ocupacao_externa {
+            Some(pares) => {
+                if !self.ocupacao_externa_atualizada {
+                    return;
+                }
+                self.ocupacao_externa_atualizada = false;
+                pares
+            }
+            None => self.buffer_audio.len(),
+        };
         let erro = (ocupacao as f64) - (self.tamanho_alvo_buffer as f64);
 
         // Ganho proporcional suave: ~0.1% a cada 500 amostras de desvio
         let kp = 0.000002;
         let ajuste = (erro * kp).clamp(-0.005, 0.005);
 
-        // Se o buffer esta crescendo, aceleramos a saida (ou aumentamos razao)
+        // Se o buffer esta crescendo (erro > 0), aumenta o passo de entrada para gerar menos amostras.
         self.reamostrador_fm.definir_ajuste_fino(ajuste);
         self.reamostrador_psg.definir_ajuste_fino(ajuste);
     }
@@ -168,6 +179,7 @@ impl MisturadorSaida {
     /// Atualiza a ocupação da fila consumida pelo dispositivo, em pares estéreo.
     pub fn definir_ocupacao_externa(&mut self, pares: usize) {
         self.ocupacao_externa = Some(pares);
+        self.ocupacao_externa_atualizada = true;
     }
 
     /// Retira um bloco de amostras estereo intercaladas (L, R, L, R...) para o AudioWorklet.
@@ -228,6 +240,7 @@ impl MisturadorSaida {
         self.saida_fm.clear();
         self.saida_psg.clear();
         self.ocupacao_externa = None;
+        self.ocupacao_externa_atualizada = false;
         self.cont_fm_in = 0;
         self.cont_psg_in = 0;
         self.cont_saida = 0;

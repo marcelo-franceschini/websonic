@@ -24,40 +24,30 @@ const PG_DETUNE: [u32; 8] = [16, 17, 19, 20, 22, 24, 27, 29];
 
 const EG_STEPHI: [[u32; 4]; 4] = [[0, 0, 0, 0], [1, 0, 0, 0], [1, 0, 1, 0], [1, 1, 1, 0]];
 
-const FM_ALGORITHM: [[[bool; 8]; 6]; 4] = [
-    [
-        [true, true, true, true, true, true, true, true],
-        [true, true, true, true, true, true, true, true],
-        [false, false, false, false, false, false, false, false],
-        [false, false, false, false, false, false, false, false],
-        [false, false, false, false, false, false, false, false],
-        [false, false, false, false, false, false, false, true],
-    ],
-    [
-        [false, true, false, false, false, true, false, false],
-        [false, false, false, false, false, false, false, false],
-        [true, true, true, false, false, false, false, false],
-        [false, false, false, false, false, false, false, false],
-        [false, false, false, false, false, false, false, false],
-        [false, false, false, false, false, true, true, true],
-    ],
-    [
-        [false, false, false, false, false, false, false, false],
-        [false, false, false, false, false, false, false, false],
-        [false, false, false, false, false, false, false, false],
-        [true, false, false, true, true, true, true, false],
-        [false, false, false, false, false, false, false, false],
-        [false, false, false, false, true, true, true, true],
-    ],
-    [
-        [false, false, true, false, false, true, false, false],
-        [false, false, false, false, false, false, false, false],
-        [false, false, false, true, false, false, false, false],
-        [true, true, false, true, true, false, false, false],
-        [false, false, true, false, false, false, false, false],
-        [true, true, true, true, true, true, true, true],
-    ],
+/// Mascara de roteamento por operador e algoritmo (connect 0..7):
+/// bits 0..4 controlam entradas de modulacao; bit 5 soma a saida no acumulador do canal.
+const FM_ALGORITHM: [[u8; 8]; 4] = [
+    [0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x23],
+    [0x04, 0x05, 0x04, 0x00, 0x00, 0x21, 0x20, 0x20],
+    [0x08, 0x00, 0x00, 0x08, 0x28, 0x28, 0x28, 0x20],
+    [0x28, 0x28, 0x31, 0x2C, 0x28, 0x21, 0x20, 0x20],
 ];
+
+const SLOT_CHAN: [usize; 24] = [
+    0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5,
+];
+
+const SLOT_OP: [usize; 24] = [
+    0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3,
+];
+
+const NEXT_CHAN: [usize; 6] = [1, 2, 3, 4, 5, 0];
+
+#[inline]
+const fn soma_mod24(c: usize, delta: usize) -> usize {
+    let s = c.wrapping_add(delta);
+    if s >= 24 { s.wrapping_sub(24) } else { s }
+}
 
 /// Fases do envelope de um slot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -255,6 +245,17 @@ impl Fm {
 
     /// Executa um ciclo interno do chip e devolve a saida nos pinos (esquerda, direita).
     pub fn ciclo(&mut self) -> (i16, i16) {
+        self.ciclo_interno::<true>()
+    }
+
+    /// Executa um ciclo interno sem calcular a saida multiplexada nos pinos (usado pelo site,
+    /// que le apenas `saida_misturada()` a cada 24 ciclos). Estado interno 100% identico.
+    pub fn ciclo_sem_pinos(&mut self) {
+        let _ = self.ciclo_interno::<false>();
+    }
+
+    #[inline]
+    fn ciclo_interno<const COM_PINOS: bool>(&mut self) -> (i16, i16) {
         let c = self.cycles;
         self.eg_cycle = self.eg_cycle.wrapping_add(1);
 
@@ -269,7 +270,11 @@ impl Fm {
 
         match c {
             1 => {
-                self.eg_quotient = self.eg_quotient.wrapping_add(1) % 3;
+                self.eg_quotient = if self.eg_quotient >= 2 {
+                    0
+                } else {
+                    self.eg_quotient.wrapping_add(1)
+                };
                 self.eg_cycle = 0;
                 self.eg_cycle_stop = true;
                 self.eg_shift = 0;
@@ -302,7 +307,7 @@ impl Fm {
 
         // Key-On.
         let c_usize = usize::try_from(c).unwrap_or(0);
-        let chan = c_usize % 6;
+        let chan = SLOT_CHAN[c_usize];
         self.eg_kon_latch[c_usize] = self.mode_kon[c_usize];
         if c == u32::from(self.mode_kon_channel) {
             self.mode_kon[chan] = self.mode_kon_operator[0];
@@ -311,50 +316,54 @@ impl Fm {
             self.mode_kon[chan.wrapping_add(18)] = self.mode_kon_operator[3];
         }
 
-        // Saida serial nos pinos.
-        let mut channel_output = chan;
-        if c < 12 {
-            channel_output = channel_output.wrapping_add(1);
-        }
-        if c & 3 == 0 {
-            self.ch_lock = self.ch_out[channel_output];
-            self.ch_lock_l = self.pan_l[channel_output];
-            self.ch_lock_r = self.pan_r[channel_output];
-        }
-        let out = if (c >> 2) == 1 && self.dac_ligado {
-            i32::from(self.dac_data)
+        // Saida serial nos pinos (so necessaria na comparacao ciclo a ciclo com Nuked-OPN2).
+        let (mol, mor) = if COM_PINOS {
+            let mut channel_output = chan;
+            if c < 12 {
+                channel_output = channel_output.wrapping_add(1);
+            }
+            if c & 3 == 0 {
+                self.ch_lock = self.ch_out[channel_output];
+                self.ch_lock_l = self.pan_l[channel_output];
+                self.ch_lock_r = self.pan_r[channel_output];
+            }
+            let out = if (c >> 2) == 1 && self.dac_ligado {
+                i32::from(self.dac_data)
+            } else {
+                self.ch_lock
+            };
+            let out_en = (c & 3) == 3;
+            let mut out_adj = out;
+            let mut sign = out >> 8;
+            if out >= 0 {
+                out_adj = out_adj.wrapping_add(1);
+                sign = sign.wrapping_add(1);
+            }
+            let mol = if self.ch_lock_l && out_en {
+                out_adj
+            } else {
+                sign
+            };
+            let mor = if self.ch_lock_r && out_en {
+                out_adj
+            } else {
+                sign
+            };
+            (mol.wrapping_mul(3), mor.wrapping_mul(3))
         } else {
-            self.ch_lock
+            (0, 0)
         };
-        let out_en = (c & 3) == 3;
-        let mut out_adj = out;
-        let mut sign = out >> 8;
-        if out >= 0 {
-            out_adj = out_adj.wrapping_add(1);
-            sign = sign.wrapping_add(1);
-        }
-        let mol = if self.ch_lock_l && out_en {
-            out_adj
-        } else {
-            sign
-        };
-        let mor = if self.ch_lock_r && out_en {
-            out_adj
-        } else {
-            sign
-        };
-        let mol = mol.wrapping_mul(3);
-        let mor = mor.wrapping_mul(3);
 
         // Geracao de canal.
-        let slot_ch = usize::try_from(c.wrapping_add(18) % 24).unwrap_or(0);
-        let op_ch = slot_ch / 6;
+        let slot_ch = soma_mod24(c_usize, 18);
+        let op_ch = SLOT_OP[slot_ch];
+        let connect = usize::from(self.connect[chan] & 7);
         let mut acc = self.ch_acc[chan];
         if op_ch == 0 {
             acc = 0;
         }
         let mut add = 0i32;
-        if FM_ALGORITHM[op_ch][5][usize::from(self.connect[chan])] {
+        if FM_ALGORITHM[op_ch][connect] & 0x20 != 0 {
             add = self.fm_out[slot_ch] >> 5;
         }
         let sum = acc.wrapping_add(add).clamp(-256, 255);
@@ -364,27 +373,26 @@ impl Fm {
         self.ch_acc[chan] = sum;
 
         // Modulacao FM e geracao do operador.
-        let slot_prep = usize::try_from(c.wrapping_add(6) % 24).unwrap_or(0);
-        let op_prep = slot_prep / 6;
-        let connect = usize::from(self.connect[chan]);
-        let prevslot = usize::try_from(c.wrapping_add(18) % 24).unwrap_or(0);
+        let slot_prep = soma_mod24(c_usize, 6);
+        let op_prep = SLOT_OP[slot_prep];
+        let algo = FM_ALGORITHM[op_prep][connect];
 
         let mut mod1 = 0i32;
         let mut mod2 = 0i32;
-        if FM_ALGORITHM[op_prep][0][connect] {
+        if algo & 0x01 != 0 {
             mod2 |= self.fm_op1[chan][0];
         }
-        if FM_ALGORITHM[op_prep][1][connect] {
+        if algo & 0x02 != 0 {
             mod1 |= self.fm_op1[chan][1];
         }
-        if FM_ALGORITHM[op_prep][2][connect] {
+        if algo & 0x04 != 0 {
             mod1 |= self.fm_op2[chan];
         }
-        if FM_ALGORITHM[op_prep][3][connect] {
-            mod2 |= self.fm_out[prevslot];
+        if algo & 0x08 != 0 {
+            mod2 |= self.fm_out[slot_ch];
         }
-        if FM_ALGORITHM[op_prep][4][connect] {
-            mod1 |= self.fm_out[prevslot];
+        if algo & 0x10 != 0 {
+            mod1 |= self.fm_out[slot_ch];
         }
         let mut m = mod1.wrapping_add(mod2);
         if op_prep == 0 {
@@ -399,53 +407,56 @@ impl Fm {
         }
         self.fm_mod[slot_prep] = m;
 
-        let slot_hist = usize::try_from(c.wrapping_add(18) % 24).unwrap_or(0);
-        if slot_hist / 6 == 0 {
+        if op_ch == 0 {
             self.fm_op1[chan][1] = self.fm_op1[chan][0];
-            self.fm_op1[chan][0] = self.fm_out[slot_hist];
-        }
-        if slot_hist / 6 == 2 {
-            self.fm_op2[chan] = self.fm_out[slot_hist];
+            self.fm_op1[chan][0] = self.fm_out[slot_ch];
+        } else if op_ch == 2 {
+            self.fm_op2[chan] = self.fm_out[slot_ch];
         }
 
-        let slot_gen = usize::try_from(c.wrapping_add(19) % 24).unwrap_or(0);
-        let phase = (u32::try_from(self.fm_mod[slot_gen] & 0x3FF).unwrap_or(0))
-            .wrapping_add(self.pg_phase[slot_gen] >> 10)
-            & 0x3FF;
-        let mut quarter = phase & 0xFF;
-        if phase & 0x100 != 0 {
-            quarter ^= 0xFF;
-        }
-        let mut level =
-            u32::from(LOGSIN[quarter as usize]).wrapping_add(u32::from(self.eg_out[slot_gen]) << 2);
-        if level > 0x1FFF {
-            level = 0x1FFF;
-        }
-        let exp_val = u32::from(EXP[usize::try_from(level & 0xFF).unwrap_or(0)]);
-        let sh = level >> 8;
-        let mut output = if sh >= 13 {
-            0i32
+        let slot_gen = soma_mod24(c_usize, 19);
+        let eg_out = self.eg_out[slot_gen];
+        // Atalho exato: eg_out >= 0x340 garante level >= 0xD00 (sh >= 13), saida sempre 0.
+        if eg_out >= 0x340 {
+            self.fm_out[slot_gen] = 0;
         } else {
-            let v = ((exp_val | 0x400) << 2) >> sh;
-            i32::try_from(v).unwrap_or(0)
-        };
-        if phase & 0x200 != 0 {
-            output = output.wrapping_neg();
+            let phase = (u32::try_from(self.fm_mod[slot_gen] & 0x3FF).unwrap_or(0))
+                .wrapping_add(self.pg_phase[slot_gen] >> 10)
+                & 0x3FF;
+            let mut quarter = phase & 0xFF;
+            if phase & 0x100 != 0 {
+                quarter ^= 0xFF;
+            }
+            let mut level = u32::from(LOGSIN[(quarter & 0xFF) as usize])
+                .wrapping_add(u32::from(eg_out) << 2);
+            if level > 0x1FFF {
+                level = 0x1FFF;
+            }
+            let exp_val = u32::from(EXP[(level & 0xFF) as usize]);
+            let sh = level >> 8;
+            let mut output = if sh >= 13 {
+                0i32
+            } else {
+                let v = ((exp_val | 0x400) << 2) >> sh;
+                i32::try_from(v).unwrap_or(0)
+            };
+            if phase & 0x200 != 0 {
+                output = output.wrapping_neg();
+            }
+            self.fm_out[slot_gen] = output;
         }
-        self.fm_out[slot_gen] = output;
 
         // Gerador de fase.
-        let slot_mask = usize::try_from(c.wrapping_add(20) % 24).unwrap_or(0);
+        let slot_mask = soma_mod24(c_usize, 20);
         if self.pg_reset[slot_mask] {
             self.pg_inc[slot_mask] = 0;
         }
 
-        let slot_step = usize::try_from(c.wrapping_add(19) % 24).unwrap_or(0);
-        if self.pg_reset[slot_step] {
-            self.pg_phase[slot_step] = 0;
+        if self.pg_reset[slot_gen] {
+            self.pg_phase[slot_gen] = 0;
         }
-        self.pg_phase[slot_step] =
-            self.pg_phase[slot_step].wrapping_add(self.pg_inc[slot_step]) & 0xF_FFFF;
+        self.pg_phase[slot_gen] =
+            self.pg_phase[slot_gen].wrapping_add(self.pg_inc[slot_gen]) & 0xF_FFFF;
 
         let fnum = u32::from(self.pg_fnum) << 1;
         let mut basefreq = (fnum << self.pg_block) >> 2;
@@ -478,7 +489,7 @@ impl Fm {
         self.pg_inc[c_usize] = (basefreq.wrapping_mul(self.multi[c_usize]) >> 1) & 0xF_FFFF;
 
         // Gerador de envelope.
-        let slot_adsr = usize::try_from(c.wrapping_add(22) % 24).unwrap_or(0);
+        let slot_adsr = soma_mod24(c_usize, 22);
         let nkon = self.eg_kon_latch[slot_adsr];
         let okon = self.eg_kon[slot_adsr];
         self.pg_reset[slot_adsr] = nkon && !okon;
@@ -540,7 +551,7 @@ impl Fm {
         self.eg_level[slot_adsr] = u16::try_from(nextlevel & 0x3FF).unwrap_or(0x3FF);
         self.eg_state[slot_adsr] = nextstate;
 
-        let slot_eg_gen = usize::try_from(c.wrapping_add(23) % 24).unwrap_or(0);
+        let slot_eg_gen = soma_mod24(c_usize, 23);
         let mut eg_lev = self.eg_level[slot_eg_gen];
         eg_lev = eg_lev.wrapping_add(u16::from(self.eg_tl[0]) << 3);
         self.eg_out[slot_eg_gen] = eg_lev.min(1023);
@@ -561,7 +572,7 @@ impl Fm {
                     _ => {}
                 }
             } else {
-                let stephi = EG_STEPHI[(rate & 3) as usize][self.eg_timer_low_lock as usize];
+                let stephi = EG_STEPHI[(rate & 3) as usize][(self.eg_timer_low_lock & 3) as usize];
                 let v = stephi.wrapping_add(rate >> 2).wrapping_sub(11);
                 prep_inc = u8::try_from(v.min(4)).unwrap_or(4);
             }
@@ -590,14 +601,18 @@ impl Fm {
         self.eg_sl[0] = self.sl[c_usize];
 
         // Trava F-Number e bloco para o canal do proximo ciclo.
-        let next_chan = chan.wrapping_add(1) % 6;
+        let next_chan = NEXT_CHAN[chan];
         self.pg_fnum = self.fnum[next_chan];
         self.pg_block = self.block[next_chan];
         self.pg_kcode = self.kcode[next_chan];
 
         // Gravacao nos registradores do canal ou operador com o dado do barramento atual.
         if self.write_fm_data {
-            let mut slot_wr = usize::try_from(c % 12).unwrap_or(0);
+            let mut slot_wr = if c_usize >= 12 {
+                c_usize.wrapping_sub(12)
+            } else {
+                c_usize
+            };
             if OP_OFFSET[slot_wr] == (self.address & 0x107) {
                 if self.address & 8 != 0 {
                     slot_wr = slot_wr.wrapping_add(12);
@@ -713,7 +728,7 @@ impl Fm {
             self.data = u8::try_from(self.write_data & 0xFF).unwrap_or(0);
         }
 
-        self.cycles = c.wrapping_add(1) % 24;
+        self.cycles = if c >= 23 { 0 } else { c.wrapping_add(1) };
         self.tempo = self.tempo.wrapping_add(1);
         (
             i16::try_from(mol).unwrap_or(0),
@@ -753,5 +768,54 @@ impl Fm {
             }
         }
         (sl, sr)
+    }
+}
+
+#[cfg(test)]
+mod testes {
+    use super::*;
+
+    #[test]
+    fn ciclo_sem_pinos_produz_mesmo_estado_e_saida_misturada() {
+        let mut completo = Fm::novo();
+        let mut compacto = Fm::novo();
+        let escritas: [(u32, u8); 14] = [
+            (0, 0x30),
+            (1, 0x71),
+            (0, 0x40),
+            (1, 0x10),
+            (0, 0x50),
+            (1, 0x1F),
+            (0, 0xB0),
+            (1, 0x32),
+            (0, 0xA4),
+            (1, 0x22),
+            (0, 0xA0),
+            (1, 0x69),
+            (0, 0x28),
+            (1, 0xF0),
+        ];
+        for (idx, (porta, valor)) in escritas.iter().enumerate() {
+            completo.escreve(*porta, *valor);
+            compacto.escreve(*porta, *valor);
+            for _ in 0..48 {
+                let _ = completo.ciclo();
+                compacto.ciclo_sem_pinos();
+            }
+            assert_eq!(
+                completo.saida_misturada(),
+                compacto.saida_misturada(),
+                "divergencia na escrita {idx}"
+            );
+        }
+        for _ in 0..2400 {
+            let _ = completo.ciclo();
+            compacto.ciclo_sem_pinos();
+        }
+        assert_eq!(completo.saida_misturada(), compacto.saida_misturada());
+        assert_eq!(completo.diag_fase(), compacto.diag_fase());
+        assert_eq!(completo.diag_saida_op(), compacto.diag_saida_op());
+        assert_eq!(completo.diag_saida_canal(), compacto.diag_saida_canal());
+        assert_eq!(completo.diag_eg(), compacto.diag_eg());
     }
 }

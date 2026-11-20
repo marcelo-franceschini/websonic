@@ -250,6 +250,158 @@ pub fn desenhar_planos(
     }
 }
 
+/// Escreve os 8 pontos compactos (bit 7 = prioridade, bits 5..4 = paleta, bits 3..0 = cor)
+/// de uma linha de tile diretamente em `dest`.
+#[inline]
+fn desenhar_tile_compacto(
+    vram: &[u8],
+    padrao: u16,
+    linha: u16,
+    v_flip: bool,
+    h_flip: bool,
+    attrs: u8,
+    dest: &mut [u8; 8],
+) {
+    let l = if v_flip {
+        7u16.saturating_sub(linha & 7)
+    } else {
+        linha & 7
+    };
+    let celula = 32u16.wrapping_mul(padrao);
+    let base = usize::from(celula.wrapping_add(4u16.wrapping_mul(l)));
+    let Some(b) = vram.get(base..base.saturating_add(4)) else {
+        dest.fill(attrs);
+        return;
+    };
+    if h_flip {
+        dest[0] = (b[3] & 15) | attrs;
+        dest[1] = (b[3] >> 4) | attrs;
+        dest[2] = (b[2] & 15) | attrs;
+        dest[3] = (b[2] >> 4) | attrs;
+        dest[4] = (b[1] & 15) | attrs;
+        dest[5] = (b[1] >> 4) | attrs;
+        dest[6] = (b[0] & 15) | attrs;
+        dest[7] = (b[0] >> 4) | attrs;
+    } else {
+        dest[0] = (b[0] >> 4) | attrs;
+        dest[1] = (b[0] & 15) | attrs;
+        dest[2] = (b[1] >> 4) | attrs;
+        dest[3] = (b[1] & 15) | attrs;
+        dest[4] = (b[2] >> 4) | attrs;
+        dest[5] = (b[2] & 15) | attrs;
+        dest[6] = (b[3] >> 4) | attrs;
+        dest[7] = (b[3] & 15) | attrs;
+    }
+}
+
+/// Versão compacta de [`desenhar_planos`]: 1 byte por ponto (`bit 7 = prioridade`,
+/// `bits 5..4 = paleta`, `bits 3..0 = cor`), evitando o buffer de 3 bytes por ponto.
+pub(crate) fn desenhar_planos_compacto(
+    p: &ParametrosDosPlanos<'_>,
+    buf_a: &mut [u8],
+    buf_b: &mut [u8],
+) {
+    let ParametrosDosPlanos {
+        vram,
+        vsram,
+        reg,
+        linha,
+        rolagem_h,
+        v_tela_cheia,
+        ini,
+        fim,
+    } = *p;
+    let (larg, alt) = (reg.largura_do_plano(), reg.altura_do_plano());
+    let px = |t: TamanhoPlano| t.celulas().wrapping_mul(8);
+    let (h_px, v_px) = match (larg, alt) {
+        (TamanhoPlano::Invalido, _) => (256u16, 8u16),
+        (_, TamanhoPlano::Invalido) => (px(larg), 256),
+        _ => (px(larg), px(alt)),
+    };
+    let h_celulas_mask = (h_px / 8).wrapping_sub(1);
+    let largura_nome: u16 = if larg == TamanhoPlano::Invalido {
+        1
+    } else {
+        larg.celulas()
+    };
+    let mascara_v = v_px.wrapping_sub(1);
+    let v_por_tela = reg.rolagem_v() == RolagemV::Tela;
+    let ini_pos = ini.max(0);
+    let ultima_coluna = fim
+        .saturating_add(15)
+        .checked_div(16)
+        .unwrap_or(COLUNAS)
+        .max(COLUNAS);
+
+    for plano in [Plano::A, Plano::B] {
+        let (base, h_scroll, v_tela, buf) = match plano {
+            Plano::A => (reg.nome_a(), rolagem_h.0, v_tela_cheia.0 & 0x03ff, &mut *buf_a),
+            Plano::B => (reg.nome_b(), rolagem_h.1, v_tela_cheia.1 & 0x03ff, &mut *buf_b),
+        };
+        let grosso = h_scroll & !15;
+        let fino = i32::from(h_scroll & 15);
+        let primeira: i32 = if fino != 0 { -1 } else { 0 };
+        let linha_rolada_tela = linha.wrapping_add(v_tela) & mascara_v;
+        let celula_v_tela = linha_rolada_tela >> 3;
+
+        for coluna in primeira..ultima_coluna {
+            let (linha_rolada, celula_v) = if v_por_tela {
+                (linha_rolada_tela, celula_v_tela)
+            } else {
+                let v = rolagem_v(vsram, reg, plano, coluna, v_tela_cheia);
+                let lr = linha.wrapping_add(v) & mascara_v;
+                (lr, lr >> 3)
+            };
+            let pixel_rolado = u16::try_from((coluna.wrapping_mul(16)) & 0xffff)
+                .unwrap_or(0)
+                .wrapping_sub(grosso);
+            let celula_h_base = pixel_rolado >> 3;
+            for desloc in 0..2i32 {
+                let col_fb = coluna
+                    .wrapping_mul(16)
+                    .wrapping_add(desloc.wrapping_mul(8))
+                    .wrapping_add(fino);
+                if col_fb.wrapping_add(8) <= ini || col_fb >= fim {
+                    continue;
+                }
+                let celula_h =
+                    celula_h_base.wrapping_add(u16::try_from(desloc).unwrap_or(0)) & h_celulas_mask;
+                let nome = ler_nome(vram, base, largura_nome, celula_v, celula_h);
+                let attrs = (u8::from(nome.prioridade) << 7) | (nome.paleta << 4);
+                if col_fb >= ini_pos && col_fb.wrapping_add(8) <= fim {
+                    let inicio = usize::try_from(col_fb).unwrap_or(0);
+                    if let Some(dest) = buf
+                        .get_mut(inicio..inicio.saturating_add(8))
+                        .and_then(|s| <&mut [u8; 8]>::try_from(s).ok())
+                    {
+                        desenhar_tile_compacto(
+                            vram,
+                            nome.padrao,
+                            linha_rolada,
+                            nome.v_flip,
+                            nome.h_flip,
+                            attrs,
+                            dest,
+                        );
+                        continue;
+                    }
+                }
+                let cores =
+                    linha_do_tile(vram, nome.padrao, linha_rolada, nome.v_flip, nome.h_flip);
+                for (k, &cor) in cores.iter().enumerate() {
+                    let x = col_fb.wrapping_add(i32::try_from(k).unwrap_or(0));
+                    if x < ini || x >= fim {
+                        continue;
+                    }
+                    if let Some(p) = usize::try_from(x).ok().and_then(|i| buf.get_mut(i)) {
+                        *p = cor | attrs;
+                    }
+                }
+            }
+        }
+    }
+}
+
 // ---- Sprites ----
 
 /// Os 4 primeiros bytes de cada sprite, que o oráculo guarda em cache a cada escrita na VRAM.
@@ -420,6 +572,94 @@ pub fn desenhar_sprites(
     estouro
 }
 
+/// Versão compacta de [`desenhar_sprites`] (1 byte por ponto, 0 = transparente).
+pub(crate) fn desenhar_sprites_compacto(
+    vram: &[u8],
+    sprites: &[Sprite],
+    linha: u16,
+    pular_tiles: u16,
+    estouro_anterior: bool,
+    pontos: &mut [u8],
+) -> bool {
+    pontos.fill(0);
+    let max_tiles = 40u16.saturating_sub(pular_tiles);
+    let linha_sprite = INICIO_SPRITES.wrapping_add(linha);
+    let mut buscados: u16 = 0;
+    let mut estouro = false;
+    let mut achou_nao_zero = estouro_anterior;
+    let mut mascara = false;
+    let inicio = INICIO_SPRITES;
+    let largura = pontos.len().max(1);
+    let fim = INICIO_SPRITES.wrapping_add(u16::try_from(largura).unwrap_or(320));
+    'fora: for s in sprites {
+        if s.h_pos == 0 && achou_nao_zero {
+            mascara = true;
+        } else if s.h_pos != 0 {
+            achou_nao_zero = true;
+        }
+        let alt = u16::from(s.alt);
+        let larg = u16::from(s.larg);
+        let linha_no_sprite = linha_sprite.wrapping_sub(s.v_pos & 0x1ff) & 0x1f;
+        let linha_no_sprite = if s.v_flip {
+            ((alt << 3).wrapping_sub(1)).wrapping_sub(linha_no_sprite) & 0x1f
+        } else {
+            linha_no_sprite
+        };
+        let attrs = (u8::from(s.prioridade) << 7) | (s.paleta << 4);
+        for h in 0..larg {
+            if buscados == max_tiles {
+                estouro = true;
+                break 'fora;
+            }
+            let coluna = if s.h_flip {
+                larg.wrapping_sub(1).wrapping_sub(h)
+            } else {
+                h
+            };
+            let offset = coluna.wrapping_mul(alt).wrapping_add(linha_no_sprite >> 3);
+            let padrao = s.padrao.wrapping_add(offset);
+            let linha_do_tile_ = linha_no_sprite & 7;
+            buscados = buscados.wrapping_add(1);
+            if mascara {
+                continue;
+            }
+            let esq = s.h_pos.wrapping_add(h.wrapping_mul(8));
+            let dir = esq.wrapping_add(8);
+            if esq >= fim || dir <= inicio {
+                continue;
+            }
+            let cores = linha_do_tile(vram, padrao, linha_do_tile_, false, s.h_flip);
+            if esq >= inicio && dir <= fim {
+                let x0 = usize::from(esq.wrapping_sub(inicio));
+                if let Some(dest) = pontos.get_mut(x0..x0.saturating_add(8)) {
+                    for (p, &cor) in dest.iter_mut().zip(cores.iter()) {
+                        if cor != 0 && (*p & 0x0f) == 0 {
+                            *p = cor | attrs;
+                        }
+                    }
+                    continue;
+                }
+            }
+            for (k, &cor) in cores.iter().enumerate() {
+                if cor == 0 {
+                    continue;
+                }
+                let h_pos = esq.wrapping_add(u16::try_from(k).unwrap_or(0));
+                if h_pos < inicio || h_pos >= fim {
+                    continue;
+                }
+                let x = usize::from(h_pos.wrapping_sub(inicio));
+                if let Some(p) = pontos.get_mut(x)
+                    && (*p & 0x0f) == 0
+                {
+                    *p = cor | attrs;
+                }
+            }
+        }
+    }
+    estouro
+}
+
 /// Escolhe o índice de cor de 6 bits do ponto, pela prioridade (sem sombra nem realce).
 pub fn resolver_ponto(
     sprite: PontoDeTile,
@@ -445,6 +685,33 @@ pub fn resolver_ponto(
     indice_do_fundo
 }
 
+/// Versão compacta de [`resolver_ponto`] operando em pontos de 1 byte.
+#[inline]
+pub(crate) fn resolver_ponto_compacto(sprite: u8, a: u8, b: u8, indice_do_fundo: u8) -> u8 {
+    let s_cor = sprite & 0x0f;
+    let a_cor = a & 0x0f;
+    let b_cor = b & 0x0f;
+    let (p0, c0, p1, c1, p2, c2) = match (sprite & 0x80 != 0, a & 0x80 != 0, b & 0x80 != 0) {
+        (false, false, false)
+        | (true, false, false)
+        | (true, true, false)
+        | (true, true, true) => (sprite, s_cor, a, a_cor, b, b_cor),
+        (false, true, false) => (a, a_cor, sprite, s_cor, b, b_cor),
+        (false, false, true) => (b, b_cor, sprite, s_cor, a, a_cor),
+        (true, false, true) => (sprite, s_cor, b, b_cor, a, a_cor),
+        (false, true, true) => (a, a_cor, b, b_cor, sprite, s_cor),
+    };
+    if c0 != 0 {
+        p0 & 0x3f
+    } else if c1 != 0 {
+        p1 & 0x3f
+    } else if c2 != 0 {
+        p2 & 0x3f
+    } else {
+        indice_do_fundo
+    }
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;
@@ -454,6 +721,31 @@ mod testes {
             cor,
             paleta,
             prioridade: prio,
+        }
+    }
+
+    #[test]
+    fn resolver_ponto_compacto_equivale_ao_completo() {
+        let emp = |pt: PontoDeTile| (u8::from(pt.prioridade) << 7) | (pt.paleta << 4) | pt.cor;
+        let fundo = 0x2A;
+        for sp in [false, true] {
+            for ap in [false, true] {
+                for bp in [false, true] {
+                    for sc in [0u8, 3] {
+                        for ac in [0u8, 5] {
+                            for bc in [0u8, 9] {
+                                let ps = p(sc, 1, sp);
+                                let pa = p(ac, 2, ap);
+                                let pb = p(bc, 3, bp);
+                                assert_eq!(
+                                    resolver_ponto_compacto(emp(ps), emp(pa), emp(pb), fundo),
+                                    resolver_ponto(ps, pa, pb, fundo)
+                                );
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 

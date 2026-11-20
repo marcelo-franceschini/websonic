@@ -212,7 +212,7 @@ impl Sintetizador {
         let (novos_fm, novos_psg) = self.amostras_ate(mclk_alvo);
         saida_fm.reserve(novos_fm);
         saida_psg.reserve(novos_psg);
-        self.avancar_com(
+        self.avancar_com::<true>(
             mclk_alvo,
             |misturado, ciclos| {
                 let mut pl = 0i16;
@@ -233,8 +233,8 @@ impl Sintetizador {
 
     /// Avanca ambos os chips ate `mclk_alvo`, entregando `(i16, i16)` do FM e `u16` do PSG.
     ///
-    /// Mesmo laço de [`Sintetizador::avancar_ate`]: o site só não copia o histórico de 24
-    /// ciclos de cada amostra, que serve à prova contra o Nuked-OPN2.
+    /// Mesmo laço de [`Sintetizador::avancar_ate`]: o site só não calcula os 24 ciclos dos pinos
+    /// de cada amostra, que servem à prova contra o Nuked-OPN2.
     pub fn avancar_ate_compacto(
         &mut self,
         mclk_alvo: u64,
@@ -247,7 +247,7 @@ impl Sintetizador {
         let (novos_fm, novos_psg) = self.amostras_ate(mclk_alvo);
         saida_fm.reserve(novos_fm);
         saida_psg.reserve(novos_psg);
-        self.avancar_com(
+        self.avancar_com::<false>(
             mclk_alvo,
             |misturado, _ciclos| saida_fm.push(misturado),
             |emp| saida_psg.push(emp),
@@ -269,7 +269,7 @@ impl Sintetizador {
     /// misturada e os 24 ciclos de cada amostra de FM; `ao_psg`, a saída empacotada do PSG.
     /// Os dois caminhos públicos usam este laço, então o site e a prova de fidelidade não
     /// podem divergir.
-    fn avancar_com(
+    fn avancar_com<const COM_PINOS: bool>(
         &mut self,
         mclk_alvo: u64,
         mut ao_fm: impl FnMut((i16, i16), &[(i16, i16); 24]),
@@ -297,8 +297,12 @@ impl Sintetizador {
             let limite = ciclos_alvo_fm.min(proxima_escrita);
 
             while self.ciclos_fm < limite {
-                let lr = self.fm.ciclo();
-                self.buffer_fm[self.subciclo_fm] = lr;
+                if COM_PINOS {
+                    let lr = self.fm.ciclo();
+                    self.buffer_fm[self.subciclo_fm] = lr;
+                } else {
+                    self.fm.ciclo_sem_pinos();
+                }
                 self.subciclo_fm = self.subciclo_fm.wrapping_add(1);
                 self.ciclos_fm = self.ciclos_fm.wrapping_add(1);
                 if self.subciclo_fm >= 24 {

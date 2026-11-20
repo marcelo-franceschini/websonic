@@ -1,5 +1,7 @@
 # Relatorio de Auditoria e Melhorias: WebSonic (Roast & Rebuild)
 
+> **Registro historico (arquivado):** esta auditoria foi gerada em 17/11/2026 e foi superada por alteracoes posteriores no repositorio (incluindo suporte a cabecalho e desintercalacao SMD, `#![forbid(unsafe_code)]` em `sonic1-web`, pipeline WebGL2, AudioWorklet em Web Worker e otimizacoes de VDP/FM). Mantida apenas para historico.
+
 **Auditor:** AntiGravity Technical Reviewer  
 **Metodologia:** Roast & Rebuild (`janderswag/roast-skill`)  
 **Data:** 17 de Novembro de 2026  

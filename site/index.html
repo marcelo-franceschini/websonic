@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Sonic the Hedgehog (1991) do Mega Drive reconstruído em Rust e WebAssembly com WebGL2 e AudioWorklet.">
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="stylesheet" href="style.css">
 
   <!-- OpenGraph / Facebook / Discord -->
   <meta property="og:type" content="website">
@@ -20,757 +21,17 @@
   <meta name="twitter:description" content="Reconstrução fiel do Sonic the Hedgehog (1991) em Rust nativo e WebAssembly, com WebGL2 e AudioWorklet.">
   <meta name="twitter:image" content="https://marcelo-franceschini.github.io/websonic/favicon.svg">
 
-  <!-- So codigo do proprio site e WebAssembly. Nada de rede, nada de script de fora. -->
+  <!-- So codigo do proprio site e WebAssembly. Nada de rede, nada de script ou estilo inline. -->
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; connect-src 'self'">
+        content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self'; img-src 'self'; connect-src 'self'">
   <title>WebSonic - Sonic the Hedgehog REV01 em Rust e WebAssembly</title>
-  <style>
-    :root {
-      --bg-deep: #080c14;
-      --bg-card: #111726;
-      --bg-elevated: #1a2236;
-      --bg-hover: #222d47;
-      --border-subtle: #25334d;
-      --border-glow: #0070f3;
-      --sonic-blue: #0066ff;
-      --sonic-cyan: #00d4ff;
-      --ring-gold: #ffbe0b;
-      --emerald-green: #10b981;
-      --danger-red: #ef4444;
-      --text-main: #f8fafc;
-      --text-muted: #94a3b8;
-      --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-    }
-
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: var(--bg-deep);
-      color: var(--text-main);
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 1.5rem 1rem 3rem 1rem;
-      overflow-x: hidden;
-    }
-
-    .app-container {
-      width: 100%;
-      max-width: 960px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 1.25rem;
-    }
-
-    /* Cabecalho */
-    header {
-      width: 100%;
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: space-between;
-      align-items: center;
-      gap: 1rem;
-      padding-bottom: 0.75rem;
-      border-bottom: 1px solid var(--border-subtle);
-    }
-
-    .marca {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-    }
-
-    .logo-icone {
-      width: 36px;
-      height: 36px;
-      border-radius: 8px;
-      background: linear-gradient(135deg, var(--sonic-cyan), var(--sonic-blue));
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 0 16px rgba(0, 212, 255, 0.4);
-      font-size: 1.25rem;
-      font-weight: 900;
-      color: #fff;
-    }
-
-    .marca-texto h1 {
-      font-size: 1.5rem;
-      font-weight: 800;
-      letter-spacing: -0.02em;
-      background: linear-gradient(90deg, #ffffff, var(--sonic-cyan));
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-
-    .marca-texto p {
-      font-size: 0.78rem;
-      color: var(--text-muted);
-    }
-
-    .status-pills {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.5rem;
-      align-items: center;
-    }
-
-    .pill {
-      font-size: 0.75rem;
-      font-weight: 600;
-      padding: 0.35rem 0.65rem;
-      border-radius: 9999px;
-      background: var(--bg-card);
-      border: 1px solid var(--border-subtle);
-      color: var(--text-muted);
-      display: inline-flex;
-      align-items: center;
-      gap: 0.4rem;
-      transition: all 0.2s ease;
-    }
-
-    .pill.ativo {
-      border-color: rgba(16, 185, 129, 0.4);
-      color: var(--emerald-green);
-      background: rgba(16, 185, 129, 0.1);
-    }
-
-    .pill.aviso {
-      border-color: rgba(255, 190, 11, 0.4);
-      color: var(--ring-gold);
-      background: rgba(255, 190, 11, 0.1);
-    }
-
-    /* Area de Carga de ROM (Dropzone) */
-    .dropzone-container {
-      width: 100%;
-      background: var(--bg-card);
-      border: 2px dashed var(--border-subtle);
-      border-radius: 12px;
-      padding: 1.5rem;
-      text-align: center;
-      cursor: pointer;
-      position: relative;
-      transition: all 0.25s ease;
-    }
-
-    .dropzone-container:hover, .dropzone-container.arrastando {
-      border-color: var(--sonic-cyan);
-      background: var(--bg-elevated);
-      box-shadow: 0 0 24px rgba(0, 212, 255, 0.15);
-    }
-
-    .dropzone-icone {
-      font-size: 2.2rem;
-      margin-bottom: 0.5rem;
-    }
-
-    .dropzone-titulo {
-      font-size: 1rem;
-      font-weight: 700;
-      margin-bottom: 0.25rem;
-    }
-
-    .dropzone-subtitulo {
-      font-size: 0.8rem;
-      color: var(--text-muted);
-    }
-
-    .input-arquivo-oculto {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      opacity: 0;
-      cursor: pointer;
-    }
-
-    /* Cartao de Resultado da ROM */
-    #resultado {
-      width: 100%;
-      background: var(--bg-card);
-      border: 1px solid var(--border-subtle);
-      border-radius: 8px;
-      padding: 0.85rem 1.2rem;
-      font-size: 0.85rem;
-      display: flex;
-      flex-direction: column;
-      gap: 0.4rem;
-    }
-
-    #resultado.ok {
-      border-color: var(--emerald-green);
-      background: rgba(16, 185, 129, 0.08);
-    }
-
-    #resultado.erro {
-      border-color: var(--danger-red);
-      background: rgba(239, 68, 68, 0.08);
-    }
-
-    .resultado-linha {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 0.5rem;
-    }
-
-    code {
-      font-family: var(--font-mono);
-      background: rgba(0, 0, 0, 0.3);
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-size: 0.8rem;
-      color: var(--sonic-cyan);
-    }
-
-    /* Barra de Controles do Jogo */
-    #barra-controles {
-      width: 100%;
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: space-between;
-      gap: 0.75rem;
-      background: var(--bg-card);
-      border: 1px solid var(--border-subtle);
-      border-radius: 10px;
-      padding: 0.65rem 1rem;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-    }
-
-    .controles-grupo {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 0.85rem;
-    }
-
-    .item-controle {
-      display: flex;
-      align-items: center;
-      gap: 0.45rem;
-      font-size: 0.8rem;
-      font-weight: 600;
-      color: var(--text-muted);
-    }
-
-    .select-estilizado {
-      background: var(--bg-elevated);
-      color: var(--text-main);
-      border: 1px solid var(--border-subtle);
-      padding: 0.4rem 0.7rem;
-      border-radius: 6px;
-      font-size: 0.8rem;
-      font-weight: 600;
-      cursor: pointer;
-      outline: none;
-      transition: all 0.15s ease;
-    }
-
-    .select-estilizado:hover, .select-estilizado:focus {
-      border-color: var(--sonic-cyan);
-    }
-
-    .slider-volume-grupo {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-
-    .slider-volume {
-      width: 80px;
-      height: 6px;
-      accent-color: var(--sonic-cyan);
-      cursor: pointer;
-    }
-
-    /* Botoes */
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.4rem;
-      padding: 0.45rem 0.9rem;
-      font-size: 0.82rem;
-      font-weight: 700;
-      border-radius: 6px;
-      border: 1px solid transparent;
-      cursor: pointer;
-      outline: none;
-      transition: all 0.15s ease;
-      color: #fff;
-    }
-
-    .btn:active { transform: scale(0.98); }
-
-    .btn-azul {
-      background: linear-gradient(180deg, #0969da, #0353b4);
-      border-color: rgba(255, 255, 255, 0.1);
-    }
-
-    .btn-azul:hover {
-      background: linear-gradient(180deg, #1075e8, #055ec9);
-    }
-
-    .btn-verde {
-      background: linear-gradient(180deg, #10b981, #059669);
-    }
-
-    .btn-verde:hover {
-      background: linear-gradient(180deg, #1ed095, #08a374);
-    }
-
-    .btn-cinza {
-      background: var(--bg-elevated);
-      color: var(--text-main);
-      border-color: var(--border-subtle);
-    }
-
-    .btn-cinza:hover {
-      background: var(--bg-hover);
-      border-color: var(--sonic-cyan);
-    }
-
-    /* Gabinete / Moldura de Tela */
-    #container-tela {
-      position: relative;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      background: #000;
-      border-radius: 12px;
-      overflow: hidden;
-      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8), 0 0 20px rgba(0, 102, 255, 0.2);
-      border: 2px solid var(--border-subtle);
-      line-height: 0;
-    }
-
-    #tela {
-      display: block;
-      background: #000;
-      image-rendering: pixelated;
-      cursor: crosshair;
-      outline: none;
-    }
-
-    #tela:focus {
-      box-shadow: 0 0 0 2px var(--sonic-cyan);
-    }
-
-    /* Filtro de Scanlines CRT (Opcional) */
-    .camada-crt {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      pointer-events: none;
-      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%);
-      background-size: 100% 4px;
-      z-index: 10;
-      display: none;
-      opacity: 0;
-      transition: opacity 0.2s ease;
-    }
-
-    .camada-crt.ativo {
-      display: block;
-      opacity: 1;
-    }
-
-    /* HUD de Performance e FPS */
-    .hud-performance {
-      position: absolute;
-      top: 10px;
-      right: 10px;
-      background: rgba(8, 12, 20, 0.88);
-      border: 1px solid rgba(0, 212, 255, 0.4);
-      border-radius: 8px;
-      padding: 8px 12px;
-      font-family: var(--font-mono);
-      font-size: 0.75rem;
-      line-height: 1.35;
-      color: var(--text-main);
-      z-index: 20;
-      pointer-events: none;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      user-select: none;
-    }
-
-    .hud-linha-topo {
-      display: flex;
-      justify-content: space-between;
-      align-items: baseline;
-      gap: 12px;
-    }
-
-    .hud-destaque {
-      font-size: 1rem;
-      font-weight: 800;
-      color: var(--sonic-cyan);
-    }
-
-    .hud-secundario {
-      font-size: 0.72rem;
-      color: var(--text-muted);
-    }
-
-    .hud-linha-detalhe {
-      display: flex;
-      justify-content: space-between;
-      gap: 10px;
-      font-size: 0.7rem;
-      color: var(--text-muted);
-    }
-
-    .hud-linha-detalhe b {
-      color: var(--text-main);
-    }
-
-    #hud-grafico {
-      width: 160px;
-      height: 40px;
-      background: rgba(0, 0, 0, 0.5);
-      border-radius: 4px;
-      margin-top: 2px;
-    }
-
-    #container-tela:fullscreen {
-      width: 100vw;
-      height: 100vh;
-      border-radius: 0;
-      border: none;
-      margin: 0;
-      box-shadow: none;
-    }
-
-    #aviso {
-      font-size: 0.82rem;
-      color: var(--ring-gold);
-      text-align: center;
-      background: rgba(255, 190, 11, 0.08);
-      border: 1px solid rgba(255, 190, 11, 0.3);
-      border-radius: 6px;
-      padding: 0.5rem 1rem;
-      width: 100%;
-    }
-
-    #erro-jogo {
-      font-size: 0.85rem;
-      color: var(--danger-red);
-      background: rgba(239, 68, 68, 0.1);
-      border: 1px solid rgba(239, 68, 68, 0.3);
-      border-radius: 6px;
-      padding: 0.6rem 1rem;
-      width: 100%;
-      text-align: center;
-    }
-
-    /* Painel de Teclas e Controles Interativo */
-    #painel-teclas {
-      width: 100%;
-      background: var(--bg-card);
-      border: 1px solid var(--border-subtle);
-      border-radius: 10px;
-      padding: 0.85rem 1.25rem;
-      display: flex;
-      flex-direction: column;
-      gap: 0.75rem;
-    }
-
-    .teclas-titulo {
-      font-size: 0.85rem;
-      font-weight: 700;
-      color: var(--text-main);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .teclas-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 0.75rem;
-    }
-
-    .tecla-bloco {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      font-size: 0.78rem;
-      color: var(--text-muted);
-    }
-
-    .teclas-caps {
-      display: flex;
-      gap: 4px;
-    }
-
-    .tecla-cap {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-width: 26px;
-      height: 24px;
-      padding: 0 6px;
-      background: var(--bg-elevated);
-      border: 1px solid #334155;
-      border-bottom: 2px solid #1e293b;
-      border-radius: 4px;
-      font-family: var(--font-mono);
-      font-size: 0.72rem;
-      font-weight: 700;
-      color: var(--text-main);
-      transition: all 0.1s ease;
-      user-select: none;
-    }
-
-    .tecla-cap.ativa {
-      background: var(--sonic-cyan);
-      color: #000;
-      border-color: #fff;
-      transform: translateY(1px);
-      box-shadow: 0 0 10px rgba(0, 212, 255, 0.8);
-    }
-
-    /* Painel de Telemetria e Diagnostico */
-    .diag-wrapper {
-      width: 100%;
-      margin-top: 0.5rem;
-    }
-
-    .btn-toggle-diag {
-      width: 100%;
-      background: var(--bg-card);
-      border: 1px solid var(--border-subtle);
-      border-radius: 8px;
-      padding: 0.6rem 1rem;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      cursor: pointer;
-      font-size: 0.82rem;
-      font-weight: 600;
-      color: var(--text-muted);
-      transition: all 0.15s ease;
-    }
-
-    .btn-toggle-diag:hover {
-      background: var(--bg-elevated);
-      color: var(--text-main);
-    }
-
-    #painel-diag {
-      margin-top: 0.5rem;
-      padding: 1rem 1.25rem;
-      background: var(--bg-card);
-      border: 1px solid var(--border-subtle);
-      border-radius: 8px;
-      font-family: var(--font-mono);
-      font-size: 0.8rem;
-    }
-
-    #tabela-diag {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 0.5rem;
-    }
-
-    #tabela-diag td {
-      padding: 5px 8px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-    }
-
-    #barra-volume-container {
-      width: 100%;
-      max-width: 220px;
-      height: 8px;
-      background: rgba(255, 255, 255, 0.1);
-      border-radius: 4px;
-      overflow: hidden;
-      margin-top: 4px;
-    }
-
-    #barra-volume {
-      width: 100%;
-      height: 100%;
-      background: var(--emerald-green);
-      transform-origin: left center;
-      transform: scaleX(0);
-    }
-
-    .diag-ativo {
-      color: var(--emerald-green);
-      font-weight: bold;
-    }
-
-    .diag-aviso {
-      color: var(--ring-gold);
-      font-weight: bold;
-    }
-
-    .diag-mudo {
-      color: var(--text-muted);
-      font-weight: normal;
-    }
-
-    .diag-azul {
-      color: var(--sonic-blue);
-      font-weight: bold;
-    }
-
-    .diag-erro {
-      color: var(--danger-red);
-      font-weight: bold;
-    }
-
-    /* Controles de Toque para Celular e Tablet */
-    .controles-toque-container {
-      width: 100%;
-      max-width: 680px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 1rem;
-      padding: 0.75rem 0.5rem;
-      user-select: none;
-      -webkit-user-select: none;
-      touch-action: none;
-    }
-
-    .btn-toque {
-      background: var(--bg-card);
-      border: 2px solid var(--border-subtle);
-      color: var(--text-main);
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      font-family: var(--font-mono);
-      font-weight: 800;
-      cursor: pointer;
-      touch-action: none;
-      -webkit-tap-highlight-color: transparent;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-      transition: background 0.08s ease, transform 0.08s ease, border-color 0.08s ease;
-    }
-
-    .btn-toque:active, .btn-toque.ativo {
-      background: var(--sonic-cyan);
-      color: #000;
-      border-color: #fff;
-      transform: scale(0.94);
-      box-shadow: 0 0 16px rgba(0, 212, 255, 0.7);
-    }
-
-    .toque-dpad {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      touch-action: none;
-    }
-
-    .dpad-meio {
-      display: flex;
-      align-items: center;
-    }
-
-    .dpad-centro {
-      width: 44px;
-      height: 44px;
-      background: var(--bg-deep);
-    }
-
-    .dpad-btn {
-      width: 48px;
-      height: 48px;
-      border-radius: 8px;
-      font-size: 1.1rem;
-    }
-
-    .dpad-cima { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
-    .dpad-baixo { border-top-left-radius: 0; border-top-right-radius: 0; }
-    .dpad-esq { border-top-right-radius: 0; border-bottom-right-radius: 0; }
-    .dpad-dir { border-top-left-radius: 0; border-bottom-left-radius: 0; }
-
-    .toque-centro {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 0.5rem;
-    }
-
-    .btn-toque-start {
-      padding: 0.6rem 1.2rem;
-      border-radius: 20px;
-      font-size: 0.75rem;
-      letter-spacing: 0.08em;
-    }
-
-    .toque-acoes {
-      display: flex;
-      align-items: center;
-      gap: 0.6rem;
-    }
-
-    .btn-toque-acao {
-      width: 52px;
-      height: 52px;
-      border-radius: 50%;
-      font-size: 1.1rem;
-      background: var(--bg-card);
-    }
-
-    .acao-c {
-      margin-top: -12px;
-    }
-
-    .link-github {
-      text-decoration: none;
-      color: var(--text-muted);
-      transition: all 0.2s ease;
-    }
-
-    .link-github:hover {
-      border-color: var(--sonic-cyan);
-      color: var(--sonic-cyan);
-    }
-
-    .rodape-projeto {
-      width: 100%;
-      text-align: center;
-      margin-top: 1.5rem;
-      padding-top: 1rem;
-      border-top: 1px solid var(--border-subtle);
-      font-size: 0.78rem;
-      color: var(--text-muted);
-      display: flex;
-      flex-direction: column;
-      gap: 0.35rem;
-    }
-
-    .rodape-projeto a {
-      color: var(--sonic-cyan);
-      text-decoration: none;
-    }
-
-    .rodape-projeto a:hover {
-      text-decoration: underline;
-    }
-  </style>
 </head>
 <body>
   <div class="app-container">
     <!-- Cabecalho -->
     <header>
       <div class="marca">
-        <div class="logo-icone">⚡</div>
+        <div class="logo-icone" aria-hidden="true">⚡</div>
         <div class="marca-texto">
           <h1>WebSonic</h1>
           <p>Sonic the Hedgehog REV01 em Rust/Wasm nominal com WebGL2</p>
@@ -786,14 +47,14 @@
 
     <!-- Dropzone de ROM -->
     <div id="dropzone" class="dropzone-container">
-      <input type="file" id="arquivo" class="input-arquivo-oculto" accept=".bin,.md,.gen,.smd">
-      <div class="dropzone-icone">📁</div>
+      <input type="file" id="arquivo" class="input-arquivo-oculto" accept=".bin,.md,.gen,.smd" aria-label="Selecionar arquivo ROM REV01" disabled>
+      <div class="dropzone-icone" aria-hidden="true">📁</div>
       <div class="dropzone-titulo">Escolha ou arraste sua ROM REV01 aqui</div>
-      <div class="dropzone-subtitulo">Sonic the Hedgehog (USA, Europe) REV01. Conferencia 100% local no seu navegador.</div>
+      <div class="dropzone-subtitulo">Sonic the Hedgehog (USA, Europe) REV01. Conferência 100% local no seu navegador.</div>
     </div>
 
     <!-- Resultado da validacao -->
-    <div id="resultado" hidden>
+    <div id="resultado" aria-live="polite" hidden>
       <div class="resultado-linha">
         <b>Veredito:</b> <span id="veredito"></span>
       </div>
@@ -831,18 +92,20 @@
         </div>
       </div>
       <div class="controles-grupo">
-        <button id="btn-hud" type="button" class="btn btn-cinza" title="Alternar HUD de FPS e Performance (Tecla F3)">📊 FPS (F3)</button>
+        <button id="btn-resetar" type="button" class="btn btn-cinza" title="Reiniciar o jogo atual" aria-label="Reiniciar jogo">↺ Resetar</button>
+        <button id="btn-trocar-rom" type="button" class="btn btn-cinza" title="Carregar outra ROM" aria-label="Trocar ROM">📂 Trocar ROM</button>
+        <button id="btn-hud" type="button" class="btn btn-cinza" title="Alternar HUD de FPS e Performance (Tecla F3)" aria-label="Alternar HUD de FPS">📊 FPS (F3)</button>
         <div class="slider-volume-grupo">
-          <button id="btn-mudo" type="button" class="btn btn-cinza" title="Alternar som">🔊</button>
-          <input type="range" id="slider-volume" class="slider-volume" min="0" max="1" step="0.05" value="1" title="Volume Geral">
+          <button id="btn-mudo" type="button" class="btn btn-cinza" title="Alternar som" aria-label="Alternar mudo">🔊</button>
+          <input type="range" id="slider-volume" class="slider-volume" min="0" max="1" step="0.05" value="1" title="Volume Geral" aria-label="Volume geral">
         </div>
-        <button id="btn-toque" type="button" class="btn btn-cinza" title="Alternar Controles de Toque na Tela">📱 Toque</button>
-        <button id="btn-fullscreen" type="button" class="btn btn-cinza" title="Alternar Tela Cheia (Tecla F)">⛶ Tela Cheia</button>
+        <button id="btn-toque" type="button" class="btn btn-cinza" title="Alternar Controles de Toque na Tela" aria-label="Alternar controles de toque">📱 Toque</button>
+        <button id="btn-fullscreen" type="button" class="btn btn-cinza" title="Alternar Tela Cheia (Tecla F)" aria-label="Alternar tela cheia">⛶ Tela Cheia</button>
       </div>
     </div>
 
     <!-- Container da Tela do Jogo -->
-    <div id="container-tela">
+    <div id="container-tela" hidden>
       <canvas id="tela" width="320" height="224" tabindex="0" hidden></canvas>
       <div id="camada-crt" class="camada-crt"></div>
       <div id="hud-performance" class="hud-performance" hidden>
@@ -882,13 +145,13 @@
     </div>
 
     <p id="aviso" hidden>🎮 Jogo carregado e áudio sincronizado. Clique na tela para focar e pressione <b>Start</b> (Enter ou Espaço) para jogar!</p>
-    <p id="erro-jogo" hidden></p>
+    <p id="erro-jogo" role="alert" aria-live="polite" hidden></p>
 
     <!-- Painel de Teclas Interativo com Iluminacao em Tempo Real -->
     <div id="painel-teclas" hidden>
       <div class="teclas-titulo">
         <span>🎮 Mapeamento de Controles</span>
-        <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal;">Clique na tela do jogo para focar</span>
+        <span class="teclas-dica">Clique na tela do jogo para focar</span>
       </div>
       <div class="teclas-grid">
         <div class="tecla-bloco">
@@ -927,21 +190,21 @@
 
     <!-- Gaveta Retratil de Diagnostico e Telemetria -->
     <div class="diag-wrapper">
-      <button id="btn-toggle-diag" type="button" class="btn-toggle-diag">
+      <button id="btn-toggle-diag" type="button" class="btn-toggle-diag" aria-expanded="false" aria-controls="painel-diag">
         <span>🛠️ Painel de Telemetria e Diagnóstico de Áudio</span>
-        <span id="diag-seta">▼</span>
+        <span id="diag-seta" aria-hidden="true">▼</span>
       </button>
 
       <div id="painel-diag" hidden>
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.8rem;">
-          <span style="font-weight: bold; color: var(--sonic-cyan);">Métricas em Tempo Real</span>
-          <div style="display: flex; gap: 8px;">
+        <div class="diag-cabecalho">
+          <span class="diag-titulo">Métricas em Tempo Real</span>
+          <div class="diag-acoes">
             <button id="btn-bipe" type="button" class="btn btn-azul" title="Toca um tom puro de 440 Hz">🔔 Testar Bipe (440 Hz)</button>
             <button id="btn-audio" type="button" class="btn btn-verde" title="Retoma o contexto de áudio">🔊 Desbloquear Áudio</button>
           </div>
         </div>
         <table id="tabela-diag">
-          <tr><td style="width: 45%;"><b>Estado do Áudio no Navegador:</b></td><td id="diag-estado" class="diag-mudo">Aguardando inicialização</td></tr>
+          <tr><td class="diag-col-label"><b>Estado do Áudio no Navegador:</b></td><td id="diag-estado" class="diag-mudo">Aguardando inicialização</td></tr>
           <tr><td><b>Taxa de Amostragem do Navegador:</b></td><td id="diag-taxa">-</td></tr>
           <tr><td><b>Pipeline em Uso:</b></td><td id="diag-pipeline">-</td></tr>
           <tr><td><b>Taxa Apresentada (FPS real):</b></td><td id="diag-fps" class="diag-ativo">-</td></tr>
@@ -959,7 +222,7 @@
           <tr><td><b>Quadros com Som Detectado:</b></td><td id="diag-quadros-som">0</td></tr>
           <tr><td><b>Comunicação com AudioWorklet:</b></td><td id="diag-worklet">Aguardando...</td></tr>
         </table>
-        <div style="margin-top: 0.8rem; font-size: 0.75rem; color: var(--text-muted); border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 0.5rem;">
+        <div class="diag-rodape">
           Dica: Os navegadores exigem uma interação do usuário para permitir saída de áudio.
         </div>
       </div>
@@ -972,6 +235,6 @@
     </footer>
   </div>
 
-  <script type="module" src="app.js?v=5"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>
