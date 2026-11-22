@@ -357,10 +357,7 @@ pub(crate) fn desenhar_planos_compacto(
     let v_por_tela = reg.rolagem_v() == RolagemV::Tela;
     let ini_buf_min = ini.wrapping_add(margem).max(0);
     let fim_buf = fim.wrapping_add(margem);
-    let ultima_coluna = fim
-        .saturating_add(15)
-        .div_euclid(16)
-        .max(COLUNAS);
+    let ultima_coluna = fim.saturating_add(15).div_euclid(16).max(COLUNAS);
 
     for plano in [Plano::A, Plano::B] {
         let (base, h_scroll, v_tela, buf) = match plano {
@@ -640,34 +637,37 @@ pub fn desenhar_sprites(
     estouro
 }
 
+pub(crate) struct OpcoesSprites {
+    pub estouro_anterior: bool,
+    pub limpar_buffer: bool,
+    pub margem_esq: i32,
+}
+
 /// Versão compacta de [`desenhar_sprites`] (1 byte por ponto, 0 = transparente),
 /// lendo tiles pré-decodificados de `tiles_8bpp`.
 /// Devolve `(estouro_de_pontos, desenhou_algum_pixel)`.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn desenhar_sprites_compacto(
     tiles_8bpp: &[u8],
     sprites: &[Sprite],
     linha: u16,
     pular_tiles: u16,
-    estouro_anterior: bool,
-    limpar_buffer: bool,
-    margem_esq: i32,
+    opcoes: OpcoesSprites,
     pontos: &mut [u8],
 ) -> (bool, bool) {
-    if limpar_buffer {
+    if opcoes.limpar_buffer {
         pontos.fill(0);
     }
     if sprites.is_empty() {
         return (false, false);
     }
-    let margem = margem_esq.max(0);
+    let margem = opcoes.margem_esq.max(0);
     let limite_base: u16 = if margem > 0 { 64 } else { 40 };
     let max_tiles = limite_base.saturating_sub(pular_tiles);
     let linha_sprite = INICIO_SPRITES.wrapping_add(linha);
     let mut buscados: u16 = 0;
     let mut estouro = false;
     let mut desenhou = false;
-    let mut achou_nao_zero = estouro_anterior;
+    let mut achou_nao_zero = opcoes.estouro_anterior;
     let mut mascara = false;
     let largura = i32::try_from(pontos.len().max(1)).unwrap_or(320);
     'fora: for s in sprites {
@@ -1217,8 +1217,18 @@ mod testes {
         let est_ref = desenhar_sprites(&vram, &sprites, 0, 0, false, &mut esperado);
 
         let mut compacto = [0u8; LARGURA];
-        let (est_cmp, desenhou) =
-            desenhar_sprites_compacto(&tiles_8bpp, &sprites, 0, 0, false, true, 0, &mut compacto);
+        let (est_cmp, desenhou) = desenhar_sprites_compacto(
+            &tiles_8bpp,
+            &sprites,
+            0,
+            0,
+            OpcoesSprites {
+                estouro_anterior: false,
+                limpar_buffer: true,
+                margem_esq: 0,
+            },
+            &mut compacto,
+        );
 
         assert_eq!(est_cmp, est_ref);
         assert!(desenhou);

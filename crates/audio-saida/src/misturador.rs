@@ -143,10 +143,7 @@ impl MisturadorSaida {
             if psg_padrao {
                 (v0 + v1 + v2 + v3) * escala_psg
             } else {
-                (v0 * ganhos_psg[0]
-                    + v1 * ganhos_psg[1]
-                    + v2 * ganhos_psg[2]
-                    + v3 * ganhos_psg[3])
+                (v0 * ganhos_psg[0] + v1 * ganhos_psg[1] + v2 * ganhos_psg[2] + v3 * ganhos_psg[3])
                     * escala_psg
             }
         }));

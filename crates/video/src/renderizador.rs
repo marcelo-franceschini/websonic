@@ -636,7 +636,9 @@ impl Renderizador {
         let inicio_buf = if ponto_inicial == 0 {
             0
         } else {
-            margem_usize.saturating_add(usize::from(ponto_inicial)).min(larg)
+            margem_usize
+                .saturating_add(usize::from(ponto_inicial))
+                .min(larg)
         };
         let ini_tela = if ponto_inicial == 0 {
             margem.wrapping_neg()
@@ -667,9 +669,11 @@ impl Renderizador {
                 &self.sprites,
                 linha,
                 pular_tiles,
-                self.estado_sprites.estouro_de_pontos_anterior,
-                self.linha_tem_sprite,
-                margem,
+                crate::camadas::OpcoesSprites {
+                    estouro_anterior: self.estado_sprites.estouro_de_pontos_anterior,
+                    limpar_buffer: self.linha_tem_sprite,
+                    margem_esq: margem,
+                },
                 &mut self.pontos_de_sprite,
             );
             self.estado_sprites.estouro_de_pontos_anterior = estouro;
