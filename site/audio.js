@@ -14,10 +14,10 @@ export function normalizarVolume(valor) {
 }
 
 /**
- * Carrega preferencias persistidas de volume e mudo de forma segura.
+ * Carrega preferencias persistidas de volume (geral, musica e FX) e mudo de forma segura.
  */
 export function carregarPreferenciasAudio(storage) {
-  const padrao = { volume: 1.0, mudo: false };
+  const padrao = { volume: 1.0, volumeMusica: 1.0, volumeFx: 1.0, mudo: false };
   if (!storage || typeof storage.getItem !== "function") return padrao;
   try {
     const bruto = storage.getItem(CHAVE_STORAGE_AUDIO);
@@ -26,6 +26,8 @@ export function carregarPreferenciasAudio(storage) {
     if (!dados || typeof dados !== "object") return padrao;
     return {
       volume: normalizarVolume(dados.volume),
+      volumeMusica: normalizarVolume(dados.volumeMusica),
+      volumeFx: normalizarVolume(dados.volumeFx),
       mudo: Boolean(dados.mudo),
     };
   } catch {
@@ -34,13 +36,15 @@ export function carregarPreferenciasAudio(storage) {
 }
 
 /**
- * Persiste preferencias de volume e mudo no armazenamento fornecido.
+ * Persiste preferencias de volume (geral, musica e FX) e mudo no armazenamento fornecido.
  */
 export function salvarPreferenciasAudio(storage, prefs) {
   if (!storage || typeof storage.setItem !== "function") return false;
   try {
     const payload = {
       volume: normalizarVolume(prefs && prefs.volume),
+      volumeMusica: normalizarVolume(prefs && prefs.volumeMusica),
+      volumeFx: normalizarVolume(prefs && prefs.volumeFx),
       mudo: Boolean(prefs && prefs.mudo),
     };
     storage.setItem(CHAVE_STORAGE_AUDIO, JSON.stringify(payload));
@@ -53,6 +57,11 @@ export function salvarPreferenciasAudio(storage, prefs) {
 export function criarControladorAudio({
   btnMudo,
   sliderVolume,
+  sliderMusica,
+  sliderFx,
+  elValVolume,
+  elValMusica,
+  elValFx,
   btnAudio,
   btnBipe,
   hud,
@@ -68,6 +77,8 @@ export function criarControladorAudio({
   let ganhoMasterNode = null;
   let workletNode = null;
   let volumeAtual = prefsIniciais.volume;
+  let volumeMusicaAtual = prefsIniciais.volumeMusica;
+  let volumeFxAtual = prefsIniciais.volumeFx;
   let mudoAtivo = prefsIniciais.mudo;
   let ouvintesDesbloqueioRegistrados = false;
 
@@ -75,10 +86,45 @@ export function criarControladorAudio({
     if (sliderVolume) {
       sliderVolume.value = String(volumeAtual);
     }
+    if (sliderMusica) {
+      sliderMusica.value = String(volumeMusicaAtual);
+    }
+    if (sliderFx) {
+      sliderFx.value = String(volumeFxAtual);
+    }
+    if (elValVolume) {
+      elValVolume.textContent = mudoAtivo ? "0%" : `${Math.round(volumeAtual * 100)}%`;
+    }
+    if (elValMusica) {
+      elValMusica.textContent = `${Math.round(volumeMusicaAtual * 100)}%`;
+    }
+    if (elValFx) {
+      elValFx.textContent = `${Math.round(volumeFxAtual * 100)}%`;
+    }
     if (btnMudo) {
       btnMudo.classList.toggle("mudo", mudoAtivo);
       btnMudo.setAttribute("aria-pressed", String(mudoAtivo));
       btnMudo.setAttribute("aria-label", mudoAtivo ? "Ativar som" : "Silenciar som");
+    }
+  }
+
+  function persistirPreferencias() {
+    salvarPreferenciasAudio(storage, {
+      volume: volumeAtual,
+      volumeMusica: volumeMusicaAtual,
+      volumeFx: volumeFxAtual,
+      mudo: mudoAtivo,
+    });
+  }
+
+  function enviarVolumesWorker() {
+    const worker = obterWorker ? obterWorker() : null;
+    if (worker) {
+      worker.postMessage({
+        tipo: "volumes",
+        musica: volumeMusicaAtual,
+        fx: volumeFxAtual,
+      });
     }
   }
 
@@ -203,8 +249,26 @@ export function criarControladorAudio({
         mudoAtivo = false;
       }
       sincronizarControlesUi();
-      salvarPreferenciasAudio(storage, { volume: volumeAtual, mudo: mudoAtivo });
+      persistirPreferencias();
       atualizarGanho();
+    });
+  }
+
+  if (sliderMusica) {
+    sliderMusica.addEventListener("input", (e) => {
+      volumeMusicaAtual = normalizarVolume(e.target.value);
+      sincronizarControlesUi();
+      persistirPreferencias();
+      enviarVolumesWorker();
+    });
+  }
+
+  if (sliderFx) {
+    sliderFx.addEventListener("input", (e) => {
+      volumeFxAtual = normalizarVolume(e.target.value);
+      sincronizarControlesUi();
+      persistirPreferencias();
+      enviarVolumesWorker();
     });
   }
 
@@ -212,7 +276,7 @@ export function criarControladorAudio({
     btnMudo.addEventListener("click", () => {
       mudoAtivo = !mudoAtivo;
       sincronizarControlesUi();
-      salvarPreferenciasAudio(storage, { volume: volumeAtual, mudo: mudoAtivo });
+      persistirPreferencias();
       atualizarGanho();
       focarTela();
     });
@@ -264,6 +328,7 @@ export function criarControladorAudio({
     criarPortaParaWorker,
     obterContexto: () => audioCtx,
     obterTaxa: () => (audioCtx ? audioCtx.sampleRate : 48000),
+    obterVolumes: () => ({ musica: volumeMusicaAtual, fx: volumeFxAtual }),
     estaAtivo: () => Boolean(audioCtx && audioCtx.state === "running"),
   };
 }

@@ -8,7 +8,7 @@
 use crate::camadas::{
     LARGURA, ParametrosDosPlanos, Sprite, SpriteEmCache, desenhar_planos_compacto,
     desenhar_sprites_compacto, ler_rolagem_h, resolver_ponto_compacto, resolver_ponto_sem_sprite,
-    varrer_sprites,
+    varrer_sprites_limite,
 };
 use crate::cor::da_palavra_cram;
 use crate::portas::{Efeitos, PontoDaCram, Vdp};
@@ -102,7 +102,7 @@ pub struct Renderizador {
     cache_travado: [SpriteEmCache; 80],
     varridos: Vec<u8>,
     sprites: Vec<Sprite>,
-    pontos_de_sprite: [u8; LARGURA],
+    pontos_de_sprite: Vec<u8>,
     linha_tem_sprite: bool,
     estado_sprites: EstadoDeSprites,
     // Pontos coloridos da CRAM: da linha atual e da anterior (índice 0 = ponto 18).
@@ -115,8 +115,8 @@ pub struct Renderizador {
     // versão dos registradores e rolagens), para a troca de CRAM não refazer os planos.
     chave_planos: Option<(u16, u64, u64)>,
     versao_planos: u64,
-    buf_a: [u8; LARGURA],
-    buf_b: [u8; LARGURA],
+    buf_a: Vec<u8>,
+    buf_b: Vec<u8>,
     /// Emulação dos pontos coloridos de CRAM (analógicos do hardware original).
     pontos_cram_ativos: bool,
 }
@@ -141,9 +141,9 @@ impl Renderizador {
             v_tela_cheia: (0, 0),
             cache: [SpriteEmCache::default(); 80],
             cache_travado: [SpriteEmCache::default(); 80],
-            varridos: Vec::with_capacity(20),
-            sprites: Vec::with_capacity(20),
-            pontos_de_sprite: [0; LARGURA],
+            varridos: Vec::with_capacity(40),
+            sprites: Vec::with_capacity(40),
+            pontos_de_sprite: vec![0; LARGURA],
             linha_tem_sprite: false,
             estado_sprites: EstadoDeSprites::default(),
             pontos_atual: vec![None; PONTOS_DA_CRAM],
@@ -152,10 +152,29 @@ impl Renderizador {
             marcados_anterior: false,
             chave_planos: None,
             versao_planos: 0,
-            buf_a: [0; LARGURA],
-            buf_b: [0; LARGURA],
+            buf_a: vec![0; LARGURA],
+            buf_b: vec![0; LARGURA],
             pontos_cram_ativos: true,
         }
+    }
+
+    /// Define a largura da área visível (entre 320 e 640, par). 320 preserva fidelidade clássica.
+    pub fn definir_largura(&mut self, largura: usize) {
+        self.quadro.redimensionar(largura);
+        let nova = self.quadro.largura();
+        if self.pontos_de_sprite.len() != nova {
+            self.pontos_de_sprite.resize(nova, 0);
+            self.pontos_de_sprite.fill(0);
+            self.buf_a.resize(nova, 0);
+            self.buf_b.resize(nova, 0);
+            self.linha_tem_sprite = false;
+            self.chave_planos = None;
+        }
+    }
+
+    /// Largura atual do quadro renderizado em pontos.
+    pub fn largura(&self) -> usize {
+        self.quadro.largura()
     }
 
     /// Liga ou desliga a emulação dos pontos de CRAM analógicos do hardware original.
@@ -525,13 +544,15 @@ impl Renderizador {
             return;
         }
         let y = usize::from(self.linha.saturating_sub(1));
+        let margem = self.quadro.largura().saturating_sub(LARGURA) / 2;
         for (idx, cor) in self.pontos_anterior.iter().enumerate() {
             let Some(cor) = cor else { continue };
             let x = i32::try_from(idx)
                 .unwrap_or(0)
                 .saturating_sub(BORDA_ESQUERDA);
             let Ok(x) = usize::try_from(x) else { continue };
-            self.quadro.definir(x, y, da_palavra_cram(*cor));
+            self.quadro
+                .definir(x.saturating_add(margem), y, da_palavra_cram(*cor));
         }
     }
 
@@ -548,7 +569,18 @@ impl Renderizador {
             return;
         }
         let pular = u32::from(self.estado_sprites.pontos_desligados);
-        let estourou = varrer_sprites(&self.cache_travado, proxima, pular, &mut self.varridos);
+        let max_sprites = if self.quadro.largura() > LARGURA {
+            40
+        } else {
+            20
+        };
+        let estourou = varrer_sprites_limite(
+            &self.cache_travado,
+            proxima,
+            pular,
+            max_sprites,
+            &mut self.varridos,
+        );
         let _ = estourou;
     }
 
@@ -598,18 +630,29 @@ impl Renderizador {
             return;
         }
         let y = usize::from(linha);
-        let fim_linha = i32::try_from(LARGURA).unwrap_or(320);
+        let larg = self.quadro.largura();
+        let margem_usize = larg.saturating_sub(LARGURA) / 2;
+        let margem = i32::try_from(margem_usize).unwrap_or(0);
+        let inicio_buf = if ponto_inicial == 0 {
+            0
+        } else {
+            margem_usize.saturating_add(usize::from(ponto_inicial)).min(larg)
+        };
+        let ini_tela = if ponto_inicial == 0 {
+            margem.wrapping_neg()
+        } else {
+            i32::from(ponto_inicial)
+        };
+        let fim_tela = i32::try_from(LARGURA).unwrap_or(320).saturating_add(margem);
         if !self.vdp.imagem_ligada() {
             let fundo = self.cor_do_fundo();
-            if linha < LINHAS_ATIVAS {
-                let inicio = usize::from(ponto_inicial);
-                if let Some(fatia) = self
+            if linha < LINHAS_ATIVAS
+                && let Some(fatia) = self
                     .quadro
                     .linha_mut(y)
-                    .and_then(|l| l.get_mut(inicio..LARGURA))
-                {
-                    fatia.fill(fundo);
-                }
+                    .and_then(|l| l.get_mut(inicio_buf..larg))
+            {
+                fatia.fill(fundo);
             }
             if self.linha_tem_sprite {
                 self.pontos_de_sprite.fill(0);
@@ -626,6 +669,7 @@ impl Renderizador {
                 pular_tiles,
                 self.estado_sprites.estouro_de_pontos_anterior,
                 self.linha_tem_sprite,
+                margem,
                 &mut self.pontos_de_sprite,
             );
             self.estado_sprites.estouro_de_pontos_anterior = estouro;
@@ -644,10 +688,16 @@ impl Renderizador {
                 linha,
                 rolagem_h: self.rolagem_h,
                 v_tela_cheia: self.v_tela_cheia,
-                ini: i32::from(ponto_inicial),
-                fim: fim_linha,
+                ini: ini_tela,
+                fim: fim_tela,
             };
-            desenhar_planos_compacto(&par, &self.vdp.tiles_8bpp, &mut self.buf_a, &mut self.buf_b);
+            desenhar_planos_compacto(
+                &par,
+                &self.vdp.tiles_8bpp,
+                margem,
+                &mut self.buf_a,
+                &mut self.buf_b,
+            );
             // Só o desenho da linha inteira deixa os buffers válidos para a linha toda.
             self.chave_planos = if ponto_inicial == 0 {
                 Some(chave)
@@ -657,15 +707,14 @@ impl Renderizador {
         }
         let fundo = self.vdp.registros.indice_do_fundo();
         let paleta = &self.vdp.cram_9bits;
-        let inicio = usize::from(ponto_inicial);
         if self.linha_tem_sprite {
             if let (Some(destinos), Some(spr), Some(pa), Some(pb)) = (
                 self.quadro
                     .linha_mut(y)
-                    .and_then(|l| l.get_mut(inicio..LARGURA)),
-                self.pontos_de_sprite.get(inicio..LARGURA),
-                self.buf_a.get(inicio..LARGURA),
-                self.buf_b.get(inicio..LARGURA),
+                    .and_then(|l| l.get_mut(inicio_buf..larg)),
+                self.pontos_de_sprite.get(inicio_buf..larg),
+                self.buf_a.get(inicio_buf..larg),
+                self.buf_b.get(inicio_buf..larg),
             ) {
                 for (destino, ((&s, &a), &b)) in destinos
                     .iter_mut()
@@ -678,9 +727,9 @@ impl Renderizador {
         } else if let (Some(destinos), Some(pa), Some(pb)) = (
             self.quadro
                 .linha_mut(y)
-                .and_then(|l| l.get_mut(inicio..LARGURA)),
-            self.buf_a.get(inicio..LARGURA),
-            self.buf_b.get(inicio..LARGURA),
+                .and_then(|l| l.get_mut(inicio_buf..larg)),
+            self.buf_a.get(inicio_buf..larg),
+            self.buf_b.get(inicio_buf..larg),
         ) {
             for (destino, (&a, &b)) in destinos.iter_mut().zip(pa.iter().zip(pb.iter())) {
                 let idx = usize::from(resolver_ponto_sem_sprite(a, b, fundo)) & 63;

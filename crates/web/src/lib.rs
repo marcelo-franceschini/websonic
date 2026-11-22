@@ -115,6 +115,21 @@ impl Jogo {
         self.console.pontos_cram_ativos()
     }
 
+    /// Define os volumes separados de música e efeitos sonoros (0.0 a 1.0).
+    pub fn definir_volumes(&mut self, musica: f32, fx: f32) {
+        self.console.definir_volumes(musica, fx);
+    }
+
+    /// Define a largura horizontal da tela renderizada (320 clássico até 640 ultrawide).
+    pub fn definir_largura_tela(&mut self, largura: u32) {
+        self.console.definir_largura_tela(largura as usize);
+    }
+
+    /// Largura atual da tela renderizada em pontos (320 a 640).
+    pub fn largura_tela(&self) -> u32 {
+        self.console.largura_tela() as u32
+    }
+
     /// Avança simulação e áudio; a apresentação usa as camadas separadamente.
     pub fn simular_quadro(&mut self) {
         self.console.simular_quadro();
@@ -125,7 +140,7 @@ impl Jogo {
         self.console.imagem_9bits().as_ptr()
     }
 
-    /// Quantidade de pontos da imagem de 9 bits (320 x 224 = 71680).
+    /// Quantidade de pontos da imagem de 9 bits (largura x 224).
     pub fn imagem_len(&self) -> usize {
         self.console.imagem_9bits().len()
     }

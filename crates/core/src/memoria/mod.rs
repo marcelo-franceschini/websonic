@@ -117,6 +117,8 @@ pub struct Memoria {
     log_acessos_z80: Option<Vec<AcessoZ80>>,
     /// Diagnóstico: o ponto gravado que cada acesso consumiu (`None`: a fila estava vazia).
     log_pontos_z80: Vec<Option<AcessoZ80>>,
+    /// Modo nominal (sem trace gravado do oráculo): permite avançar o Z80 por quadro.
+    nominal: bool,
 }
 
 fn indice(endereco: u32, mascara: u32) -> usize {
@@ -148,7 +150,18 @@ impl Memoria {
             divergencias_z80: Vec::new(),
             log_acessos_z80: None,
             log_pontos_z80: Vec::new(),
+            nominal: false,
         }
+    }
+
+    /// Ativa o modo nominal (execução livre sem pontos gravados do oráculo).
+    pub fn ativar_modo_nominal(&mut self) {
+        self.nominal = true;
+    }
+
+    /// Informa se a memória está em modo nominal.
+    pub fn em_modo_nominal(&self) -> bool {
+        self.nominal
     }
 
     /// Os bytes da ROM carregada.
@@ -235,6 +248,13 @@ impl Memoria {
             saidas: &mut self.saidas,
         };
         self.z80.avancar(&mut amb, ciclos);
+    }
+
+    /// Avança o Z80 no modo nominal apenas quando o barramento está livre e fora de reset.
+    pub fn avancar_z80_nominal(&mut self, ciclos: u64) {
+        if self.nominal && !self.busreq && !self.reset_z80 {
+            self.avancar_z80(ciclos);
+        }
     }
 
     /// Estado dos sinais do Z80 (para começar de um estado salvo do oráculo).
@@ -597,6 +617,9 @@ impl Memoria {
                     AcessoZ80::ResetLigado
                 });
                 self.reset_z80 = !liberado;
+                if self.nominal && self.reset_z80 {
+                    self.avancar_z80(4);
+                }
                 self.saidas.push(Saida::ResetZ80(self.reset_z80));
             }
             0xC0_0000..=0xC0_001F => self.escrever_vdp(a, valor, palavra),

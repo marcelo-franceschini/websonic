@@ -196,3 +196,27 @@ test("criarRenderizadorGPU renderiza, le pixels, sincroniza e destroi de forma i
   const gpuSemExt = criarRenderizadorGPU({ width: 0, height: 0, getContext: () => stubSemExt.gl });
   assert.equal(gpuSemExt.renderer, "WebGL Renderer");
 });
+
+test("criarRenderizadorGPU redimensiona textura dinamicamente para widescreen e ultrawide", () => {
+  const stub = criarWebgl2Stub({ comDebugExt: false });
+  const canvas = { width: 0, height: 0, getContext: () => stub.gl };
+  const gpu = criarRenderizadorGPU(canvas, 398);
+
+  assert.equal(gpu.obterLargura(), 398);
+  assert.equal(canvas.width, 398);
+  assert.equal(canvas.height, ALTURA);
+
+  // Redimensionamento explicito para 21:9 (524) recria textura sem vazamento.
+  assert.equal(gpu.redimensionar(525), 524);
+  assert.equal(canvas.width, 524);
+  assert.equal(stub.texturasDeletadas.length, 1);
+
+  // Auto-ajuste quando recebe buffer 32:9 (640x224) direto em renderizar().
+  gpu.renderizar(new Uint16Array(640 * ALTURA));
+  assert.equal(gpu.obterLargura(), 640);
+  assert.equal(canvas.width, 640);
+  assert.equal(stub.texturasDeletadas.length, 2);
+
+  gpu.destruir();
+  assert.equal(gpu.redimensionar(320), 640);
+});

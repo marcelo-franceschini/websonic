@@ -1,5 +1,5 @@
-// Apresentador de video: OffscreenCanvas zero-copy no Worker, fallback WebGL2/2D, escala inteira e tela cheia.
-import { criarRenderizadorGPU, LARGURA, ALTURA } from "./gpu.js";
+// Apresentador de video: OffscreenCanvas zero-copy no Worker, fallback WebGL2/2D, widescreen/ultrawide e tela cheia.
+import { criarRenderizadorGPU, LARGURA, LARGURA_MAX, ALTURA } from "./gpu.js";
 
 /**
  * Gera a tabela de conversao de cor de 9 bits (BBBGGGRRR) para RGBA (Uint32 little-endian),
@@ -17,6 +17,41 @@ export function gerarTabelaCor9Bits() {
     tabela[c] = 0xFF000000 | (b8 << 16) | (g8 << 8) | r8;
   }
   return tabela;
+}
+
+/**
+ * Normaliza a largura logica para um numero par dentro do intervalo suportado pelo VDP [320, 640].
+ */
+export function normalizarLarguraLogica(largura) {
+  const n = Number.isFinite(largura) ? Math.round(largura) : LARGURA;
+  return Math.max(LARGURA, Math.min(LARGURA_MAX, n)) & ~1;
+}
+
+/**
+ * Calcula a largura logica em pixels (altura fixa 224) para a proporcao escolhida ou para o monitor atual.
+ */
+export function calcularLarguraLogica({
+  proporcao = "4:3",
+  larguraJanela = 1280,
+  alturaJanela = 720,
+}) {
+  switch (proporcao) {
+    case "4:3":
+      return LARGURA;
+    case "16:9":
+      return 398;
+    case "21:9":
+      return 524;
+    case "32:9":
+      return LARGURA_MAX;
+    case "auto": {
+      const h = Math.max(1, alturaJanela);
+      const razao = larguraJanela / h;
+      return normalizarLarguraLogica(ALTURA * razao);
+    }
+    default:
+      return LARGURA;
+  }
 }
 
 /**
@@ -38,6 +73,46 @@ export function calcularFatorEscalaInteira({
   return Math.max(1, Math.floor(Math.min(dispW / larguraBase, dispH / alturaBase)));
 }
 
+/**
+ * Calcula dimensoes finais em CSS pixels, liberando toda a largura do monitor em widescreen/ultrawide
+ * e preservando escala inteira pixel-perfect no modo 4:3 em janela.
+ */
+export function calcularDimensoesExibicao({
+  larguraJanela,
+  alturaJanela,
+  emTelaCheia = false,
+  proporcao = "4:3",
+  larguraBase = LARGURA,
+  alturaBase = ALTURA,
+}) {
+  if (proporcao === "4:3" && !emTelaCheia && larguraBase === LARGURA) {
+    const f = calcularFatorEscalaInteira({
+      larguraJanela,
+      alturaJanela,
+      emTelaCheia: false,
+      larguraBase,
+      alturaBase,
+    });
+    return { largura: larguraBase * f, altura: alturaBase * f };
+  }
+
+  if (emTelaCheia) {
+    const escala = Math.max(1, Math.min(larguraJanela / larguraBase, alturaJanela / alturaBase));
+    return {
+      largura: Math.round(larguraBase * escala),
+      altura: Math.round(alturaBase * escala),
+    };
+  }
+
+  const dispW = Math.max(larguraBase, larguraJanela - 48);
+  const dispH = Math.max(alturaBase, alturaJanela * 0.72);
+  const escala = Math.max(1, Math.min(dispW / larguraBase, dispH / alturaBase));
+  return {
+    largura: Math.round(larguraBase * escala),
+    altura: Math.round(alturaBase * escala),
+  };
+}
+
 export function criarApresentadorVideo({
   canvasInicial,
   containerTela,
@@ -47,6 +122,8 @@ export function criarApresentadorVideo({
   onContextoPerdido,
   onContextoRestaurado,
   onInteracao,
+  onMudancaLargura,
+  proporcaoInicial = "4:3",
 }) {
   let tela = canvasInicial;
   let compositor = null;
@@ -56,6 +133,8 @@ export function criarApresentadorVideo({
   let imagem2d = null;
   let imagem2dU32 = null;
   let tabelaCor = null;
+  let proporcaoAtual = proporcaoInicial;
+  let larguraLogicaAtual = LARGURA;
 
   function registrarClique(canvas) {
     if (!canvas) return;
@@ -74,6 +153,17 @@ export function criarApresentadorVideo({
     return tela;
   }
 
+  function garantirBuffer2d(largura) {
+    if (!imagem2d || imagem2d.width !== largura || imagem2d.height !== ALTURA) {
+      imagem2d = new ImageData(largura, ALTURA);
+      imagem2dU32 = new Uint32Array(imagem2d.data.buffer);
+    }
+    if (tela && (tela.width !== largura || tela.height !== ALTURA)) {
+      tela.width = largura;
+      tela.height = ALTURA;
+    }
+  }
+
   function usarCpu(motivo) {
     renderNoWorker = false;
     if (compositor && typeof compositor.destruir === "function") {
@@ -82,10 +172,7 @@ export function criarApresentadorVideo({
     compositor = null;
     substituirElementoCanvas();
     ctx2d = tela.getContext("2d");
-    if (!imagem2d) {
-      imagem2d = new ImageData(LARGURA, ALTURA);
-      imagem2dU32 = new Uint32Array(imagem2d.data.buffer);
-    }
+    garantirBuffer2d(larguraLogicaAtual);
     if (!tabelaCor) tabelaCor = gerarTabelaCor9Bits();
     contextoPerdido = false;
     if (badgeGpu) badgeGpu.textContent = "Wasm · 2D";
@@ -98,7 +185,7 @@ export function criarApresentadorVideo({
       substituirElementoCanvas();
     }
     try {
-      compositor = criarRenderizadorGPU(tela);
+      compositor = criarRenderizadorGPU(tela, larguraLogicaAtual);
       if (!compositor) {
         usarCpu("WebGL2 indisponível.");
         return;
@@ -121,7 +208,7 @@ export function criarApresentadorVideo({
         if (compositor && typeof compositor.destruir === "function") {
           compositor.destruir();
         }
-        compositor = criarRenderizadorGPU(tela);
+        compositor = criarRenderizadorGPU(tela, larguraLogicaAtual);
         if (!compositor) throw new Error("WebGL2 indisponível");
         contextoPerdido = false;
         if (onLimparErro) onLimparErro();
@@ -136,7 +223,10 @@ export function criarApresentadorVideo({
     if (worker && tela && typeof tela.transferControlToOffscreen === "function") {
       try {
         const offscreen = tela.transferControlToOffscreen();
-        worker.postMessage({ tipo: "anexar-canvas", canvas: offscreen }, [offscreen]);
+        worker.postMessage(
+          { tipo: "anexar-canvas", canvas: offscreen, largura: larguraLogicaAtual },
+          [offscreen],
+        );
         return true;
       } catch {
         // Fallback para thread principal.
@@ -179,9 +269,13 @@ export function criarApresentadorVideo({
       } catch (erro) {
         usarCpu(`falha de WebGL2 (${erro.message}).`);
       }
-    } else if (ctx2d && imagem2d && imagem2dU32 && tabelaCor) {
+    } else if (ctx2d && tabelaCor) {
+      const larguraQuadro = pts.length % ALTURA === 0
+        ? normalizarLarguraLogica(pts.length / ALTURA)
+        : larguraLogicaAtual;
+      garantirBuffer2d(larguraQuadro);
       const d32 = imagem2dU32;
-      const total = LARGURA * ALTURA;
+      const total = Math.min(d32.length, pts.length);
       for (let i = 0; i < total; i++) {
         d32[i] = tabelaCor[pts[i] & 0x1FF];
       }
@@ -190,14 +284,44 @@ export function criarApresentadorVideo({
   }
 
   function ajustarEscala() {
-    if (!tela) return;
-    const f = calcularFatorEscalaInteira({
+    if (!tela) return larguraLogicaAtual;
+    const emTelaCheia = Boolean(document.fullscreenElement);
+    const novaLargura = calcularLarguraLogica({
+      proporcao: proporcaoAtual,
       larguraJanela: window.innerWidth,
       alturaJanela: window.innerHeight,
-      emTelaCheia: Boolean(document.fullscreenElement),
     });
-    tela.style.width = `${LARGURA * f}px`;
-    tela.style.height = `${ALTURA * f}px`;
+    const mudouLargura = novaLargura !== larguraLogicaAtual;
+    larguraLogicaAtual = novaLargura;
+
+    if (!renderNoWorker) {
+      if (compositor && typeof compositor.redimensionar === "function") {
+        compositor.redimensionar(larguraLogicaAtual);
+      } else if (ctx2d) {
+        garantirBuffer2d(larguraLogicaAtual);
+      }
+    }
+
+    const dim = calcularDimensoesExibicao({
+      larguraJanela: window.innerWidth,
+      alturaJanela: window.innerHeight,
+      emTelaCheia,
+      proporcao: proporcaoAtual,
+      larguraBase: larguraLogicaAtual,
+      alturaBase: ALTURA,
+    });
+    tela.style.width = `${dim.largura}px`;
+    tela.style.height = `${dim.altura}px`;
+
+    if (mudouLargura && onMudancaLargura) {
+      onMudancaLargura(larguraLogicaAtual);
+    }
+    return larguraLogicaAtual;
+  }
+
+  function definirProporcao(novaProporcao) {
+    proporcaoAtual = novaProporcao || "4:3";
+    return ajustarEscala();
   }
 
   function alternarTelaCheia() {
@@ -227,8 +351,10 @@ export function criarApresentadorVideo({
     notificarRestauracaoNoWorker,
     apresentar,
     ajustarEscala,
+    definirProporcao,
     alternarTelaCheia,
     obterTela: () => tela,
+    obterLarguraLogica: () => larguraLogicaAtual,
     estaNoWorker: () => renderNoWorker,
     estaPerdido: () => contextoPerdido,
   };

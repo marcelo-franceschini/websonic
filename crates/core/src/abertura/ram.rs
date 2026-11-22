@@ -70,6 +70,7 @@ pub const V_SPRITETABLEBUFFER: u32 = 0xFF_F800;
 pub const V_SPRITETABLEBUFFER_END: u32 = 0xFF_FA80;
 pub const V_HSCROLLTABLEBUFFER: u32 = 0xFF_CC00;
 pub const V_HSCROLLTABLEBUFFER_END_PADDED: u32 = 0xFF_D000;
+pub const F_PAUSEMUSIC: u32 = 0xFF_F003;
 pub const V_SOUNDQUEUE1: u32 = 0xFF_F00B;
 pub const BGM_STOP: u8 = 0xE4;
 pub const SFX_SEGA: u8 = 0xE1;
@@ -247,6 +248,7 @@ pub const TIT_MAIN_LOOP: u32 = 0x315E;
 pub const V_PALETTE_LINE_3: u32 = 0xFF_FB40;
 pub const V_JPADPRESS1: u32 = 0xFF_F605;
 pub const F_LEVSELCHEAT: u32 = 0xFF_FFE0;
+pub const F_SLOMOCHEAT: u32 = 0xFF_FFE1;
 pub const V_DEMONUM: u32 = 0xFF_FFF2;
 pub const V_LIVES: u32 = 0xFF_FE12;
 pub const V_LASTSPECIAL: u32 = 0xFF_FE16;
@@ -274,9 +276,11 @@ pub const SFX_RINGLOSS: u8 = 0xC6;
 pub const ID_DEMO: u8 = 0x08;
 pub const ID_SPECIAL: u8 = 0x10;
 pub const ID_SBZ: u8 = 5;
-/// Botões (`btnDir`, `btnC`, `btnStart`).
+/// Botões (`btnDir`, `btnB`, `btnC`, `btnA`, `btnStart`).
 pub const BTN_DIR: u8 = 0x0F;
+pub const BTN_B: u8 = 0x10;
 pub const BTN_C: u8 = 0x20;
+pub const BTN_A: u8 = 0x40;
 pub const BTN_START: u8 = 0x80;
 
 // Fase da demo, fatia 1: do fim do primeiro desvanecimento ao laço dos cartões de título.

@@ -11,7 +11,10 @@ const TAXA_NTSC = 53693175 / 896040;
 const POOL_AUDIO_TAMANHO = 8;
 const POOL_AUDIO_FLOATS = 4096;
 const POOL_VIDEO_TAMANHO = 2;
-const PIXELS_TELA = 320 * 224;
+const LARGURA_MIN = 320;
+const LARGURA_MAX = 640;
+const ALTURA_TELA = 224;
+const PIXELS_TELA = LARGURA_MIN * ALTURA_TELA;
 const HISTORICO_CAPACIDADE_INICIAL = 36000;
 
 let wasmInstance = null;
@@ -23,6 +26,9 @@ let pausadoUsuario = false;
 let multiplicadorVelocidade = 1;
 let diagVisivel = false;
 let audioAtivo = false;
+let larguraTela = LARGURA_MIN;
+let volumeMusica = 1.0;
+let volumeFx = 1.0;
 
 let entradaJogo = 0;
 let entradaTitulo = 0;
@@ -46,6 +52,23 @@ const resultadoQuadro = { tempoWasm: 0, diag: null };
 let quadroNum = 0;
 let picoHistorico = 0;
 let quadrosComSom = 0;
+
+function normalizarLarguraWorker(valor) {
+  const n = Number.isFinite(valor) ? Math.round(valor) : LARGURA_MIN;
+  return Math.max(LARGURA_MIN, Math.min(LARGURA_MAX, n)) & ~1;
+}
+
+function aplicarLarguraTela(novaLargura) {
+  const w = normalizarLarguraWorker(novaLargura);
+  larguraTela = w;
+  if (jogo && typeof jogo.definir_largura_tela === "function") {
+    jogo.definir_largura_tela(w);
+    vistaImagem = null;
+  }
+  if (compositorWorker && typeof compositorWorker.redimensionar === "function") {
+    compositorWorker.redimensionar(w);
+  }
+}
 
 function destruirCompositorWorker() {
   if (compositorWorker && typeof compositorWorker.destruir === "function") {
@@ -128,6 +151,7 @@ function enviarQuadroVideo(tempoWasm, diag) {
       tipo: "quadro",
       sessao: sessaoAtiva,
       buffer: buf.buffer,
+      largura: larguraTela,
       quadroNum,
       tempoWasm,
       diag,
@@ -150,7 +174,7 @@ function executarUmQuadro(emitirAudio) {
 
   const calcularDiag = diagVisivel && (quadroNum % 6 === 0);
   const enviarAudio = Boolean(emitirAudio && audioAtivo && portaAudio);
-  const precisaAudio = enviarAudio || calcularDiag || quadrosComSom < 1000;
+  const precisaAudio = enviarAudio || calcularDiag || quadrosComSom < 60;
   let lenAudio = 0;
   let picoQuadro = 0;
 
@@ -173,7 +197,7 @@ function executarUmQuadro(emitirAudio) {
         if (picoQuadro > picoHistorico) picoHistorico = picoQuadro;
       }
 
-      if (quadrosComSom < 1000 && (fatiaAudio[0] !== 0 || fatiaAudio[lenAudio - 1] !== 0)) {
+      if (quadrosComSom < 60 && (fatiaAudio[0] !== 0 || fatiaAudio[lenAudio - 1] !== 0)) {
         quadrosComSom++;
       }
 
@@ -265,6 +289,15 @@ function prepararNovaSessao(msg, manterPausado) {
   multiplicadorVelocidade = 1;
   audioAtivo = Boolean(msg.audioAtivo);
   diagVisivel = Boolean(msg.diagVisivel);
+  if (Number.isFinite(msg.larguraTela)) {
+    larguraTela = normalizarLarguraWorker(msg.larguraTela);
+  }
+  if (Number.isFinite(msg.volumeMusica)) {
+    volumeMusica = Math.max(0, Math.min(1, msg.volumeMusica));
+  }
+  if (Number.isFinite(msg.volumeFx)) {
+    volumeFx = Math.max(0, Math.min(1, msg.volumeFx));
+  }
   quadroNum = 0;
   picoHistorico = 0;
   quadrosComSom = 0;
@@ -279,6 +312,10 @@ function inicializarInstanciaJogo(msg) {
   jogo = Jogo.criar_com_audio(bytes, taxaAjustada);
   if (typeof jogo.definir_pontos_cram === "function") {
     jogo.definir_pontos_cram(Boolean(msg.pontosCram));
+  }
+  aplicarLarguraTela(larguraTela);
+  if (typeof jogo.definir_volumes === "function") {
+    jogo.definir_volumes(volumeMusica, volumeFx);
   }
 }
 
@@ -304,9 +341,12 @@ self.onmessage = async (e) => {
       destruirCompositorWorker();
       canvasWorker = msg.canvas || null;
       contextoWorkerPerdido = false;
+      if (Number.isFinite(msg.largura)) {
+        larguraTela = normalizarLarguraWorker(msg.largura);
+      }
       if (canvasWorker) {
         try {
-          compositorWorker = criarRenderizadorGPU(canvasWorker);
+          compositorWorker = criarRenderizadorGPU(canvasWorker, larguraTela);
           canvasWorker.addEventListener("webglcontextlost", (ev) => {
             ev.preventDefault();
             contextoWorkerPerdido = true;
@@ -316,7 +356,7 @@ self.onmessage = async (e) => {
           canvasWorker.addEventListener("webglcontextrestored", () => {
             try {
               destruirCompositorWorker();
-              compositorWorker = criarRenderizadorGPU(canvasWorker);
+              compositorWorker = criarRenderizadorGPU(canvasWorker, larguraTela);
               contextoWorkerPerdido = !compositorWorker;
               self.postMessage({ tipo: "gpu-contexto-restaurado", ok: Boolean(compositorWorker) });
             } catch {
@@ -509,6 +549,24 @@ self.onmessage = async (e) => {
       if (msg.resetar && portaAudio) {
         portaAudio.postMessage({ tipo: "reset" });
       }
+      break;
+    }
+
+    case "volumes": {
+      if (Number.isFinite(msg.musica)) {
+        volumeMusica = Math.max(0, Math.min(1, msg.musica));
+      }
+      if (Number.isFinite(msg.fx)) {
+        volumeFx = Math.max(0, Math.min(1, msg.fx));
+      }
+      if (jogo && typeof jogo.definir_volumes === "function") {
+        jogo.definir_volumes(volumeMusica, volumeFx);
+      }
+      break;
+    }
+
+    case "largura-tela": {
+      aplicarLarguraTela(msg.largura);
       break;
     }
 

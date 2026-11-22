@@ -2,41 +2,72 @@
 
 /// Largura da área ativa em modo de 40 colunas.
 pub const LARGURA: usize = 320;
+/// Largura máxima suportada no modo estendido widescreen/ultrawide.
+pub const LARGURA_MAX: usize = 640;
 /// Altura da área ativa em modo de 28 linhas de células.
 pub const ALTURA: usize = 224;
-/// Total de pontos.
+/// Total de pontos no modo clássico 320x224.
 pub const PONTOS: usize = LARGURA * ALTURA;
+
+/// Normaliza uma largura pedida para o intervalo par `[320, 640]`.
+pub fn normalizar_largura(largura: usize) -> usize {
+    largura.clamp(LARGURA, LARGURA_MAX) & !1
+}
 
 /// Imagem de um quadro, linha após linha.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Quadro {
+    largura: usize,
     pontos: Vec<u16>,
 }
 
 impl Quadro {
-    /// Quadro todo na cor 0.
+    /// Quadro todo na cor 0 (320 x 224).
     pub fn novo() -> Self {
+        Self::com_largura(LARGURA)
+    }
+
+    /// Quadro todo na cor 0 com largura entre 320 e 640 (arredondada para par).
+    pub fn com_largura(largura: usize) -> Self {
+        let l = normalizar_largura(largura);
         Self {
-            pontos: vec![0; PONTOS],
+            largura: l,
+            pontos: vec![0; l.saturating_mul(ALTURA)],
         }
+    }
+
+    /// Largura atual do quadro em pontos.
+    pub fn largura(&self) -> usize {
+        self.largura
+    }
+
+    /// Redimensiona o quadro para a nova largura (entre 320 e 640, par).
+    pub fn redimensionar(&mut self, largura: usize) {
+        let l = normalizar_largura(largura);
+        if l == self.largura {
+            return;
+        }
+        self.largura = l;
+        self.pontos.resize(l.saturating_mul(ALTURA), 0);
+        self.pontos.fill(0);
     }
 
     /// Cor do ponto (x, y). Fora da área devolve `None`.
     pub fn ponto(&self, x: usize, y: usize) -> Option<u16> {
-        if x >= LARGURA || y >= ALTURA {
+        if x >= self.largura || y >= ALTURA {
             return None;
         }
         self.pontos
-            .get(y.checked_mul(LARGURA)?.checked_add(x)?)
+            .get(y.checked_mul(self.largura)?.checked_add(x)?)
             .copied()
     }
 
     /// Grava a cor (só os 9 bits baixos). Fora da área não faz nada e devolve `false`.
     pub fn definir(&mut self, x: usize, y: usize, cor: u16) -> bool {
-        if x >= LARGURA || y >= ALTURA {
+        if x >= self.largura || y >= ALTURA {
             return false;
         }
-        let Some(i) = y.checked_mul(LARGURA).and_then(|b| b.checked_add(x)) else {
+        let Some(i) = y.checked_mul(self.largura).and_then(|b| b.checked_add(x)) else {
             return false;
         };
         match self.pontos.get_mut(i) {
@@ -48,13 +79,13 @@ impl Quadro {
         }
     }
 
-    /// Os pontos de uma linha (320), para escrita direta. Os valores já devem ter 9 bits.
+    /// Os pontos de uma linha, para escrita direta. Os valores já devem ter 9 bits.
     pub fn linha_mut(&mut self, y: usize) -> Option<&mut [u16]> {
         if y >= ALTURA {
             return None;
         }
-        let ini = y.checked_mul(LARGURA)?;
-        let fim = ini.checked_add(LARGURA)?;
+        let ini = y.checked_mul(self.largura)?;
+        let fim = ini.checked_add(self.largura)?;
         self.pontos.get_mut(ini..fim)
     }
 
@@ -65,7 +96,7 @@ impl Quadro {
 
     /// Serialização usada no hash da imagem: cada ponto em 2 bytes, little-endian.
     pub fn para_bytes(&self) -> Vec<u8> {
-        let mut saida = Vec::with_capacity(PONTOS.saturating_mul(2));
+        let mut saida = Vec::with_capacity(self.pontos.len().saturating_mul(2));
         for p in &self.pontos {
             saida.extend_from_slice(&p.to_le_bytes());
         }

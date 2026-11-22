@@ -420,35 +420,60 @@ pub fn synchro_animate(m: &mut Memoria) {
     }
 }
 
-/// `PauseGame`: pausa o jogo quando Start e pressionado, e retoma no Start seguinte.
-pub fn pause_game(m: &mut Memoria) {
+/// `PauseGame`: pausa o jogo quando Start é pressionado, usando `f_pausemusic` (REV01),
+/// e suporta os comandos de câmera lenta quando `f_slomocheat` está ativo.
+/// Devolve `true` se o laço da fase deve executar um quadro (normal ou passo de câmera lenta).
+pub(super) fn pause_game_passo(m: &mut Memoria) -> bool {
     if rb(m, V_LIVES) == 0 {
         ww(m, F_PAUSE, 0);
-        return;
+        return true;
     }
+    let press = rb(m, V_JPADPRESS1);
+    let hold = rb(m, V_JPADHOLD1);
     if rw(m, F_PAUSE) != 0 {
-        if rb(m, V_JPADPRESS1) & BTN_START != 0 {
-            ww(m, F_PAUSE, 0);
-            wb(m, V_SOUNDQUEUE0, 0x80);
+        if rb(m, F_SLOMOCHEAT) != 0 {
+            if press & BTN_A != 0 {
+                wb(m, V_GAMEMODE, GM_TITLE_ID);
+                wb(m, F_PAUSEMUSIC, 0x80);
+                ww(m, F_PAUSE, 0);
+                return false;
+            }
+            if hold & BTN_B != 0 || press & BTN_C != 0 {
+                return true;
+            }
         }
-        return;
+        if press & BTN_START != 0 {
+            wb(m, F_PAUSEMUSIC, 0x80);
+            ww(m, F_PAUSE, 0);
+            return true;
+        }
+        return false;
     }
-    if rb(m, V_JPADPRESS1) & BTN_START != 0 {
+    if press & BTN_START != 0 {
         ww(m, F_PAUSE, 1);
-        wb(m, V_SOUNDQUEUE0, 0x7E);
+        wb(m, F_PAUSEMUSIC, 1);
+        return false;
     }
+    true
+}
+
+/// `PauseGame`: pausa o jogo quando Start é pressionado, e retoma no Start seguinte.
+pub fn pause_game(m: &mut Memoria) {
+    let _ = pause_game_passo(m);
 }
 
 /// Um passo de `Level_MainLoop`, depois da interrupção de VBlank.
 pub fn level_main_loop(m: &mut Memoria) -> Result<(), ErroAbertura> {
-    pause_game(m);
-    if rw(m, F_PAUSE) != 0 {
-        build_sprites(m)?;
+    let em_demo = rw(m, F_DEMO) != 0;
+    if !em_demo && !pause_game_passo(m) {
         return Ok(());
     }
     let quadros = rw(m, V_FRAMECOUNT).wrapping_add(1);
     ww(m, V_FRAMECOUNT, quadros);
     move_sonic_in_demo(m)?;
+    if em_demo && rb(m, V_GAMEMODE) == GM_TITLE_ID {
+        return Ok(());
+    }
     super::labirinto::efeitos(m);
     execute_objects(m)?;
     if rw(m, F_RESTART) != 0 {

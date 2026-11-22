@@ -5,8 +5,9 @@
 class SonicAudioProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    // Fila circular potencia de 2: 16384 pares estereo (~340 ms a 48 kHz).
-    this.tam = 16384;
+    // Fila circular potencia de 2: 32768 pares estereo (~682 ms a 48 kHz),
+    // absorvendo transicoes de fase e picos do navegador sem estalos nem descartes.
+    this.tam = 32768;
     this.mascara = this.tam - 1;
     this.bufL = new Float32Array(this.tam);
     this.bufR = new Float32Array(this.tam);
@@ -19,6 +20,9 @@ class SonicAudioProcessor extends AudioWorkletProcessor {
     this.preenchimentoInicial = Math.ceil(sampleRate * 3 / 60);
     this.preenchimentoRetomada = Math.min(1024, Math.ceil(sampleRate * 1.5 / 60));
     this.tevePrimeiraPartida = false;
+    this.aposFalta = false;
+    this.rampaRestante = 0;
+    this.rampaTotal = 32;
     this.ultimoL = 0;
     this.ultimoR = 0;
     this.chamadasProcess = 0;
@@ -46,6 +50,8 @@ class SonicAudioProcessor extends AudioWorkletProcessor {
     this.descartadas = 0;
     this.iniciado = false;
     this.tevePrimeiraPartida = false;
+    this.aposFalta = false;
+    this.rampaRestante = 0;
   }
 
   receberMensagem(e, origem) {
@@ -121,6 +127,10 @@ class SonicAudioProcessor extends AudioWorkletProcessor {
     if (!this.iniciado && this.disponiveis >= limiar) {
       this.iniciado = true;
       this.tevePrimeiraPartida = true;
+      if (this.aposFalta) {
+        this.rampaRestante = this.rampaTotal;
+        this.aposFalta = false;
+      }
     }
 
     // Caminho rapido sem ramificacoes por amostra (99.9% dos callbacks em estereo estavel).
@@ -141,6 +151,20 @@ class SonicAudioProcessor extends AudioWorkletProcessor {
         outR.set(bufR.subarray(0, restante), primeiraParte);
         leitura = restante;
       }
+      if (this.rampaRestante > 0) {
+        // Suaviza o retorno apos uma falta de dados para eliminar estalos (de-click).
+        const passos = this.rampaRestante < n ? this.rampaRestante : n;
+        const total = this.rampaTotal;
+        const baseL = this.ultimoL;
+        const baseR = this.ultimoR;
+        for (let i = 0; i < passos; i++) {
+          const ganho = (total - this.rampaRestante + 1) / total;
+          const inv = 1 - ganho;
+          outL[i] = baseL * inv + outL[i] * ganho;
+          outR[i] = baseR * inv + outR[i] * ganho;
+          this.rampaRestante--;
+        }
+      }
       this.leitura = leitura;
       this.disponiveis -= n;
       this.ultimoL = outL[n - 1];
@@ -151,14 +175,25 @@ class SonicAudioProcessor extends AudioWorkletProcessor {
           this.ultimoL *= 0.95;
           this.ultimoR *= 0.95;
         } else if (this.disponiveis > 0) {
-          this.ultimoL = this.bufL[this.leitura];
-          this.ultimoR = this.bufR[this.leitura];
+          let l = this.bufL[this.leitura];
+          let r = this.bufR[this.leitura];
           this.leitura = (this.leitura + 1) & mascara;
           this.disponiveis--;
+          if (this.rampaRestante > 0) {
+            const total = this.rampaTotal;
+            const ganho = (total - this.rampaRestante + 1) / total;
+            const inv = 1 - ganho;
+            l = this.ultimoL * inv + l * ganho;
+            r = this.ultimoR * inv + r * ganho;
+            this.rampaRestante--;
+          }
+          this.ultimoL = l;
+          this.ultimoR = r;
         } else {
           // Falta de dado: decaimento suave para evitar estalidos
           this.falhas++;
           this.iniciado = false;
+          this.aposFalta = true;
           this.ultimoL *= 0.95;
           this.ultimoR *= 0.95;
         }

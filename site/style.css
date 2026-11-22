@@ -252,6 +252,14 @@ body {
   flex: 1;
 }
 
+.app-container.palco-ativo {
+  max-width: 100%;
+}
+
+.app-container.palco-ativo > :not(#container-tela) {
+  max-width: var(--container-max);
+}
+
 /* ==========================================================================
    Deck Inicial: Grid 2 Colunas (Cartucho ROM + Especificacoes do Nucleo)
    ========================================================================== */
@@ -754,18 +762,47 @@ code {
   pointer-events: none;
 }
 
-.slider-volume-grupo {
+.barra-linha-audio {
+  justify-content: space-between;
+}
+
+.mixer-grupo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 1.15rem;
+}
+
+.slider-volume-grupo,
+.slider-canal {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0 0.2rem 0 0;
+  gap: 0.42rem;
+}
+
+.slider-rotulo {
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  user-select: none;
 }
 
 .slider-volume {
-  width: 64px;
+  width: 84px;
   height: 5px;
   accent-color: var(--accent-cobalt);
   cursor: pointer;
+}
+
+.slider-valor {
+  min-width: 34px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-align: right;
 }
 
 #barra-controles .btn {
@@ -1634,6 +1671,30 @@ code {
 
   #barra-controles {
     padding: 0.75rem;
+  }
+
+  .mixer-grupo {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.55rem;
+  }
+
+  .slider-volume-grupo,
+  .slider-canal {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 52px 1fr 38px;
+    align-items: center;
+    gap: 0.55rem;
+  }
+
+  .slider-volume-grupo {
+    grid-template-columns: auto 44px 1fr 38px;
+  }
+
+  .slider-volume {
+    width: 100%;
   }
 
   .btn,

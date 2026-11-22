@@ -24,9 +24,12 @@ const btnNavDiag = document.getElementById("btn-nav-diag");
 const btnToggleDiag = document.getElementById("btn-toggle-diag");
 const painelDiag = document.getElementById("painel-diag");
 
+const appContainer = document.querySelector(".app-container");
+const statusSpecTag = document.getElementById("status-spec-tag");
 const containerTela = document.getElementById("container-tela");
 const camadaCrt = document.getElementById("camada-crt");
 const barraControles = document.getElementById("barra-controles");
+const seletorProporcao = document.getElementById("seletor-proporcao");
 const seletorFps = document.getElementById("seletor-fps");
 const seletorCrt = document.getElementById("seletor-crt");
 const seletorCram = document.getElementById("seletor-cram");
@@ -139,16 +142,32 @@ if (btnNavDiag && btnToggleDiag && painelDiag) {
   });
 }
 
-// 3. Video (OffscreenCanvas zero-copy + fallback WebGL2/2D + tela cheia)
+const storageVisual = typeof window !== "undefined" ? window.localStorage : null;
+const prefsVisuais = carregarPreferenciasVisuais(storageVisual);
+
+function atualizarTagResolucao(largura) {
+  if (statusSpecTag) {
+    statusSpecTag.textContent = `MD-16 · NTSC 59,92 Hz · ${largura}×224`;
+  }
+}
+
+// 3. Video (OffscreenCanvas zero-copy + fallback WebGL2/2D + widescreen/ultrawide + tela cheia)
 let controladorAudio = null;
 
 const apresentadorVideo = criarApresentadorVideo({
   canvasInicial: document.getElementById("tela"),
   containerTela,
   badgeGpu: document.getElementById("badge-gpu"),
+  proporcaoInicial: prefsVisuais.proporcao,
   onErro: mostrarErroJogo,
   onLimparErro: limparErroJogo,
   onInteracao: () => controladorAudio && controladorAudio.desbloquear(),
+  onMudancaLargura(largura) {
+    atualizarTagResolucao(largura);
+    if (worker) {
+      worker.postMessage({ tipo: "largura-tela", largura });
+    }
+  },
   onContextoPerdido() {
     cancelAnimationFrame(animacao);
     animacao = 0;
@@ -164,10 +183,15 @@ const apresentadorVideo = criarApresentadorVideo({
   },
 });
 
-// 4. Audio (AudioContext + AudioWorklet + volume + bipe de teste)
+// 4. Audio (AudioContext + AudioWorklet + volume geral/musica/FX + bipe de teste)
 controladorAudio = criarControladorAudio({
   btnMudo: document.getElementById("btn-mudo"),
   sliderVolume: document.getElementById("slider-volume"),
+  sliderMusica: document.getElementById("slider-musica"),
+  sliderFx: document.getElementById("slider-fx"),
+  elValVolume: document.getElementById("val-volume"),
+  elValMusica: document.getElementById("val-musica"),
+  elValFx: document.getElementById("val-fx"),
   btnAudio: document.getElementById("btn-audio"),
   btnBipe: document.getElementById("btn-bipe"),
   hud,
@@ -346,6 +370,7 @@ const controladorSavesUi = criarControladorSavesUi({
 function ativarInterfaceJogo() {
   jogando = true;
   limparErroJogo();
+  if (appContainer) appContainer.classList.add("palco-ativo");
   if (deckInicial) deckInicial.hidden = true;
   if (dropzone) dropzone.hidden = true;
   if (containerTela) containerTela.hidden = false;
@@ -525,18 +550,31 @@ function inicializarWorker() {
 inicializarWorker();
 
 // 9. Controles da barra superior, preferencias visuais persistentes e laco de apresentacao
-const storageVisual = typeof window !== "undefined" ? window.localStorage : null;
-const prefsVisuais = carregarPreferenciasVisuais(storageVisual);
-
 function aplicarPreferenciasVisuais() {
   fpsDesbloqueado = prefsVisuais.fps === "desbloqueado";
+  if (seletorProporcao) seletorProporcao.value = prefsVisuais.proporcao;
   if (seletorFps) seletorFps.value = prefsVisuais.fps;
   if (seletorCrt) seletorCrt.value = prefsVisuais.crt;
   if (camadaCrt) camadaCrt.classList.toggle("ativo", prefsVisuais.crt === "ligado");
   if (seletorCram) seletorCram.value = prefsVisuais.cram;
+  const largura = apresentadorVideo.definirProporcao(prefsVisuais.proporcao);
+  atualizarTagResolucao(largura);
 }
 
 aplicarPreferenciasVisuais();
+
+if (seletorProporcao) {
+  seletorProporcao.addEventListener("change", () => {
+    prefsVisuais.proporcao = seletorProporcao.value;
+    salvarPreferenciasVisuais(storageVisual, prefsVisuais);
+    const largura = apresentadorVideo.definirProporcao(prefsVisuais.proporcao);
+    atualizarTagResolucao(largura);
+    if (worker) {
+      worker.postMessage({ tipo: "largura-tela", largura });
+    }
+    focarTela();
+  });
+}
 
 if (seletorFps) {
   seletorFps.addEventListener("change", () => {
@@ -692,6 +730,7 @@ function encerrarSessaoAtual() {
   fastForwardToggle = false;
   fastForwardHold = false;
   quadroGpuNovo = false;
+  if (appContainer) appContainer.classList.remove("palco-ativo");
   atualizarUiPausa();
   cancelAnimationFrame(animacao);
   animacao = 0;
@@ -719,6 +758,10 @@ async function enviarSessaoWorker(tipo, bytes, extras = {}) {
   const copiaRom = bytes.slice();
   transferiveis.push(copiaRom.buffer);
 
+  const volumes = controladorAudio.obterVolumes();
+  const larguraTela = apresentadorVideo.ajustarEscala();
+  atualizarTagResolucao(larguraTela);
+
   worker.postMessage(
     {
       tipo,
@@ -726,6 +769,9 @@ async function enviarSessaoWorker(tipo, bytes, extras = {}) {
       bytes: copiaRom,
       taxaBase: controladorAudio.obterTaxa(),
       pontosCram: Boolean(seletorCram && seletorCram.value === "hardware"),
+      larguraTela,
+      volumeMusica: volumes.musica,
+      volumeFx: volumes.fx,
       audioAtivo: controladorAudio.estaAtivo(),
       diagVisivel: hud.estaDiagAberto(),
       portaAudio,

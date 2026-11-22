@@ -74,7 +74,7 @@
         <span id="badge-gamepad" class="status-item">Gamepad pronto</span>
         <span id="badge-offline" class="status-item aviso" hidden>Modo offline</span>
       </div>
-      <div class="status-spec-tag" aria-hidden="true">MD-16 · NTSC 59,92 Hz · 320×224</div>
+      <div id="status-spec-tag" class="status-spec-tag" aria-hidden="true">MD-16 · NTSC 59,92 Hz · 320×224</div>
     </div>
   </div>
 
@@ -131,11 +131,11 @@
           </div>
           <div class="spec-row">
             <dt>Vídeo VDP</dt>
-            <dd class="mono">320×224 · RGB 9-bit · WebGL2</dd>
+            <dd class="mono">320×224 até 640×224 · WebGL2</dd>
           </div>
           <div class="spec-row">
             <dt>Síntese</dt>
-            <dd>YM2612 FM + SN76489 PSG</dd>
+            <dd>YM2612 FM + DAC + SN76489 PSG</dd>
           </div>
           <div class="spec-row">
             <dt>Cadência</dt>
@@ -211,6 +211,19 @@
       <div class="barra-linha">
         <div class="controles-grupo">
           <div class="item-controle">
+            <label for="seletor-proporcao">Tela</label>
+            <div class="select-wrap">
+              <select id="seletor-proporcao" class="select-estilizado">
+                <option value="auto" selected>Auto (Monitor)</option>
+                <option value="4:3">4:3 Original</option>
+                <option value="16:9">16:9 Widescreen</option>
+                <option value="21:9">21:9 Ultrawide</option>
+                <option value="32:9">32:9 Super Wide</option>
+              </select>
+              <svg class="select-seta" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+            </div>
+          </div>
+          <div class="item-controle">
             <label for="seletor-fps">Taxa</label>
             <div class="select-wrap">
               <select id="seletor-fps" class="select-estilizado">
@@ -251,21 +264,6 @@
             <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 5.5h10v7H3v-7zm2-2h6l1 2H4l1-2z" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round" fill="none"/></svg>
             <span>Trocar ROM</span>
           </button>
-          <button id="btn-hud" type="button" class="btn btn-cinza" title="Alternar HUD de FPS e Performance (Tecla F3)" aria-label="Alternar HUD de FPS" aria-pressed="false">
-            <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 11.5L5.5 7l3 2.5L13.5 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
-            <span>FPS (F3)</span>
-          </button>
-          <div class="slider-volume-grupo">
-            <button id="btn-mudo" type="button" class="btn btn-cinza btn-icone" title="Alternar som" aria-label="Silenciar som" aria-pressed="false">
-              <svg class="ico ico-som" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6.2h2.8L9 3.2v9.6L5.3 9.8H2.5V6.2zm8.7-.7a3.5 3.5 0 0 1 0 5m1.8-7a6 6 0 0 1 0 9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
-              <svg class="ico ico-mudo" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6.2h2.8L9 3.2v9.6L5.3 9.8H2.5V6.2zm8.2.3l3.3 3.3m0-3.3l-3.3 3.3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
-            </button>
-            <input type="range" id="slider-volume" class="slider-volume" min="0" max="1" step="0.05" value="1" title="Volume Geral" aria-label="Volume geral">
-          </div>
-          <button id="btn-toque" type="button" class="btn btn-cinza" title="Alternar Controles de Toque na Tela" aria-label="Alternar controles de toque" aria-pressed="false">
-            <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><rect x="4.5" y="2" width="7" height="12" rx="1.5" stroke="currentColor" stroke-width="1.35" fill="none"/><circle cx="8" cy="11.5" r="0.7" fill="currentColor"/></svg>
-            <span>Toque</span>
-          </button>
           <button id="btn-fullscreen" type="button" class="btn btn-cinza" title="Alternar Tela Cheia (Tecla F)" aria-label="Alternar tela cheia">
             <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
             <span>Tela Cheia</span>
@@ -273,7 +271,49 @@
         </div>
       </div>
 
-      <!-- Linha de Reproducao, Save States e Remapeamento -->
+      <!-- Linha de Mixer de Audio (Geral, Musica e Efeitos FX) e Utilidades -->
+      <div class="barra-linha barra-linha-secundaria barra-linha-audio">
+        <div class="mixer-grupo">
+          <div class="slider-volume-grupo">
+            <button id="btn-mudo" type="button" class="btn btn-cinza btn-icone" title="Alternar som" aria-label="Silenciar som" aria-pressed="false">
+              <svg class="ico ico-som" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6.2h2.8L9 3.2v9.6L5.3 9.8H2.5V6.2zm8.7-.7a3.5 3.5 0 0 1 0 5m1.8-7a6 6 0 0 1 0 9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+              <svg class="ico ico-mudo" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6.2h2.8L9 3.2v9.6L5.3 9.8H2.5V6.2zm8.2.3l3.3 3.3m0-3.3l-3.3 3.3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+            </button>
+            <label for="slider-volume" class="slider-rotulo">Geral</label>
+            <input type="range" id="slider-volume" class="slider-volume" min="0" max="1" step="0.05" value="1" title="Volume Geral" aria-label="Volume geral">
+            <span id="val-volume" class="slider-valor mono">100%</span>
+          </div>
+
+          <div class="slider-canal">
+            <label for="slider-musica" class="slider-rotulo">Música</label>
+            <input type="range" id="slider-musica" class="slider-volume" min="0" max="1" step="0.05" value="1" title="Volume da Música" aria-label="Volume da música">
+            <span id="val-musica" class="slider-valor mono">100%</span>
+          </div>
+
+          <div class="slider-canal">
+            <label for="slider-fx" class="slider-rotulo">FX</label>
+            <input type="range" id="slider-fx" class="slider-volume" min="0" max="1" step="0.05" value="1" title="Volume dos Efeitos Sonoros" aria-label="Volume dos efeitos sonoros">
+            <span id="val-fx" class="slider-valor mono">100%</span>
+          </div>
+        </div>
+
+        <div class="controles-grupo">
+          <button id="btn-hud" type="button" class="btn btn-cinza" title="Alternar HUD de FPS e Performance (Tecla F3)" aria-label="Alternar HUD de FPS" aria-pressed="false">
+            <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 11.5L5.5 7l3 2.5L13.5 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+            <span>FPS (F3)</span>
+          </button>
+          <button id="btn-toque" type="button" class="btn btn-cinza" title="Alternar Controles de Toque na Tela" aria-label="Alternar controles de toque" aria-pressed="false">
+            <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><rect x="4.5" y="2" width="7" height="12" rx="1.5" stroke="currentColor" stroke-width="1.35" fill="none"/><circle cx="8" cy="11.5" r="0.7" fill="currentColor"/></svg>
+            <span>Toque</span>
+          </button>
+          <button id="btn-controles" type="button" class="btn btn-cinza" title="Personalizar teclas do controle" aria-label="Personalizar teclas">
+            <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="4" width="12" height="8" rx="1.5" stroke="currentColor" stroke-width="1.35" fill="none"/><path d="M4.5 7h1m2 0h1m2 0h1m-6 2.5h5" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/></svg>
+            <span>Teclas</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Linha de Reproducao e Save States -->
       <div class="barra-linha barra-linha-secundaria">
         <div class="controles-grupo">
           <button id="btn-pausar" type="button" class="btn btn-cinza" title="Pausar ou retomar simulação" aria-label="Pausar simulação" aria-pressed="false">
@@ -318,10 +358,6 @@
             <span>Importar</span>
           </button>
           <input type="file" id="input-importar-save" accept=".s1sav,application/json" hidden>
-          <button id="btn-controles" type="button" class="btn btn-cinza" title="Personalizar teclas do controle" aria-label="Personalizar teclas">
-            <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="4" width="12" height="8" rx="1.5" stroke="currentColor" stroke-width="1.35" fill="none"/><path d="M4.5 7h1m2 0h1m2 0h1m-6 2.5h5" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/></svg>
-            <span>Teclas</span>
-          </button>
           <span id="status-save" class="status-save" aria-live="polite" hidden></span>
         </div>
       </div>

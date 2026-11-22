@@ -1,6 +1,7 @@
 // Apresenta a imagem de 9 bits do renderizador fiel (CPU). A GPU so converte a cor e amplia
 // (docs/requisitos.md, Video fiel em software).
 export const LARGURA = 320;
+export const LARGURA_MAX = 640;
 export const ALTURA = 224;
 
 const VERTICE = `#version 300 es
@@ -25,13 +26,19 @@ void main() {
   saida = vec4(vec3(rgb) * (1.0 / 255.0), 1.0);
 }`;
 
-export function criarRenderizadorGPU(canvas) {
+function normalizarLarguraGpu(largura) {
+  const n = Number.isFinite(largura) ? Math.floor(largura) : LARGURA;
+  return Math.max(LARGURA, Math.min(LARGURA_MAX, n)) & ~1;
+}
+
+export function criarRenderizadorGPU(canvas, larguraInicial = LARGURA) {
   const gl = canvas.getContext("webgl2", {
     alpha: false,
     antialias: false,
     depth: false,
     stencil: false,
     preserveDrawingBuffer: false,
+    desynchronized: true,
     powerPreference: "high-performance",
   });
   if (!gl) return null;
@@ -73,32 +80,63 @@ export function criarRenderizadorGPU(canvas) {
   gl.bindVertexArray(vao);
   gl.disable(gl.BLEND);
   gl.disable(gl.DITHER);
-  // Textura imutavel criada uma vez: cada quadro so troca o conteudo (sem texImage2D).
-  const textura = gl.createTexture();
-  gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, textura);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-  gl.texStorage2D(gl.TEXTURE_2D, 1, gl.R16UI, LARGURA, ALTURA);
   gl.pixelStorei(gl.UNPACK_ALIGNMENT, 2);
   gl.uniform1i(gl.getUniformLocation(programa, "imagem"), 0);
-  canvas.width = LARGURA;
-  canvas.height = ALTURA;
-  gl.viewport(0, 0, LARGURA, ALTURA);
+
+  let larguraAtual = normalizarLarguraGpu(larguraInicial);
+  let textura = null;
+
+  function alocarTextura(largura) {
+    if (textura) {
+      gl.deleteTexture(textura);
+    }
+    // Textura imutavel alocada por dimensao: cada quadro so atualiza via texSubImage2D.
+    textura = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, textura);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.R16UI, largura, ALTURA);
+    canvas.width = largura;
+    canvas.height = ALTURA;
+    gl.viewport(0, 0, largura, ALTURA);
+    larguraAtual = largura;
+  }
+
+  alocarTextura(larguraAtual);
+
   const debug = gl.getExtension("WEBGL_debug_renderer_info");
   const renderer = gl.getParameter(debug ? debug.UNMASKED_RENDERER_WEBGL : gl.RENDERER);
   let destruido = false;
   return {
-    // `imagem`: Uint16Array de 320 x 224 pontos, view da memoria Wasm (sem copia no JS).
+    redimensionar(novaLargura) {
+      if (destruido) return larguraAtual;
+      const w = normalizarLarguraGpu(novaLargura);
+      if (w !== larguraAtual) {
+        alocarTextura(w);
+      }
+      return larguraAtual;
+    },
+    obterLargura() {
+      return larguraAtual;
+    },
+    // `imagem`: Uint16Array de largura x 224 pontos, view da memoria Wasm (sem copia no JS).
     renderizar(imagem) {
       if (destruido) return;
-      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, LARGURA, ALTURA, gl.RED_INTEGER, gl.UNSIGNED_SHORT, imagem);
+      const esperado = larguraAtual * ALTURA;
+      if (imagem.length !== esperado && imagem.length % ALTURA === 0) {
+        const w = normalizarLarguraGpu(imagem.length / ALTURA);
+        if (w * ALTURA === imagem.length) {
+          alocarTextura(w);
+        }
+      }
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, larguraAtual, ALTURA, gl.RED_INTEGER, gl.UNSIGNED_SHORT, imagem);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     },
     // Usado na validacao: framebuffer em ordem inferior para superior.
     lerPixels() {
-      const pixels = new Uint8Array(LARGURA * ALTURA * 4);
-      gl.readPixels(0, 0, LARGURA, ALTURA, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+      const pixels = new Uint8Array(larguraAtual * ALTURA * 4);
+      gl.readPixels(0, 0, larguraAtual, ALTURA, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
       return pixels;
     },
     sincronizar() { gl.finish(); },
@@ -108,7 +146,10 @@ export function criarRenderizadorGPU(canvas) {
       gl.bindTexture(gl.TEXTURE_2D, null);
       gl.bindVertexArray(null);
       gl.useProgram(null);
-      gl.deleteTexture(textura);
+      if (textura) {
+        gl.deleteTexture(textura);
+        textura = null;
+      }
       gl.deleteVertexArray(vao);
       gl.deleteProgram(programa);
     },

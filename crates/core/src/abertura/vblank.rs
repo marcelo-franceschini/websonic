@@ -21,6 +21,8 @@ pub const ROTINA_CARTOES: u8 = 0x0C;
 pub const ROTINA_NIVEL: u8 = 0x08;
 /// Índice de `VBlank_SpecialStage`.
 pub const ROTINA_SPECIAL: u8 = 0x0A;
+/// Índice de `VBlank_Paused` (jogo pausado: lê controles e roda driver de som).
+pub const ROTINA_PAUSED: u8 = 0x10;
 pub const ROTINA_SEGA_PCM: u8 = 0x14;
 /// Índice de `VBlank_Continue`.
 pub const ROTINA_CONTINUE: u8 = 0x16;
@@ -255,6 +257,12 @@ pub(super) fn tratar_com_hblank(
             ROTINA_NIVEL => som_adiado = vblank_cartoes(m, true, hblank_disponivel)?,
             ROTINA_CONTINUE => vblank_continue(m)?,
             ROTINA_SPECIAL => vblank_continue_ou_special(m, true)?,
+            ROTINA_PAUSED => {
+                ww(m, Z80_BUSREQ, 0x100);
+                esperar_z80(m)?;
+                read_joypads(m);
+                ww(m, Z80_BUSREQ, 0);
+            }
             ROTINA_ENDING => {
                 vblank_cartoes(m, false, false)?;
             }

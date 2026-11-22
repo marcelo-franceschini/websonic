@@ -3,10 +3,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   gerarTabelaCor9Bits,
+  normalizarLarguraLogica,
+  calcularLarguraLogica,
   calcularFatorEscalaInteira,
+  calcularDimensoesExibicao,
   criarApresentadorVideo,
 } from "../video.js";
-import { LARGURA, ALTURA } from "../gpu.js";
+import { LARGURA, LARGURA_MAX, ALTURA } from "../gpu.js";
 
 test("gerarTabelaCor9Bits converte preto, branco e canais primarios com replicacao de bits", () => {
   const lut = gerarTabelaCor9Bits();
@@ -39,6 +42,47 @@ test("calcularFatorEscalaInteira preserva escala inteira minima 1 e aproveita te
     calcularFatorEscalaInteira({ larguraJanela: 1920, alturaJanela: 1080, emTelaCheia: true }),
     4,
   );
+});
+
+test("calcularLarguraLogica libera resolucoes widescreen, ultrawide e automatica do monitor", () => {
+  assert.equal(normalizarLarguraLogica(319), LARGURA);
+  assert.equal(normalizarLarguraLogica(399), 398);
+  assert.equal(normalizarLarguraLogica(900), LARGURA_MAX);
+
+  assert.equal(calcularLarguraLogica({ proporcao: "4:3" }), 320);
+  assert.equal(calcularLarguraLogica({ proporcao: "16:9" }), 398);
+  assert.equal(calcularLarguraLogica({ proporcao: "21:9" }), 524);
+  assert.equal(calcularLarguraLogica({ proporcao: "32:9" }), 640);
+
+  // Auto adapta exatamente ao monitor (16:9, 21:9, 32:9 e mobile portrait)
+  assert.equal(calcularLarguraLogica({ proporcao: "auto", larguraJanela: 1920, alturaJanela: 1080 }), 398);
+  assert.equal(calcularLarguraLogica({ proporcao: "auto", larguraJanela: 2560, alturaJanela: 1080 }), 530);
+  assert.equal(calcularLarguraLogica({ proporcao: "auto", larguraJanela: 5120, alturaJanela: 1440 }), 640);
+  assert.equal(calcularLarguraLogica({ proporcao: "auto", larguraJanela: 390, alturaJanela: 844 }), 320);
+});
+
+test("calcularDimensoesExibicao preenche monitores widescreen e ultrawide sem teto de 960px", () => {
+  const uwJanela = calcularDimensoesExibicao({
+    larguraJanela: 2560,
+    alturaJanela: 1080,
+    emTelaCheia: false,
+    proporcao: "auto",
+    larguraBase: 530,
+    alturaBase: 224,
+  });
+  assert.ok(uwJanela.largura > 1500);
+  assert.ok(uwJanela.altura > 700);
+
+  const uwFull = calcularDimensoesExibicao({
+    larguraJanela: 3440,
+    alturaJanela: 1440,
+    emTelaCheia: true,
+    proporcao: "auto",
+    larguraBase: 534,
+    alturaBase: 224,
+  });
+  assert.equal(uwFull.largura, 3433);
+  assert.equal(uwFull.altura, 1440);
 });
 
 function criarWebgl2Minimo({ falharRender = false } = {}) {
@@ -321,6 +365,22 @@ test("criarApresentadorVideo gerencia Worker zero-copy, perda/restauracao, fallb
     });
     videoThrow.confirmarAnexoWorker(false);
     assert.ok(erros.some((e) => /gl-init-err/.test(e)));
+
+    // Mudanca dinamica de proporcao (widescreen/ultrawide) notifica largura e redimensiona fallback 2D.
+    const largurasNotificadas = [];
+    const canvasWide = criarCanvasStub({ modoGl: "null", comOffscreen: false });
+    const videoWide = criarApresentadorVideo({
+      canvasInicial: canvasWide,
+      badgeGpu,
+      proporcaoInicial: "4:3",
+      onMudancaLargura: (w) => largurasNotificadas.push(w),
+    });
+    videoWide.inicializarThreadPrincipal(false);
+    assert.equal(videoWide.definirProporcao("21:9"), 524);
+    assert.equal(videoWide.obterLarguraLogica(), 524);
+    assert.deepEqual(largurasNotificadas, [524]);
+    videoWide.apresentar(new Uint16Array(524 * ALTURA));
+    assert.equal(videoWide.obterTela().width, 524);
   } finally {
     globalThis.window = origWindow;
     globalThis.document = origDocument;

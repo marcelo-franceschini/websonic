@@ -27,6 +27,8 @@ pub struct MisturadorSaida {
 
     ganho_fm: f32,
     ganho_psg: f32,
+    ganho_psg_canais: [f32; 4],
+    psg_ganhos_padrao: bool,
 
     buffer_audio: VecDeque<(f32, f32)>,
     pendentes_fm: VecDeque<(f32, f32)>,
@@ -60,6 +62,8 @@ impl MisturadorSaida {
             filtro_analogico,
             ganho_fm: 0.75,
             ganho_psg: 0.50,
+            ganho_psg_canais: [1.0; 4],
+            psg_ganhos_padrao: true,
             buffer_audio: VecDeque::with_capacity(tamanho_alvo_buffer * 4),
             pendentes_fm: VecDeque::with_capacity(1024),
             pendentes_psg: VecDeque::with_capacity(1024),
@@ -73,6 +77,23 @@ impl MisturadorSaida {
             saida_fm: Vec::with_capacity(1024),
             saida_psg: Vec::with_capacity(1024),
         }
+    }
+
+    /// Define o ganho individual dos 4 canais do PSG (0.0 a 1.0) para separar musica e FX.
+    pub fn definir_ganhos_psg_canais(&mut self, ganhos: [f32; 4]) {
+        let mut padrao = true;
+        for (dst, &src) in self.ganho_psg_canais.iter_mut().zip(ganhos.iter()) {
+            let v = if src.is_finite() {
+                src.clamp(0.0, 1.0)
+            } else {
+                1.0
+            };
+            *dst = v;
+            if (v - 1.0).abs() > f32::EPSILON {
+                padrao = false;
+            }
+        }
+        self.psg_ganhos_padrao = padrao;
     }
 
     /// Alimenta um lote de amostras nativas de FM e PSG geradas por um quadro.
@@ -112,12 +133,22 @@ impl MisturadorSaida {
         );
 
         let escala_psg = 0.25 * self.ganho_psg;
+        let ganhos_psg = self.ganho_psg_canais;
+        let psg_padrao = self.psg_ganhos_padrao;
         self.reamostrador_psg.alimentar_mono_iter(psg.map(|canais| {
             let v0 = PSG_VOL_TABLE[usize::from(canais[0] & 15)];
             let v1 = PSG_VOL_TABLE[usize::from(canais[1] & 15)];
             let v2 = PSG_VOL_TABLE[usize::from(canais[2] & 15)];
             let v3 = PSG_VOL_TABLE[usize::from(canais[3] & 15)];
-            (v0 + v1 + v2 + v3) * escala_psg
+            if psg_padrao {
+                (v0 + v1 + v2 + v3) * escala_psg
+            } else {
+                (v0 * ganhos_psg[0]
+                    + v1 * ganhos_psg[1]
+                    + v2 * ganhos_psg[2]
+                    + v3 * ganhos_psg[3])
+                    * escala_psg
+            }
         }));
 
         // Processa reamostragem de ambos

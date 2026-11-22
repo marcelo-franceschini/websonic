@@ -69,9 +69,9 @@ fn inspecionar_gameplay_ghz1_manual() {
         let ram = console.ab.mem.ram();
         let gamemode = ram[0xF600];
 
-        // Segura Start na tela de titulo (0x04) para iniciar
+        // Pulsa Start na tela de titulo (0x04) para disparar a borda de subida em Tit_MainLoop
         if gamemode == 0x04 {
-            console.definir_botoes(0x80);
+            console.definir_botoes(if quadro % 2 == 0 { 0x80 } else { 0 });
         } else if gamemode == 0x0C && quadro > 450 {
             if quadro_gameplay_iniciou.is_none() {
                 println!("GAMEPLAY REALMENTE INICIOU no quadro {quadro}!");

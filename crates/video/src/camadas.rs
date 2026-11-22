@@ -321,9 +321,11 @@ fn desenhar_tile_compacto(
 
 /// Versão compacta de [`desenhar_planos`]: 1 byte por ponto (`bit 7 = prioridade`,
 /// `bits 5..4 = paleta`, `bits 3..0 = cor`), lendo tiles pré-decodificados de `tiles_8bpp`.
+/// `margem_esq` desloca a origem da área clássica (320 px) para centralizar em telas widescreen.
 pub(crate) fn desenhar_planos_compacto(
     p: &ParametrosDosPlanos<'_>,
     tiles_8bpp: &[u8],
+    margem_esq: i32,
     buf_a: &mut [u8],
     buf_b: &mut [u8],
 ) {
@@ -337,6 +339,7 @@ pub(crate) fn desenhar_planos_compacto(
         ini,
         fim,
     } = *p;
+    let margem = margem_esq.max(0);
     let (larg, alt) = (reg.largura_do_plano(), reg.altura_do_plano());
     let px = |t: TamanhoPlano| t.celulas().wrapping_mul(8);
     let (h_px, v_px) = match (larg, alt) {
@@ -352,11 +355,11 @@ pub(crate) fn desenhar_planos_compacto(
     };
     let mascara_v = v_px.wrapping_sub(1);
     let v_por_tela = reg.rolagem_v() == RolagemV::Tela;
-    let ini_pos = ini.max(0);
+    let ini_buf_min = ini.wrapping_add(margem).max(0);
+    let fim_buf = fim.wrapping_add(margem);
     let ultima_coluna = fim
         .saturating_add(15)
-        .checked_div(16)
-        .unwrap_or(COLUNAS)
+        .div_euclid(16)
         .max(COLUNAS);
 
     for plano in [Plano::A, Plano::B] {
@@ -376,7 +379,13 @@ pub(crate) fn desenhar_planos_compacto(
         };
         let grosso = h_scroll & !15;
         let fino = i32::from(h_scroll & 15);
-        let primeira: i32 = if fino != 0 { -1 } else { 0 };
+        let primeira: i32 = if margem > 0 {
+            ini.saturating_sub(fino).div_euclid(16).saturating_sub(1)
+        } else if fino != 0 {
+            -1
+        } else {
+            0
+        };
         let linha_rolada_tela = linha.wrapping_add(v_tela) & mascara_v;
         let linha_nome_tela = (linha_rolada_tela >> 3).wrapping_mul(largura_nome);
 
@@ -384,7 +393,12 @@ pub(crate) fn desenhar_planos_compacto(
             let (linha_rolada, linha_nome_base) = if v_por_tela {
                 (linha_rolada_tela, linha_nome_tela)
             } else {
-                let v = rolagem_v(vsram, reg, plano, coluna, v_tela_cheia);
+                let col_v = if margem > 0 && coluna < 0 {
+                    coluna.rem_euclid(COLUNAS)
+                } else {
+                    coluna
+                };
+                let v = rolagem_v(vsram, reg, plano, col_v, v_tela_cheia);
                 let lr = linha.wrapping_add(v) & mascara_v;
                 (lr, (lr >> 3).wrapping_mul(largura_nome))
             };
@@ -404,8 +418,9 @@ pub(crate) fn desenhar_planos_compacto(
                     celula_h_base.wrapping_add(u16::try_from(desloc).unwrap_or(0)) & h_celulas_mask;
                 let nome = ler_nome_linha(vram, base, linha_nome_base, celula_h);
                 let attrs = (u8::from(nome.prioridade) << 7) | (nome.paleta << 4);
-                if col_fb >= ini_pos && col_fb.wrapping_add(8) <= fim {
-                    let inicio = usize::try_from(col_fb).unwrap_or(0);
+                let col_buf = col_fb.wrapping_add(margem);
+                if col_buf >= ini_buf_min && col_buf.wrapping_add(8) <= fim_buf {
+                    let inicio = usize::try_from(col_buf).unwrap_or(0);
                     if let Some(dest) = buf
                         .get_mut(inicio..inicio.saturating_add(8))
                         .and_then(|s| <&mut [u8; 8]>::try_from(s).ok())
@@ -434,7 +449,8 @@ pub(crate) fn desenhar_planos_compacto(
                     if x < ini || x >= fim {
                         continue;
                     }
-                    if let Some(p) = usize::try_from(x).ok().and_then(|i| buf.get_mut(i)) {
+                    let x_buf = x.wrapping_add(margem);
+                    if let Some(p) = usize::try_from(x_buf).ok().and_then(|i| buf.get_mut(i)) {
                         *p = cor | attrs;
                     }
                 }
@@ -508,6 +524,17 @@ pub fn varrer_sprites(
     limite_pular: u32,
     ids: &mut Vec<u8>,
 ) -> bool {
+    varrer_sprites_limite(travados, linha, limite_pular, 20, ids)
+}
+
+/// Variante interna com limite configurável de sprites por linha (20 clássico, maior em widescreen).
+pub(crate) fn varrer_sprites_limite(
+    travados: &[SpriteEmCache],
+    linha: u16,
+    limite_pular: u32,
+    max_sprites: usize,
+    ids: &mut Vec<u8>,
+) -> bool {
     ids.clear();
     let total: u32 = 80;
     let maximo = total.saturating_sub(limite_pular);
@@ -519,7 +546,7 @@ pub fn varrer_sprites(
         let topo = s.v_pos & 0x1ff;
         let base = topo.wrapping_add(8u16.wrapping_mul(u16::from(s.alt)));
         if topo <= linha_sprite && linha_sprite < base {
-            if ids.len() == 20 {
+            if ids.len() == max_sprites {
                 estourou = true;
                 break;
             }
@@ -616,6 +643,7 @@ pub fn desenhar_sprites(
 /// Versão compacta de [`desenhar_sprites`] (1 byte por ponto, 0 = transparente),
 /// lendo tiles pré-decodificados de `tiles_8bpp`.
 /// Devolve `(estouro_de_pontos, desenhou_algum_pixel)`.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn desenhar_sprites_compacto(
     tiles_8bpp: &[u8],
     sprites: &[Sprite],
@@ -623,6 +651,7 @@ pub(crate) fn desenhar_sprites_compacto(
     pular_tiles: u16,
     estouro_anterior: bool,
     limpar_buffer: bool,
+    margem_esq: i32,
     pontos: &mut [u8],
 ) -> (bool, bool) {
     if limpar_buffer {
@@ -631,16 +660,16 @@ pub(crate) fn desenhar_sprites_compacto(
     if sprites.is_empty() {
         return (false, false);
     }
-    let max_tiles = 40u16.saturating_sub(pular_tiles);
+    let margem = margem_esq.max(0);
+    let limite_base: u16 = if margem > 0 { 64 } else { 40 };
+    let max_tiles = limite_base.saturating_sub(pular_tiles);
     let linha_sprite = INICIO_SPRITES.wrapping_add(linha);
     let mut buscados: u16 = 0;
     let mut estouro = false;
     let mut desenhou = false;
     let mut achou_nao_zero = estouro_anterior;
     let mut mascara = false;
-    let inicio = INICIO_SPRITES;
-    let largura = pontos.len().max(1);
-    let fim = INICIO_SPRITES.wrapping_add(u16::try_from(largura).unwrap_or(320));
+    let largura = i32::try_from(pontos.len().max(1)).unwrap_or(320);
     'fora: for s in sprites {
         if s.h_pos == 0 && achou_nao_zero {
             mascara = true;
@@ -670,20 +699,23 @@ pub(crate) fn desenhar_sprites_compacto(
             let padrao = s.padrao.wrapping_add(offset);
             let linha_do_tile_ = linha_no_sprite & 7;
             buscados = buscados.wrapping_add(1);
-            if mascara {
+            if mascara || s.h_pos == 0 {
                 continue;
             }
-            let esq = s.h_pos.wrapping_add(h.wrapping_mul(8));
+            let esq = i32::from(s.h_pos)
+                .wrapping_sub(i32::from(INICIO_SPRITES))
+                .wrapping_add(i32::from(h.wrapping_mul(8)))
+                .wrapping_add(margem);
             let dir = esq.wrapping_add(8);
-            if esq >= fim || dir <= inicio {
+            if esq >= largura || dir <= 0 {
                 continue;
             }
             let cores = linha_do_tile_8bpp(tiles_8bpp, padrao, linha_do_tile_, false, s.h_flip);
             if u64::from_ne_bytes(cores) == 0 {
                 continue;
             }
-            if esq >= inicio && dir <= fim {
-                let x0 = usize::from(esq.wrapping_sub(inicio));
+            if esq >= 0 && dir <= largura {
+                let x0 = usize::try_from(esq).unwrap_or(0);
                 if let Some(dest) = pontos
                     .get_mut(x0..x0.saturating_add(8))
                     .and_then(|s| <&mut [u8; 8]>::try_from(s).ok())
@@ -711,12 +743,11 @@ pub(crate) fn desenhar_sprites_compacto(
                 if cor == 0 {
                     continue;
                 }
-                let h_pos = esq.wrapping_add(u16::try_from(k).unwrap_or(0));
-                if h_pos < inicio || h_pos >= fim {
+                let x_i32 = esq.wrapping_add(i32::try_from(k).unwrap_or(0));
+                if x_i32 < 0 || x_i32 >= largura {
                     continue;
                 }
-                let x = usize::from(h_pos.wrapping_sub(inicio));
-                if let Some(p) = pontos.get_mut(x)
+                if let Some(p) = usize::try_from(x_i32).ok().and_then(|x| pontos.get_mut(x))
                     && (*p & 0x0f) == 0
                 {
                     *p = cor | attrs;
@@ -1187,7 +1218,7 @@ mod testes {
 
         let mut compacto = [0u8; LARGURA];
         let (est_cmp, desenhou) =
-            desenhar_sprites_compacto(&tiles_8bpp, &sprites, 0, 0, false, true, &mut compacto);
+            desenhar_sprites_compacto(&tiles_8bpp, &sprites, 0, 0, false, true, 0, &mut compacto);
 
         assert_eq!(est_cmp, est_ref);
         assert!(desenhou);

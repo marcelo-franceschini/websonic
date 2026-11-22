@@ -31,34 +31,59 @@ test("normalizarVolume limita valores ao intervalo [0, 1] e trata entradas inval
 });
 
 test("carregarPreferenciasAudio retorna padrao para storage ausente, vazio ou corrompido", () => {
-  assert.deepEqual(carregarPreferenciasAudio(null), { volume: 1.0, mudo: false });
+  const padrao = { volume: 1.0, volumeMusica: 1.0, volumeFx: 1.0, mudo: false };
+  assert.deepEqual(carregarPreferenciasAudio(null), padrao);
 
   const vazio = criarStorageMemoria();
-  assert.deepEqual(carregarPreferenciasAudio(vazio), { volume: 1.0, mudo: false });
+  assert.deepEqual(carregarPreferenciasAudio(vazio), padrao);
 
   vazio.setItem(CHAVE_STORAGE_AUDIO, "null");
-  assert.deepEqual(carregarPreferenciasAudio(vazio), { volume: 1.0, mudo: false });
+  assert.deepEqual(carregarPreferenciasAudio(vazio), padrao);
 
   vazio.setItem(CHAVE_STORAGE_AUDIO, "{json-invalido");
-  assert.deepEqual(carregarPreferenciasAudio(vazio), { volume: 1.0, mudo: false });
+  assert.deepEqual(carregarPreferenciasAudio(vazio), padrao);
+
+  // Retrocompatibilidade com formato antigo sem volumeMusica/volumeFx
+  vazio.setItem(CHAVE_STORAGE_AUDIO, JSON.stringify({ volume: 0.7, mudo: true }));
+  assert.deepEqual(carregarPreferenciasAudio(vazio), {
+    volume: 0.7,
+    volumeMusica: 1.0,
+    volumeFx: 1.0,
+    mudo: true,
+  });
 
   const comErro = {
     getItem() {
       throw new Error("quota");
     },
   };
-  assert.deepEqual(carregarPreferenciasAudio(comErro), { volume: 1.0, mudo: false });
+  assert.deepEqual(carregarPreferenciasAudio(comErro), padrao);
 });
 
-test("salvarPreferenciasAudio e carregarPreferenciasAudio preservam volume e mudo normalizados", () => {
+test("salvarPreferenciasAudio e carregarPreferenciasAudio preservam volume geral, musica, FX e mudo normalizados", () => {
   assert.equal(salvarPreferenciasAudio(null, { volume: 0.5, mudo: false }), false);
   const storage = criarStorageMemoria();
-  const salvo = salvarPreferenciasAudio(storage, { volume: "0.45", mudo: true });
+  const salvo = salvarPreferenciasAudio(storage, {
+    volume: "0.45",
+    volumeMusica: "0.3",
+    volumeFx: "0.85",
+    mudo: true,
+  });
   assert.equal(salvo, true);
-  assert.deepEqual(carregarPreferenciasAudio(storage), { volume: 0.45, mudo: true });
+  assert.deepEqual(carregarPreferenciasAudio(storage), {
+    volume: 0.45,
+    volumeMusica: 0.3,
+    volumeFx: 0.85,
+    mudo: true,
+  });
 
-  salvarPreferenciasAudio(storage, { volume: 5, mudo: 0 });
-  assert.deepEqual(carregarPreferenciasAudio(storage), { volume: 1.0, mudo: false });
+  salvarPreferenciasAudio(storage, { volume: 5, volumeMusica: -1, volumeFx: 2, mudo: 0 });
+  assert.deepEqual(carregarPreferenciasAudio(storage), {
+    volume: 1.0,
+    volumeMusica: 0.0,
+    volumeFx: 1.0,
+    mudo: false,
+  });
 
   const semEscrita = {
     setItem() {
@@ -225,10 +250,15 @@ test("criarControladorAudio gerencia AudioContext, AudioWorklet, ganho, mudo, po
 
   try {
     const storage = criarStorageMemoria();
-    salvarPreferenciasAudio(storage, { volume: 0.6, mudo: true });
+    salvarPreferenciasAudio(storage, { volume: 0.6, volumeMusica: 0.75, volumeFx: 0.5, mudo: true });
 
     const btnMudo = criarControleStub();
     const sliderVolume = criarControleStub();
+    const sliderMusica = criarControleStub();
+    const sliderFx = criarControleStub();
+    const elValVolume = { textContent: "" };
+    const elValMusica = { textContent: "" };
+    const elValFx = { textContent: "" };
     const btnAudio = criarControleStub();
     const btnBipe = criarControleStub();
     const hud = {
@@ -240,6 +270,11 @@ test("criarControladorAudio gerencia AudioContext, AudioWorklet, ganho, mudo, po
     const ctrl = criarControladorAudio({
       btnMudo,
       sliderVolume,
+      sliderMusica,
+      sliderFx,
+      elValVolume,
+      elValMusica,
+      elValFx,
       btnAudio,
       btnBipe,
       hud,
@@ -253,6 +288,12 @@ test("criarControladorAudio gerencia AudioContext, AudioWorklet, ganho, mudo, po
 
     // Valores iniciais sincronizados com UI e taxa padrao 48000 antes do init.
     assert.equal(sliderVolume.value, "0.6");
+    assert.equal(sliderMusica.value, "0.75");
+    assert.equal(sliderFx.value, "0.5");
+    assert.equal(elValVolume.textContent, "0%");
+    assert.equal(elValMusica.textContent, "75%");
+    assert.equal(elValFx.textContent, "50%");
+    assert.deepEqual(ctrl.obterVolumes(), { musica: 0.75, fx: 0.5 });
     assert.equal(btnMudo.classList.contains("mudo"), true);
     assert.equal(btnMudo.getAttribute("aria-label"), "Ativar som");
     assert.equal(ctrl.obterTaxa(), 48000);
@@ -283,9 +324,23 @@ test("criarControladorAudio gerencia AudioContext, AudioWorklet, ganho, mudo, po
 
     // Slider acima de 0 desativa o mudo e persiste.
     sliderVolume.disparar("input", { target: { value: "0.8" } });
+    assert.equal(elValVolume.textContent, "80%");
     assert.equal(btnMudo.classList.contains("mudo"), false);
     assert.equal(btnMudo.getAttribute("aria-label"), "Silenciar som");
-    assert.deepEqual(carregarPreferenciasAudio(storage), { volume: 0.8, mudo: false });
+    assert.deepEqual(carregarPreferenciasAudio(storage), {
+      volume: 0.8,
+      volumeMusica: 0.75,
+      volumeFx: 0.5,
+      mudo: false,
+    });
+
+    // Sliders de Musica e FX atualizam UI, persistem e enviam mensagem ao Worker.
+    sliderMusica.disparar("input", { target: { value: "0.4" } });
+    sliderFx.disparar("input", { target: { value: "0.9" } });
+    assert.equal(elValMusica.textContent, "40%");
+    assert.equal(elValFx.textContent, "90%");
+    assert.deepEqual(ctrl.obterVolumes(), { musica: 0.4, fx: 0.9 });
+    assert.ok(msgsWorker.some((m) => m.tipo === "volumes" && m.musica === 0.4 && m.fx === 0.9));
 
     // Clique em btnMudo alterna mudo e foca tela.
     btnMudo.disparar("click");

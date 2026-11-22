@@ -23,12 +23,12 @@ function criarStorageMemoria() {
 test("normalizarPreferenciasVisuais valida opcoes permitidas e aplica padroes", () => {
   assert.deepEqual(normalizarPreferenciasVisuais(null), PREFERENCIAS_VISUAIS_PADRAO);
   assert.deepEqual(
-    normalizarPreferenciasVisuais({ fps: "desbloqueado", crt: "ligado", cram: "limpo" }),
-    { fps: "desbloqueado", crt: "ligado", cram: "limpo" },
+    normalizarPreferenciasVisuais({ fps: "desbloqueado", crt: "ligado", cram: "limpo", proporcao: "21:9" }),
+    { fps: "desbloqueado", crt: "ligado", cram: "limpo", proporcao: "21:9" },
   );
   assert.deepEqual(
-    normalizarPreferenciasVisuais({ fps: "120", crt: "invalido", cram: "limpo" }),
-    { fps: "60", crt: "desligado", cram: "limpo" },
+    normalizarPreferenciasVisuais({ fps: "120", crt: "invalido", cram: "limpo", proporcao: "99:9" }),
+    { fps: "60", crt: "desligado", cram: "limpo", proporcao: "auto" },
   );
 });
 
@@ -40,12 +40,14 @@ test("carregarPreferenciasVisuais e salvarPreferenciasVisuais fazem ida e volta 
     fps: "desbloqueado",
     crt: "ligado",
     cram: "limpo",
+    proporcao: "32:9",
   });
   assert.equal(ok, true);
   assert.deepEqual(carregarPreferenciasVisuais(storage), {
     fps: "desbloqueado",
     crt: "ligado",
     cram: "limpo",
+    proporcao: "32:9",
   });
 
   storage.setItem(CHAVE_STORAGE_VISUAL, "{corrompido");

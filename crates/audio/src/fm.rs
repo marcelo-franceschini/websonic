@@ -145,6 +145,8 @@ pub struct Fm {
     ch_lock_r: bool,
     dac_ligado: bool,
     dac_data: i16,
+    escala_canal: [u16; 6],
+    escala_padrao: bool,
 
     /// Variante de calibração mantida para compatibilidade com a suite de testes.
     pub variante: u32,
@@ -228,8 +230,23 @@ impl Fm {
             ch_lock_r: true,
             dac_ligado: false,
             dac_data: 0,
+            escala_canal: [256; 6],
+            escala_padrao: true,
             variante: 0,
         }
+    }
+
+    /// Define o ganho por canal FM em ponto fixo (0 = mudo, 256 = 100%).
+    pub fn definir_escalas_canais(&mut self, escalas: [u16; 6]) {
+        let mut padrao = true;
+        for (dst, src) in self.escala_canal.iter_mut().zip(escalas.iter()) {
+            let v = (*src).min(256);
+            *dst = v;
+            if v != 256 {
+                padrao = false;
+            }
+        }
+        self.escala_padrao = padrao;
     }
 
     /// Escreve numa porta do chip (0 e 2 = endereco, 1 e 3 = dado).
@@ -774,12 +791,30 @@ impl Fm {
     pub fn saida_misturada(&self) -> (i16, i16) {
         let mut sl = 0i16;
         let mut sr = 0i16;
+        if self.escala_padrao {
+            for c in 0..6 {
+                let val = if c == 5 && self.dac_ligado {
+                    self.dac_data
+                } else {
+                    i16::try_from(self.ch_out[c]).unwrap_or(0)
+                };
+                if self.pan_l[c] {
+                    sl = sl.wrapping_add(val);
+                }
+                if self.pan_r[c] {
+                    sr = sr.wrapping_add(val);
+                }
+            }
+            return (sl, sr);
+        }
         for c in 0..6 {
-            let val = if c == 5 && self.dac_ligado {
+            let bruto = if c == 5 && self.dac_ligado {
                 self.dac_data
             } else {
                 i16::try_from(self.ch_out[c]).unwrap_or(0)
             };
+            let esc = i32::from(self.escala_canal[c]);
+            let val = i16::try_from((i32::from(bruto).wrapping_mul(esc)) >> 8).unwrap_or(0);
             if self.pan_l[c] {
                 sl = sl.wrapping_add(val);
             }

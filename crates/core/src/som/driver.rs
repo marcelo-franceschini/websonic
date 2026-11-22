@@ -356,6 +356,9 @@ impl<'a> Driver<'a> {
                     break;
                 }
                 self.start_z80();
+                if self.m.em_modo_nominal() {
+                    self.m.avancar_z80_nominal(64);
+                }
                 continue;
             }
             break;

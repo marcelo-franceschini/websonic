@@ -247,11 +247,9 @@ fn andar_o_sonic(m: &mut Memoria) -> bool {
     x >= 0x1C00
 }
 
-/// Confere se o Start foi pressionado ou esta sendo segurado.
+/// `Tit_ChkStartOrDemo`: confere apenas a borda de subida do botão Start (`v_jpadpress1`).
 fn start_apertado(m: &mut Memoria) -> bool {
-    let press = rb(m, V_JPADPRESS1) & BTN_START;
-    let hold = rb(m, V_JPADHOLD1) & BTN_START;
-    (press | hold) != 0
+    (rb(m, V_JPADPRESS1) & BTN_START) != 0
 }
 
 /// `adda.w`: a palavra entra com sinal na soma do endereço.

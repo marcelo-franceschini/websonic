@@ -13,7 +13,6 @@ use sonic1_audio::{Chip, MCLK_POR_QUADRO_NTSC, Sintetizador};
 use sonic1_audio_saida::MisturadorSaida;
 use sonic1_core::abertura::{Abertura, Espera, EventoQuadro, Marca, MomentoSaida};
 use sonic1_core::memoria::{Memoria, PortaVdp, Saida, Tamanho};
-use sonic1_video::quadro::{ALTURA, LARGURA};
 use sonic1_video::renderizador::{Escrita, Renderizador};
 
 /// Quadros que cada trecho espera no tempo nominal, medidos no oráculo (bloco 1 e rodada 3 do
@@ -46,6 +45,9 @@ fn quadros_de_espera(m: Marca) -> u32 {
 
 /// Quadros que o tratador da voz leva até devolver o controle (134 no oráculo).
 const QUADROS_DA_VOZ: u32 = 134;
+
+/// Ciclos do Z80 por quadro NTSC (896 040 mclk / 15 = 59 736 ciclos).
+const CICLOS_Z80_POR_QUADRO_NTSC: u64 = 59_736;
 
 /// Uma escrita da VDP já acompanhada pela ponte, com o DMA da memória que ela dispara, se houver.
 #[derive(Clone, Debug)]
@@ -102,6 +104,16 @@ impl Ponte {
     /// Informa se a emulação dos pontos de CRAM analógicos está ativa.
     pub fn pontos_cram_ativos(&self) -> bool {
         self.rend.pontos_cram_ativos()
+    }
+
+    /// Define a largura horizontal do renderizador (320 clássico até 640 ultrawide).
+    pub fn definir_largura(&mut self, largura: usize) {
+        self.rend.definir_largura(largura);
+    }
+
+    /// Largura atual do renderizador em pontos.
+    pub fn largura(&self) -> usize {
+        self.rend.largura()
     }
 
     /// Lê as palavras de um DMA da memória para a VDP, do endereço dado pelos registradores.
@@ -287,11 +299,11 @@ impl Ponte {
         self.rend.fechar_quadro_em(coluna);
     }
 
-    /// Fecha o quadro e devolve a imagem em RGBA (320 por 224).
+    /// Fecha o quadro e devolve a imagem em RGBA (largura x 224).
     pub fn fechar_quadro(&mut self) -> Vec<u8> {
         const EXP_3_PARA_8: [u8; 8] = [0, 36, 73, 109, 146, 182, 219, 255];
         let pontos = self.rend.fechar_quadro().pontos();
-        let mut rgba = vec![0u8; LARGURA.saturating_mul(ALTURA).saturating_mul(4)];
+        let mut rgba = vec![0u8; pontos.len().saturating_mul(4)];
         for (px, &c) in rgba.as_chunks_mut::<4>().0.iter_mut().zip(pontos.iter()) {
             px[0] = EXP_3_PARA_8[usize::from(c & 7)];
             px[1] = EXP_3_PARA_8[usize::from((c >> 3) & 7)];
@@ -368,6 +380,9 @@ pub struct Console {
     eventos_quadro: Vec<EventoQuadro>,
     saidas_anteriores: Vec<Saida>,
     saidas_reserva: Vec<(Saida, Option<CapturadaInterna>, MomentoSaida, Option<u8>)>,
+    volume_musica: f32,
+    volume_fx: f32,
+    volumes_padrao: bool,
 }
 
 impl Console {
@@ -400,6 +415,9 @@ impl Console {
             eventos_quadro: Vec::with_capacity(4),
             saidas_anteriores: Vec::with_capacity(64),
             saidas_reserva: Vec::with_capacity(512),
+            volume_musica: 1.0,
+            volume_fx: 1.0,
+            volumes_padrao: true,
         }
     }
 
@@ -422,6 +440,12 @@ impl Console {
         match espera {
             Espera::Marca(m) if ja >= quadros_de_espera(m) => {
                 self.eventos_quadro.push(EventoQuadro::Marca(m));
+            }
+            Espera::Marca(Marca::LevelDelay) => {
+                // Durante a carga de fase (~25 quadros de lag), o VBlank continua disparando
+                // como quadro de lag (rotina 0 -> UpdateMusic), evitando congelar o audio.
+                self.eventos_quadro
+                    .push(EventoQuadro::Interrupcao { nivel: 6, pc: 0 });
             }
             // No tempo nominal não há lag: o laço chega à espera antes de cada VBlank (D7.25).
             Espera::VBlank => {
@@ -463,6 +487,94 @@ impl Console {
         self.ponte.pontos_cram_ativos()
     }
 
+    /// Define a largura horizontal do quadro renderizado (320 clássico até 640 ultrawide).
+    pub fn definir_largura_tela(&mut self, largura: usize) {
+        self.ponte.definir_largura(largura);
+    }
+
+    /// Largura atual do quadro renderizado em pontos.
+    pub fn largura_tela(&self) -> usize {
+        self.ponte.largura()
+    }
+
+    /// Define os volumes separados de música e efeitos sonoros (0.0 a 1.0).
+    pub fn definir_volumes(&mut self, musica: f32, fx: f32) {
+        let m = if musica.is_finite() {
+            musica.clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        let f = if fx.is_finite() {
+            fx.clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        self.volume_musica = m;
+        self.volume_fx = f;
+        self.volumes_padrao = (m - 1.0).abs() <= f32::EPSILON && (f - 1.0).abs() <= f32::EPSILON;
+        if self.volumes_padrao {
+            self.sint.fm_mut().definir_escalas_canais([256; 6]);
+            self.misturador.definir_ganhos_psg_canais([1.0; 4]);
+        }
+    }
+
+    /// Atualiza o ganho de cada canal FM/PSG conforme as trilhas de SFX ativas na RAM do SMPS.
+    fn atualizar_ganhos_canais(&mut self) {
+        if self.volumes_padrao {
+            return;
+        }
+        let ram = self.ab.mem.ram();
+        let mut fm_sfx = [false; 6];
+        let mut psg_sfx = [false; 4];
+
+        // Trilhas de SFX FM ($FFF220, $FFF250, $FFF280) e Special SFX FM4 ($FFF340).
+        for off in [0xF220usize, 0xF250, 0xF280, 0xF340] {
+            if ram[off] & 0x80 != 0 {
+                let vc = ram[off + 1];
+                let ch = usize::from(((vc >> 2) & 1) * 3 + (vc & 3));
+                if ch < 6 {
+                    fm_sfx[ch] = true;
+                }
+            }
+        }
+        // Na tela da SEGA (gamemode == 0), o canal DAC (FM6) toca a voz "SEGA!" (FX).
+        if ram[0xF600] == 0 {
+            fm_sfx[5] = true;
+        }
+
+        // Trilhas de SFX PSG ($FFF2B0, $FFF2E0, $FFF310) e Special SFX PSG3 ($FFF370).
+        for off in [0xF2B0usize, 0xF2E0, 0xF310, 0xF370] {
+            if ram[off] & 0x80 != 0 {
+                let vc = ram[off + 1];
+                let ch = usize::from((vc >> 5) & 3);
+                if ch < 4 {
+                    psg_sfx[ch] = true;
+                }
+                if ch == 2 && ram[off + 0x1F] != 0 {
+                    psg_sfx[3] = true;
+                }
+            }
+        }
+
+        let esc_mus = (self.volume_musica * 256.0).round().clamp(0.0, 256.0) as u16;
+        let esc_fx = (self.volume_fx * 256.0).round().clamp(0.0, 256.0) as u16;
+        let mut escalas_fm = [esc_mus; 6];
+        for (dst, &e_sfx) in escalas_fm.iter_mut().zip(fm_sfx.iter()) {
+            if e_sfx {
+                *dst = esc_fx;
+            }
+        }
+        self.sint.fm_mut().definir_escalas_canais(escalas_fm);
+
+        let mut ganhos_psg = [self.volume_musica; 4];
+        for (dst, &e_sfx) in ganhos_psg.iter_mut().zip(psg_sfx.iter()) {
+            if e_sfx {
+                *dst = self.volume_fx;
+            }
+        }
+        self.misturador.definir_ganhos_psg_canais(ganhos_psg);
+    }
+
     /// Configura diretamente o modo Special Stage para testes e inspeção.
     pub fn forcar_special_stage(&mut self) -> Result<(), sonic1_core::abertura::ErroAbertura> {
         self.ab.forcar_special_stage()
@@ -493,6 +605,17 @@ impl Console {
             .iter()
             .any(|e| matches!(e, EventoQuadro::Interrupcao { .. }));
         self.ab.executar_quadro(&self.eventos_quadro);
+        // Descarta saidas ja coletadas pelo observador e avanca o Z80 (voz SEGA + bateria DAC).
+        self.ab.mem.descartar_saidas();
+        self.ab.mem.avancar_z80_nominal(CICLOS_Z80_POR_QUADRO_NTSC);
+        self.ab.mem.drenar_saidas_em(&mut self.saidas_anteriores);
+        if !self.saidas_anteriores.is_empty() {
+            self.capturas.borrow_mut().recolher(
+                &mut self.ab.mem,
+                MomentoSaida::Principal,
+                &self.saidas_anteriores,
+            );
+        }
 
         self.quadro_num = self.quadro_num.wrapping_add(1);
         let mclk_inicio = self
@@ -503,19 +626,42 @@ impl Console {
 
         // Posicao nominal: o tratador de VBlank escreve na linha 224, o resto na linha 0.
         let linha = if teve_vblank { 224 } else { 0 };
-        self.ab.mem.descartar_saidas();
         std::mem::swap(
             &mut self.capturas.borrow_mut().saidas,
             &mut self.saidas_reserva,
         );
         self.escritas_no_quadro = self.saidas_reserva.len();
 
-        let n_saidas = self.saidas_reserva.len() as u64;
+        // Contagem independente por chip de som evita que milhares de escritas VDP
+        // (ex.: troca de mapa) colapsem o espacamento do YM2612 e descartem notas/instrumentos.
+        let mut n_ym = 0u64;
+        let mut n_ym_z80 = 0u64;
+        let mut n_psg = 0u64;
+        for (s, _, _, _) in &self.saidas_reserva {
+            match s {
+                Saida::Ym { .. } => n_ym = n_ym.saturating_add(1),
+                Saida::YmZ80 { .. } => n_ym_z80 = n_ym_z80.saturating_add(1),
+                Saida::Psg(_) => n_psg = n_psg.saturating_add(1),
+                _ => {}
+            }
+        }
+        // Quando o 68k e o Z80 escrevem no YM2612 no mesmo quadro, o 68k (VBlank) ocupa
+        // a janela inicial e o Z80 (DAC) ocupa o restante, impedindo colisao de registradores.
+        let janela_ym = if n_ym_z80 > 0 {
+            n_ym.saturating_mul(1050).min(MCLK_POR_QUADRO_NTSC / 3)
+        } else {
+            MCLK_POR_QUADRO_NTSC
+        };
+        let inicio_z80 = if n_ym > 0 { janela_ym } else { 0 };
+        let janela_z80 = MCLK_POR_QUADRO_NTSC.saturating_sub(inicio_z80);
+        let mut idx_ym = 0u64;
+        let mut idx_z80 = 0u64;
+        let mut idx_psg = 0u64;
+
         {
             let cap = self.capturas.borrow();
             let dma_palavras = &cap.palavras_dma;
-            for (i, (s, capturada, momento, linha_hblank)) in self.saidas_reserva.iter().enumerate()
-            {
+            for (s, capturada, momento, linha_hblank) in &self.saidas_reserva {
                 match s {
                     Saida::Vdp { .. } => {
                         if let Some(c) = capturada {
@@ -527,11 +673,27 @@ impl Console {
                                 .aplicar_capturada_interna(c, dma_palavras, linha_escrita, 0);
                         }
                     }
-                    Saida::Ym { porta, valor } | Saida::YmZ80 { porta, valor } => {
-                        let delta = MCLK_POR_QUADRO_NTSC
-                            .wrapping_mul(i as u64)
-                            .checked_div(n_saidas)
+                    Saida::Ym { porta, valor } => {
+                        let delta = janela_ym
+                            .wrapping_mul(idx_ym)
+                            .checked_div(n_ym)
                             .unwrap_or(0);
+                        idx_ym = idx_ym.saturating_add(1);
+                        self.sint.agendar(
+                            mclk_inicio.wrapping_add(delta),
+                            Chip::Fm,
+                            u32::from(*porta),
+                            *valor,
+                        );
+                    }
+                    Saida::YmZ80 { porta, valor } => {
+                        let delta = inicio_z80.wrapping_add(
+                            janela_z80
+                                .wrapping_mul(idx_z80)
+                                .checked_div(n_ym_z80)
+                                .unwrap_or(0),
+                        );
+                        idx_z80 = idx_z80.saturating_add(1);
                         self.sint.agendar(
                             mclk_inicio.wrapping_add(delta),
                             Chip::Fm,
@@ -541,9 +703,10 @@ impl Console {
                     }
                     Saida::Psg(valor) => {
                         let delta = MCLK_POR_QUADRO_NTSC
-                            .wrapping_mul(i as u64)
-                            .checked_div(n_saidas)
+                            .wrapping_mul(idx_psg)
+                            .checked_div(n_psg)
                             .unwrap_or(0);
+                        idx_psg = idx_psg.saturating_add(1);
                         self.sint
                             .agendar(mclk_inicio.wrapping_add(delta), Chip::Psg, 0, *valor);
                     }
@@ -553,7 +716,8 @@ impl Console {
         }
         self.saidas_reserva.clear();
 
-        // Sintetiza o áudio gerado neste quadro e alimenta o misturador
+        // Atualiza ganhos por canal (musica vs FX) e sintetiza o áudio do quadro.
+        self.atualizar_ganhos_canais();
         self.amostras_fm.clear();
         self.amostras_psg.clear();
         self.sint

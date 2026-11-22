@@ -425,6 +425,7 @@ impl Abertura {
     /// Console sem tempo gravado (navegador): os eventos rodam na hora do quadro em que chegam.
     pub fn nova_nominal(rom: Vec<u8>) -> Self {
         let mut a = Self::nova(rom);
+        a.mem.ativar_modo_nominal();
         a.atraso = false;
         a.parar_no_fim_abertura = false;
         a
@@ -934,7 +935,11 @@ impl Abertura {
                     self.modo = Modo::Fase(Fase::DemoFade);
                     return Ok(());
                 }
-                self.pedir_vblank(vblank::ROTINA_NIVEL);
+                if rw(&mut self.mem, ram::F_PAUSE) != 0 {
+                    self.pedir_vblank(vblank::ROTINA_PAUSED);
+                } else {
+                    self.pedir_vblank(vblank::ROTINA_NIVEL);
+                }
             }
             Fase::ContinueFadeOut(n) => {
                 let restam = self.vblank_fade_out(n)?;
@@ -1422,14 +1427,27 @@ impl Abertura {
                     self.modo = Modo::Sega(Sega::Voz);
                 }
             }
-            Sega::Voz => self.modo = Modo::Sega(Sega::VozEmCurso),
+            Sega::Voz => {
+                if self.mem.em_modo_nominal() {
+                    // No modo nominal, roda o VBlank da voz agora para gravar 0x88 em zDAC_Sample
+                    // e liberar o Z80 antes dos 134 quadros de reprodução do PCM "SEGA!".
+                    self.vblanks_tratados = self.vblanks_tratados.saturating_add(1);
+                    self.tratar_vblank()?;
+                }
+                self.modo = Modo::Sega(Sega::VozEmCurso);
+            }
             Sega::VozEmCurso => {
                 // O tratador da voz acabou (o driver só volta no fim da voz). Em seguida o
                 // VBlank pendente roda como quadro de lag: `v_vblank_routine` é zero, então
                 // só o driver de som roda.
-                self.vblanks_tratados = self.vblanks_tratados.saturating_add(2);
-                self.tratar_vblank()?;
-                self.tratar_vblank()?;
+                if self.mem.em_modo_nominal() {
+                    self.vblanks_tratados = self.vblanks_tratados.saturating_add(1);
+                    self.tratar_vblank()?;
+                } else {
+                    self.vblanks_tratados = self.vblanks_tratados.saturating_add(2);
+                    self.tratar_vblank()?;
+                    self.tratar_vblank()?;
+                }
                 self.modo = Modo::Sega(Sega::VozFim);
             }
             Sega::WaitEnd => {
