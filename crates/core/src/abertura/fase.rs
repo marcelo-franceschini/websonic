@@ -683,7 +683,7 @@ mod testes_laco {
         wb(&mut m, V_JPADPRESS1, BTN_START);
         pause_game(&mut m);
         assert_eq!(rw(&mut m, F_PAUSE), 1);
-        assert_eq!(rb(&mut m, V_SOUNDQUEUE0), 0x7E);
+        assert_eq!(rb(&mut m, F_PAUSEMUSIC), 1);
 
         // Sem start continua pausado
         wb(&mut m, V_JPADPRESS1, 0);
@@ -694,7 +694,7 @@ mod testes_laco {
         wb(&mut m, V_JPADPRESS1, BTN_START);
         pause_game(&mut m);
         assert_eq!(rw(&mut m, F_PAUSE), 0);
-        assert_eq!(rb(&mut m, V_SOUNDQUEUE0), 0x80);
+        assert_eq!(rb(&mut m, F_PAUSEMUSIC), 0x80);
     }
 
     #[test]
