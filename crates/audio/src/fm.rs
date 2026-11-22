@@ -447,8 +447,8 @@ impl Fm {
             if phase & 0x100 != 0 {
                 quarter ^= 0xFF;
             }
-            let mut level = u32::from(LOGSIN[(quarter & 0xFF) as usize])
-                .wrapping_add(u32::from(eg_out) << 2);
+            let mut level =
+                u32::from(LOGSIN[(quarter & 0xFF) as usize]).wrapping_add(u32::from(eg_out) << 2);
             if level > 0x1FFF {
                 level = 0x1FFF;
             }

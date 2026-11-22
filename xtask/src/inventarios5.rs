@@ -307,7 +307,11 @@ pub fn interrupcoes(args: &[String]) -> Result<(), String> {
     }
     gravar(
         &renderizar_interrupcoes(&acc, &lag, espera, &nomes),
-        unica(args, "--saida", "docs/inventarios/inventario-interrupcoes.md"),
+        unica(
+            args,
+            "--saida",
+            "docs/inventarios/inventario-interrupcoes.md",
+        ),
     )?;
     println!(
         "inventário de interrupções: {} rotinas/níveis, {} quadros, {} com lag",

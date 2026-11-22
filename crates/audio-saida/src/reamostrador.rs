@@ -253,8 +253,7 @@ impl Reamostrador {
         let coefs_tabela = &self.tabela.coefs;
         let buf_l = &self.buffer_in_l;
         while offset < limite {
-            let fase =
-                ((pos_frac * (FASES_POLIFASICO as f64)) as usize).min(FASES_POLIFASICO - 1);
+            let fase = ((pos_frac * (FASES_POLIFASICO as f64)) as usize).min(FASES_POLIFASICO - 1);
             let coefs = &coefs_tabela[fase];
 
             let slice_l: &[f32; TAPS_POLIFASICO] = buf_l[offset..offset + TAPS_POLIFASICO]
@@ -296,16 +295,18 @@ impl Reamostrador {
 /// Produto escalar FIR de 32 taps em 4 acumuladores independentes (quebra dependencia serial
 /// de ponto flutuante e habilita autovetorizacao f32x4 em SIMD128/SSE/NEON sem unsafe).
 #[inline]
-fn convolucao_mono_4vias(
-    amostras: &[f32; TAPS_POLIFASICO],
-    coefs: &[f32; TAPS_POLIFASICO],
-) -> f32 {
+fn convolucao_mono_4vias(amostras: &[f32; TAPS_POLIFASICO], coefs: &[f32; TAPS_POLIFASICO]) -> f32 {
     let mut a0 = 0.0f32;
     let mut a1 = 0.0f32;
     let mut a2 = 0.0f32;
     let mut a3 = 0.0f32;
 
-    for (s, c) in amostras.chunks_exact(4).zip(coefs.chunks_exact(4)) {
+    for (s, c) in amostras
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(coefs.as_chunks::<4>().0.iter())
+    {
         a0 += s[0] * c[0];
         a1 += s[1] * c[1];
         a2 += s[2] * c[2];
@@ -331,9 +332,11 @@ fn convolucao_estereo_4vias(
     let mut r3 = 0.0f32;
 
     for ((sl, sr), c) in amostras_l
-        .chunks_exact(4)
-        .zip(amostras_r.chunks_exact(4))
-        .zip(coefs.chunks_exact(4))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(amostras_r.as_chunks::<4>().0.iter())
+        .zip(coefs.as_chunks::<4>().0.iter())
     {
         let c0 = c[0];
         let c1 = c[1];

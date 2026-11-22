@@ -5,8 +5,7 @@ use std::path::Path;
 use std::process::Command;
 
 /// Flags de compilacao Wasm modernas (suportadas em todos os navegadores atuais).
-const WASM_RUSTFLAGS: &str =
-    "-C target-feature=+simd128,+bulk-memory,+nontrapping-fptoint";
+const WASM_RUSTFLAGS: &str = "-C target-feature=+simd128,+bulk-memory,+nontrapping-fptoint";
 
 /// Hash curto deterministico (FNV-1a 64-bit dobrado em 32 bits) para invalidar cache do navegador.
 fn hash_curto(bytes: &[u8]) -> String {
@@ -224,7 +223,10 @@ pub fn montar() -> Result<(), String> {
             ),
             ("\"./gpu.js\"", format!("\"./gpu.js?h={h_gpu}\"")),
             ("\"./saves.js\"", format!("\"./saves.js?h={h_saves}\"")),
-            ("\"./buffers.js\"", format!("\"./buffers.js?h={h_buffers}\"")),
+            (
+                "\"./buffers.js\"",
+                format!("\"./buffers.js?h={h_buffers}\""),
+            ),
         ],
     )?;
     let h_worker = hash_arquivo(&dist.join("sim-worker.js"))?;
@@ -247,7 +249,10 @@ pub fn montar() -> Result<(), String> {
                 format!("\"./entrada.js?h={h_entrada}\""),
             ),
             ("\"./hud.js\"", format!("\"./hud.js?h={h_hud}\"")),
-            ("\"./save-ui.js\"", format!("\"./save-ui.js?h={h_save_ui}\"")),
+            (
+                "\"./save-ui.js\"",
+                format!("\"./save-ui.js?h={h_save_ui}\""),
+            ),
             ("\"./pwa.js\"", format!("\"./pwa.js?h={h_pwa}\"")),
             (
                 "\"./sim-worker.js\"",
@@ -293,8 +298,14 @@ pub fn montar() -> Result<(), String> {
             ),
             ("\"./hud.js\"", format!("\"./hud.js?h={h_hud}\"")),
             ("\"./saves.js\"", format!("\"./saves.js?h={h_saves}\"")),
-            ("\"./save-ui.js\"", format!("\"./save-ui.js?h={h_save_ui}\"")),
-            ("\"./buffers.js\"", format!("\"./buffers.js?h={h_buffers}\"")),
+            (
+                "\"./save-ui.js\"",
+                format!("\"./save-ui.js?h={h_save_ui}\""),
+            ),
+            (
+                "\"./buffers.js\"",
+                format!("\"./buffers.js?h={h_buffers}\""),
+            ),
             ("\"./pwa.js\"", format!("\"./pwa.js?h={h_pwa}\"")),
             (
                 "\"./relogio.js\"",

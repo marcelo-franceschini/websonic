@@ -128,7 +128,7 @@ impl Ponte {
                 .and_then(|fim| mem.rom().get(ini..fim))
             {
                 let mut ultima = None;
-                for par in fatia.chunks_exact(2) {
+                for par in fatia.as_chunks::<2>().0 {
                     let w = u16::from_be_bytes([par[0], par[1]]);
                     buffer.push(w);
                     ultima = Some(w);
@@ -149,7 +149,7 @@ impl Ponte {
                     .and_then(|fim| mem.ram().get(ini_ram..fim))
             {
                 let mut ultima = None;
-                for par in fatia.chunks_exact(2) {
+                for par in fatia.as_chunks::<2>().0 {
                     let w = u16::from_be_bytes([par[0], par[1]]);
                     buffer.push(w);
                     ultima = Some(w);
@@ -292,7 +292,7 @@ impl Ponte {
         const EXP_3_PARA_8: [u8; 8] = [0, 36, 73, 109, 146, 182, 219, 255];
         let pontos = self.rend.fechar_quadro().pontos();
         let mut rgba = vec![0u8; LARGURA.saturating_mul(ALTURA).saturating_mul(4)];
-        for (px, &c) in rgba.chunks_exact_mut(4).zip(pontos.iter()) {
+        for (px, &c) in rgba.as_chunks_mut::<4>().0.iter_mut().zip(pontos.iter()) {
             px[0] = EXP_3_PARA_8[usize::from(c & 7)];
             px[1] = EXP_3_PARA_8[usize::from((c >> 3) & 7)];
             px[2] = EXP_3_PARA_8[usize::from((c >> 6) & 7)];
@@ -514,8 +514,7 @@ impl Console {
         {
             let cap = self.capturas.borrow();
             let dma_palavras = &cap.palavras_dma;
-            for (i, (s, capturada, momento, linha_hblank)) in
-                self.saidas_reserva.iter().enumerate()
+            for (i, (s, capturada, momento, linha_hblank)) in self.saidas_reserva.iter().enumerate()
             {
                 match s {
                     Saida::Vdp { .. } => {
@@ -524,20 +523,15 @@ impl Console {
                                 (MomentoSaida::HBlank, Some(l)) => u16::from(l).min(223),
                                 _ => linha,
                             };
-                            self.ponte.aplicar_capturada_interna(
-                                c,
-                                dma_palavras,
-                                linha_escrita,
-                                0,
-                            );
+                            self.ponte
+                                .aplicar_capturada_interna(c, dma_palavras, linha_escrita, 0);
                         }
                     }
                     Saida::Ym { porta, valor } | Saida::YmZ80 { porta, valor } => {
-                        let delta = if n_saidas > 0 {
-                            MCLK_POR_QUADRO_NTSC.wrapping_mul(i as u64) / n_saidas
-                        } else {
-                            0
-                        };
+                        let delta = MCLK_POR_QUADRO_NTSC
+                            .wrapping_mul(i as u64)
+                            .checked_div(n_saidas)
+                            .unwrap_or(0);
                         self.sint.agendar(
                             mclk_inicio.wrapping_add(delta),
                             Chip::Fm,
@@ -546,11 +540,10 @@ impl Console {
                         );
                     }
                     Saida::Psg(valor) => {
-                        let delta = if n_saidas > 0 {
-                            MCLK_POR_QUADRO_NTSC.wrapping_mul(i as u64) / n_saidas
-                        } else {
-                            0
-                        };
+                        let delta = MCLK_POR_QUADRO_NTSC
+                            .wrapping_mul(i as u64)
+                            .checked_div(n_saidas)
+                            .unwrap_or(0);
                         self.sint
                             .agendar(mclk_inicio.wrapping_add(delta), Chip::Psg, 0, *valor);
                     }
