@@ -107,8 +107,9 @@ impl MisturadorSaida {
 
         // Converte FM e PSG em passagem unica direto para os buffers internos dos reamostradores.
         let escala_fm = self.ganho_fm * (1.0 / 2048.0);
-        self.reamostrador_fm
-            .alimentar_estereo_iter(fm.map(|(fl, fr)| ((fl as f32) * escala_fm, (fr as f32) * escala_fm)));
+        self.reamostrador_fm.alimentar_estereo_iter(
+            fm.map(|(fl, fr)| ((fl as f32) * escala_fm, (fr as f32) * escala_fm)),
+        );
 
         let escala_psg = 0.25 * self.ganho_psg;
         self.reamostrador_psg.alimentar_mono_iter(psg.map(|canais| {
@@ -219,7 +220,9 @@ impl MisturadorSaida {
         let mut ultimo_r = 0.0f32;
 
         for (par_dst, (l, r)) in destino_intercalado
-            .chunks_exact_mut(2)
+            .as_chunks_mut::<2>()
+            .0
+            .iter_mut()
             .take(pares_disponiveis)
             .zip(self.buffer_audio.drain(..pares_disponiveis))
         {
@@ -236,7 +239,9 @@ impl MisturadorSaida {
             self.falhas = self.falhas.wrapping_add(1);
             let mut decay = 0.95f32;
             for par_dst in destino_intercalado
-                .chunks_exact_mut(2)
+                .as_chunks_mut::<2>()
+                .0
+                .iter_mut()
                 .skip(pares_disponiveis)
                 .take(pares_pedidos - pares_disponiveis)
             {
@@ -351,7 +356,12 @@ mod testes {
         fracionado.definir_ocupacao_externa(fracionado.tamanho_alvo_buffer);
 
         let fm_total: Vec<(i16, i16)> = (0..1800)
-            .map(|i| (((i * 19) % 1024) as i16 - 512, 512 - ((i * 13) % 1024) as i16))
+            .map(|i| {
+                (
+                    ((i * 19) % 1024) as i16 - 512,
+                    512 - ((i * 13) % 1024) as i16,
+                )
+            })
             .collect();
         let psg_total: Vec<u16> = (0..7500)
             .map(|i| if (i / 17) % 2 == 0 { 0x05AF } else { 0xFFFF })

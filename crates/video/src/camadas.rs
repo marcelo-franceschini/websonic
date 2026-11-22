@@ -361,8 +361,18 @@ pub(crate) fn desenhar_planos_compacto(
 
     for plano in [Plano::A, Plano::B] {
         let (base, h_scroll, v_tela, buf) = match plano {
-            Plano::A => (reg.nome_a(), rolagem_h.0, v_tela_cheia.0 & 0x03ff, &mut *buf_a),
-            Plano::B => (reg.nome_b(), rolagem_h.1, v_tela_cheia.1 & 0x03ff, &mut *buf_b),
+            Plano::A => (
+                reg.nome_a(),
+                rolagem_h.0,
+                v_tela_cheia.0 & 0x03ff,
+                &mut *buf_a,
+            ),
+            Plano::B => (
+                reg.nome_b(),
+                rolagem_h.1,
+                v_tela_cheia.1 & 0x03ff,
+                &mut *buf_b,
+            ),
         };
         let grosso = h_scroll & !15;
         let fino = i32::from(h_scroll & 15);
@@ -412,8 +422,13 @@ pub(crate) fn desenhar_planos_compacto(
                         continue;
                     }
                 }
-                let cores =
-                    linha_do_tile_8bpp(tiles_8bpp, nome.padrao, linha_rolada, nome.v_flip, nome.h_flip);
+                let cores = linha_do_tile_8bpp(
+                    tiles_8bpp,
+                    nome.padrao,
+                    linha_rolada,
+                    nome.v_flip,
+                    nome.h_flip,
+                );
                 for (k, &cor) in cores.iter().enumerate() {
                     let x = col_fb.wrapping_add(i32::try_from(k).unwrap_or(0));
                     if x < ini || x >= fim {
@@ -1112,10 +1127,8 @@ mod testes {
                         .saturating_mul(32)
                         .saturating_add(linha.saturating_mul(4))
                         .saturating_add(col);
-                    let hi = u8::try_from(
-                        tile.saturating_add(linha).saturating_add(col) & 7,
-                    )
-                    .unwrap_or(0);
+                    let hi = u8::try_from(tile.saturating_add(linha).saturating_add(col) & 7)
+                        .unwrap_or(0);
                     let lo = if col == 1 {
                         0
                     } else {
@@ -1173,15 +1186,8 @@ mod testes {
         let est_ref = desenhar_sprites(&vram, &sprites, 0, 0, false, &mut esperado);
 
         let mut compacto = [0u8; LARGURA];
-        let (est_cmp, desenhou) = desenhar_sprites_compacto(
-            &tiles_8bpp,
-            &sprites,
-            0,
-            0,
-            false,
-            true,
-            &mut compacto,
-        );
+        let (est_cmp, desenhou) =
+            desenhar_sprites_compacto(&tiles_8bpp, &sprites, 0, 0, false, true, &mut compacto);
 
         assert_eq!(est_cmp, est_ref);
         assert!(desenhou);

@@ -4,7 +4,9 @@
 //! `sonic`, `chefes`, `badniks`, `zonas`), preservando `crate::abertura` intacto para
 //! compatibilidade com os comparadores congelados.
 
-pub use crate::abertura::{Abertura, ErroAbertura, Espera, EventoQuadro, MARCAS, Marca, MomentoSaida};
+pub use crate::abertura::{
+    Abertura, ErroAbertura, Espera, EventoQuadro, MARCAS, Marca, MomentoSaida,
+};
 
 /// Infraestrutura central do jogo: RAM, VBlank, desenho, paleta, PLC e despacho de objetos.
 pub mod sistema {

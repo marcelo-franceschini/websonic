@@ -78,8 +78,10 @@ pub fn desintercalar_smd(corpo: &[u8]) -> Vec<u8> {
     let metade = BLOCO_SMD / 2;
     let mut saida = vec![0u8; corpo.len()];
     for (bloco_in, bloco_out) in corpo
-        .chunks_exact(BLOCO_SMD)
-        .zip(saida.chunks_exact_mut(BLOCO_SMD))
+        .as_chunks::<BLOCO_SMD>()
+        .0
+        .iter()
+        .zip(saida.as_chunks_mut::<BLOCO_SMD>().0.iter_mut())
     {
         let (impares, pares) = bloco_in.split_at(metade);
         for i in 0..metade {
