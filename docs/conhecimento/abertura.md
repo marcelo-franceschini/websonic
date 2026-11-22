@@ -1,6 +1,6 @@
 # Abertura (Etapa 7)
 
-Plano: `docs/plano-etapa-7.md`. Cada afirmação cita o comando que a sustenta. Nada aqui tem dado da ROM, só rótulos, quadros e `mclk`.
+Plano: `docs/arquivo/planos/plano-etapa-7.md`. Cada afirmação cita o comando que a sustenta. Nada aqui tem dado da ROM, só rótulos, quadros e `mclk`.
 
 ## Extensão experimental da fase (13/11/2026)
 
@@ -10,7 +10,7 @@ Plano: `docs/plano-etapa-7.md`. Cada afirmação cita o comando que a sustenta. 
 - Uma cópia descartável do comparador, alterada apenas em `/tmp` para continuar depois da marca e não cortar as escritas, rodou 1220 quadros. Comparou 1220 imagens iguais e 876 esperas iguais; o veredito foi `DIVERGE` por contagem final de PSG e YM, com aviso de leituras gravadas ausentes no fechamento. A causa ainda não foi provada. Esta experiência não substitui o comparador congelado.
 - `cargo test --locked --offline -p sonic1-core testes_mola` passou nos casos sintéticos de inicialização e lançamento vertical e horizontal. `testes_esquerda` passou para carregamento de objetos ao recuar a câmera e para recuperação do contador quando falta espaço. Eles não provam a fidelidade das rotinas contra o oráculo.
 
-## Medidas do bloco 1 (Marcelo, 08/11/2026, `sh scripts/etapa7-bloco1.sh`, caso `boot-demos`, sem botões)
+## Medidas do bloco 1 (Marcelo, 08/11/2026, `sh scripts/arquivo/etapa7-bloco1.sh`, caso `boot-demos`, sem botões)
 
 Perfil (mudanças de `v_gamemode`): quadro 1 modo 0 (boot e Sega); 329 modo 4 (título); 933 modo `136` (`$88`, demo); 1167 modo 8.
 
@@ -45,7 +45,7 @@ Marcas (a parada devolve o quadro fechado e o `mclk` do **fim desse quadro**, n�
 - `crates/core/src/abertura/`: `Abertura` recebe `EventoQuadro` por quadro (marca, leitura, ponto do Z80) e roda os trechos do laço principal na marca final de cada um. `boot.rs` reproduz `EntryPoint`, `GameProgram` e `CheckSumCheck`, `CheckSumOk`, `GameInit`, `VDPSetupGame`, `DACDriverLoad` e `JoypadInit`, lendo as tabelas da ROM nos endereços dos rótulos. A soma de verificação soma as palavras de `$200` até a última palavra completa antes do endereço final do cabeçalho, em 16 bits (leitura do texto do `.asm`, só da lógica).
 - Prova sintética (ROM escrita por nós, `crates/teste-som/tests/abertura.rs`, 6 testes; `abertura_layout.rs` confere os endereços contra `refs/rotulos.txt`): 24 registradores da VDP na ordem; programa de partida do Z80 byte a byte; 4 volumes do PSG; soma de verificação contra um modelo de uma linha em 60 ROMs; soma errada recusada; modo Sega depois das duas marcas; determinismo; ROM minúscula dá erro e não pânico. Resultado: todos passam.
 - Comparador: `diferencial-abertura/` (`abertura comparar ROM QUADROS rotulos`). Prova de fumaça com ROM sintética (`tests/fumaca.rs`): programa parado não diverge; marca vista no oráculo sem o mesmo efeito no jogo é acusada.
-- Ainda sem prova com a ROM real. Bloco 2 (`scripts/etapa7-bloco2.sh`, 61 quadros, do ligar até a entrada de `GM_Sega`).
+- Ainda sem prova com a ROM real. Bloco 2 (`scripts/arquivo/etapa7-bloco2.sh`, 61 quadros, do ligar até a entrada de `GM_Sega`).
 
 ## Bloco 2, rodada 2 (Marcelo, 08/11/2026, 62 quadros)
 
@@ -79,7 +79,7 @@ Marcas (a parada devolve o quadro fechado e o `mclk` do **fim desse quadro**, n�
 - O VBlank que fica pendente depois da voz roda como quadro de lag, só com o driver de som (`v_vblank_routine` já é zero). O núcleo roda os eventos um quadro depois dos pontos do Z80 (D7.12).
 - Veredito do relatório continua `DIVERGE` só porque as contagens finais incluem o título.
 
-## Experimento do nível 2 (7.8): primeira medida (Marcelo, 08/11/2026, `scripts/etapa7-bloco2.sh`, 330 quadros)
+## Experimento do nível 2 (7.8): primeira medida (Marcelo, 08/11/2026, `scripts/arquivo/etapa7-bloco2.sh`, 330 quadros)
 
 Modelo: `crates/core/src/nivel2/`, lê as constantes dos laços nos bytes da ROM e soma os ciclos da tabela do manual do 68000. Medida: ciclos do 68000 entre a primeira chegada do PC ao início e ao fim do laço no oráculo (mclk dividido por 7).
 
@@ -109,7 +109,7 @@ Medida em ciclos do 68000 (mclk do oráculo dividido por 7), do início ao fim d
 ## Navegador (7.7), primeira prova (Marcelo, 09/11/2026, bloco 5)
 
 - Caminho do navegador (console nominal, `crates/console`): determinismo PASSOU; hashes por quadro idênticos no nativo e em WebAssembly (wasmtime na imagem), 330 de 330 quadros; site monta; testes em wasm do núcleo, vídeo, console e som passam.
-- Defeito achado pelo diagnóstico (`scripts/etapa7-bloco5b.sh`): a imagem não mudava porque a CRAM ficava zerada (`cram_nao_zero=0`). Causa: a ponte lia os registradores de DMA no renderizador, que guarda as escritas atrás de um DMA ou preenchimento em andamento; o modo de preenchimento antigo escondia o DMA da paleta. Correção: a ponte guarda a própria cópia dos registradores 1 e 19 a 23. Depois da correção: `cram_nao_zero=64` a partir do quadro 100, VRAM com 3793 bytes não-zero e imagem ligada.
+- Defeito achado pelo diagnóstico (`scripts/arquivo/etapa7-bloco5b.sh`): a imagem não mudava porque a CRAM ficava zerada (`cram_nao_zero=0`). Causa: a ponte lia os registradores de DMA no renderizador, que guarda as escritas atrás de um DMA ou preenchimento em andamento; o modo de preenchimento antigo escondia o DMA da paleta. Correção: a ponte guarda a própria cópia dos registradores 1 e 19 a 23. Depois da correção: `cram_nao_zero=64` a partir do quadro 100, VRAM com 3793 bytes não-zero e imagem ligada.
 - Falta ver a imagem do quadro 150 (logo da Sega) e a prova de que a imagem distinta muda ao longo dos quadros (`imagens_distintas` maior que 1).
 
 ## Título, parte A (7.5, 09/11/2026): "SONIC TEAM PRESENTS"
@@ -148,7 +148,7 @@ Provas sem a ROM (`cargo test -q -p sonic1-core -p sonic1-teste-som`, `cargo cli
 
 Limites conhecidos desta fatia (ver `docs/backlog.md`): a fase é a GHZ1 sem lampião e sem créditos; o `DeformLayers` de outras zonas e o `DynamicLevelEvents` de GHZ2 e GHZ3 não existem; o fundo do título ainda não tem a parte de `DrawChunks`, que vem na fatia 2.
 
-## Prova da fatia 1 com a ROM (Marcelo, 09/11/2026, 600 quadros, `sh scripts/etapa7-bloco2.sh ROM 600`)
+## Prova da fatia 1 com a ROM (Marcelo, 09/11/2026, 600 quadros, `sh scripts/arquivo/etapa7-bloco2.sh ROM 600`)
 
 - A marca `PaletteFadeOut` da parte B chegou no quadro 455 (oráculo). O núcleo rodou a parte B nesse mesmo quadro.
 - Esperas de VBlank: 195 do núcleo contra 195 do oráculo no ponto de comparação, todas iguais, `diverge=0`, e `z80_diverge=0`. São as 173 anteriores mais as 22 do segundo desvanecimento.
@@ -159,7 +159,7 @@ Limites conhecidos desta fatia (ver `docs/backlog.md`): a fase é a GHZ1 sem lam
 
 ## Título, parte B, fatia 2 e parte C (7.5, 09/11/2026): fila de arte, fundo e objetos do título
 
-Escrito, sem prova com a ROM ainda. Rodada pendente: `sh scripts/etapa7-bloco2.sh ROM 530`, que deve mostrar a marca `Tit_MainLoop` no quadro 526.
+Escrito, sem prova com a ROM ainda. Rodada pendente: `sh scripts/arquivo/etapa7-bloco2.sh ROM 530`, que deve mostrar a marca `Tit_MainLoop` no quadro 526.
 
 - **O que roda.** Da chamada de `PaletteFadeOut` (segunda vez, quadro 455 na rodada anterior) até a marca `Tit_MainLoop`: a parte C (`parte_c` em `titulo.rs`), o desvanecimento de aparecimento com 22 VBlanks e a fila de arte, e o primeiro VBlank do título, que fica pendente. Os passos ficam em `mod.rs` (`PreparoC`, `FadeInC`, `PreparoTit`).
 - **Fila de arte (`plc.rs`).** `NewPLC`, `ClearPLC`, `RunPLC`, `ProcessPLC_9Tiles` e `ProcessPLC`. A descompressão Nemesis anda uma linha de 8 pixels por vez. O estado entre os quadros fica nas variáveis `v_plc_*` da RAM, do mesmo jeito que no original, e a comparação enxerga cada uma delas.
@@ -218,7 +218,7 @@ Achados:
 
 - VBlank de lag tratado como passo do aparecimento: **BLOQUEIA**, corrigido (D7.25). Provado na rodada seguinte.
 
-## Prova da fatia 2 com a ROM (Marcelo, 09/11/2026, 530 quadros, `sh scripts/etapa7-bloco2.sh ROM 530`)
+## Prova da fatia 2 com a ROM (Marcelo, 09/11/2026, 530 quadros, `sh scripts/arquivo/etapa7-bloco2.sh ROM 530`)
 
 - Rodada de 12,7 segundos, com pico de 435 MB.
 - Marcas: `PaletteFadeIn` nos quadros 371 e 504, `Tit_MainLoop` no 526 (e em cada quadro do laço do título), `WaitForVBlank` 221 vezes, do quadro 61 ao 529.
@@ -230,7 +230,7 @@ Achados:
 
 ## Título, fatia 3 (7.5, 09/11/2026): laço do título, `GotoDemo` e começo de `GM_Level`
 
-Escrita, sem prova com a ROM ainda. Rodada pendente: `sh scripts/etapa7-bloco2.sh ROM 970`. O temporizador de 376 quadros só anda no VBlank do título, então o `GotoDemo` deve chegar perto do quadro 903, o `GM_Level` perto do 933, e o desvanecimento do começo da fase acaba perto do 955.
+Escrita, sem prova com a ROM ainda. Rodada pendente: `sh scripts/arquivo/etapa7-bloco2.sh ROM 970`. O temporizador de 376 quadros só anda no VBlank do título, então o `GotoDemo` deve chegar perto do quadro 903, o `GM_Level` perto do 933, e o desvanecimento do começo da fase acaba perto do 955.
 
 - **O que roda.** `Tit_MainLoop` (estado `Laco`), um quadro por VBlank: objetos, `DeformLayers`, `BuildSprites`, `PalCycle_Title`, `RunPLC`, o objeto 0 que anda 2 pixels e puxa a câmera, a entrada do código e o temporizador. Depois o laço de 30 quadros do `GotoDemo` (estado `PreDemo`: `DeformLayers`, `PaletteCycle` da GHZ, `RunPLC` e o objeto 0), a preparação da demo e o começo de `GM_Level` até o fim do `PaletteFadeOut` (estado `Fase`).
 - **VBlank do título (`VBlank_Title`, rotina `$04`).** Transferências padrão, `LoadTilesAsYouMove_BGOnly`, `ProcessPLC_9Tiles` e o temporizador genérico.
@@ -247,7 +247,7 @@ Decisões desta fatia:
 
 Provas sem a ROM: `cargo test -q -p sonic1-core -p sonic1-teste-som -p sonic1-console` (95 testes, 13 novos em `crates/teste-som/tests/titulo_laco.rs`), `cargo clippy --workspace --all-targets -- -D warnings` e o clippy do comparador sem erro, `cargo fmt` aplicado.
 
-## Prova da fatia 3 com a ROM (Marcelo, 09/11/2026, 970 quadros, `sh scripts/etapa7-bloco2.sh ROM 970`)
+## Prova da fatia 3 com a ROM (Marcelo, 09/11/2026, 970 quadros, `sh scripts/arquivo/etapa7-bloco2.sh ROM 970`)
 
 - Rodada de 13,9 segundos, com pico de 430 MB.
 - Marcas: `Tit_MainLoop` 376 vezes, do quadro 526 ao 901 (o temporizador de 376 quadros, exato). `GotoDemo` no 902. `MainGameLoop`, `GM_Level` e `PaletteFadeOut` no 932.
@@ -259,7 +259,7 @@ Provas sem a ROM: `cargo test -q -p sonic1-core -p sonic1-teste-som -p sonic1-co
 
 ## Fase da demo, fatia 1 (09/11/2026): até o laço dos cartões de título
 
-Escrita, sem prova com a ROM ainda. Rodada pendente: `sh scripts/etapa7-bloco2.sh ROM 1170`. O laço dos cartões dura enquanto a fila de arte da GHZ descomprime, nove tiles por VBlank.
+Escrita, sem prova com a ROM ainda. Rodada pendente: `sh scripts/arquivo/etapa7-bloco2.sh ROM 1170`. O laço dos cartões dura enquanto a fila de arte da GHZ descomprime, nove tiles por VBlank.
 
 - **O que roda.** Do fim do `PaletteFadeOut` de `GM_Level` até a marca `Level_TtlCardLoop`, de uma vez (estado `PreparoCartoes`): a arte dos cartões (NemDec direto na VRAM), a primeira lista de PLC do cabeçalho da zona e a `plcid_Main2` (`AddPLC`, somadas ao fim da fila), o `Level_ClrRam`, o `ClearScreen`, os registradores da VDP da fase, 30 segundos de ar, a paleta do Sonic, a música da zona (`MusicList`, pela `QueueSound1`) e o objeto `TitleCard`. Depois o laço (estado `Cartoes`), um quadro por VBlank: objetos, sprites e `RunPLC`, até o "ACT" chegar ao alvo e a fila esvaziar. A fatia termina aí (`Fase(Parado)`).
 - **VBlank dos cartões (`VBlank_TitleCards`, rotina `$0C`).** As transferências com a linha do HBlank e a rolagem antes dos sprites, a arte do Sonic quando muda, as cópias `_dup` das posições e das flags, o `LoadTilesAsYouMove` completo (frente, `DrawBG_Top`, `DrawBG_Bottom` e `DrawBG_Block3`), o `AnimateLevelGfx` (anel gigante e GHZ), o `HUD_Update` e o `ProcessPLC_9Tiles`.
@@ -272,7 +272,7 @@ Decisões desta fatia:
 
 Provas sem a ROM: `cargo test -q -p sonic1-core -p sonic1-teste-som -p sonic1-console` (102 testes, 7 novos em `crates/teste-som/tests/fase_cartoes.rs`), o clippy dos dois workspaces sem erro e `cargo fmt` aplicado.
 
-## Prova da fase da demo, fatia 1 (Marcelo, 09/11/2026, 1170 quadros, `sh scripts/etapa7-bloco2.sh ROM 1170`)
+## Prova da fase da demo, fatia 1 (Marcelo, 09/11/2026, 1170 quadros, `sh scripts/arquivo/etapa7-bloco2.sh ROM 1170`)
 
 - Marcas: `Level_TtlCardLoop` 151 vezes, do quadro 962 ao 1114. O laço dos cartões acaba no 1114 e o núcleo para ali (`Fase(Parado)`), as 55 interrupções ignoradas vêm depois.
 - Esperas de VBlank: 796 do núcleo, todas iguais às do oráculo (`diverge=0`, `z80_diverge=0`). O oráculo tem 826: as 30 a mais são do resto da carga da fase.
@@ -282,7 +282,7 @@ Provas sem a ROM: `cargo test -q -p sonic1-core -p sonic1-teste-som -p sonic1-co
 
 ## Fase da demo, fatia 2 (09/11/2026): da saída dos cartões a `Level_StartGame`
 
-Escrita, sem prova com a ROM ainda. Rodada pendente: `sh scripts/etapa7-bloco2.sh ROM 1170`.
+Escrita, sem prova com a ROM ainda. Rodada pendente: `sh scripts/arquivo/etapa7-bloco2.sh ROM 1170`.
 
 - **O que roda.** Na marca `Level_Delay` (de uma vez): a arte do HUD (`Hud_Base`), a paleta do Sonic, `LevelSizeLoad`, `DeformLayers`, `LevelDataLoad` (blocos, chunks, layout, paleta, segunda lista de arte), `LoadTilesFromStart` (frente e fundo da GHZ), `ColIndexLoad`, os objetos do Sonic e do HUD, `ObjPosLoad`, `ExecuteObjects`, `BuildSprites`, as variáveis de partida nova, `OscillateNumInit` e o temporizador da demo. Depois quatro VBlanks `$08` (`VBlank_Levels`), os 22 VBlanks do `PalFadeIn_Alt` (linhas 2 a 4) e, na marca `Level_StartGame`, os cartões começam a sair e o bit 7 do modo se apaga.
 - **D7.32. O Sonic roda um quadro antes de `Level_StartGame`.** O plano dizia que ele ainda não rodou. Não é assim: o `ExecuteObjects` de `Level_LoadObj` executa `Sonic_Main` e cai em `Sonic_Control`, com os botões zerados. O núcleo porta só esse quadro (`fisica.rs`): `Sonic_MdNormal` no chão plano (pulo, rampa, movimento parado, rolar, limites, `SpeedToPos`, `Sonic_AnglePos` só no modo de piso, `Sonic_SlopeRepel`), `Sonic_Animate` com os roteiros comuns, `Sonic_Loops`, `Sonic_LoadGfx` e `ReactToItem` sem objetos. O resto devolve `NaoImplementado` e é da Etapa 9. A física completa (parede, teto, ar, andar) continua fora.
@@ -299,7 +299,7 @@ Escrita, sem prova com a ROM ainda. Rodada pendente: `sh scripts/etapa7-bloco2.s
 - Objetos criados na partida da GHZ1: Sonic, HUD, anéis (`25`) e monitores (`26`). Nenhum outro ID faltou.
 - **Zero divergência do quadro 0 a `Level_StartGame` (1166)** na RAM, nas esperas, no Z80 e na ordem das escritas. Falta a comparação da imagem, da VRAM, da CRAM e da VSRAM por quadro (7.7), o navegador e o fechamento.
 
-## Critério da Etapa 7 cumprido (Marcelo, 09/11/2026, 1170 quadros, `sh scripts/etapa7-bloco2.sh ROM 1170`): veredito IGUAL
+## Critério da Etapa 7 cumprido (Marcelo, 09/11/2026, 1170 quadros, `sh scripts/arquivo/etapa7-bloco2.sh ROM 1170`): veredito IGUAL
 
 - Do quadro 0 a `Level_StartGame` (quadro 1166): **zero divergência**.
 - RAM do 68000 e do Z80 nas esperas de VBlank (822 iguais) e nos fechamentos fora de trechos atômicos; posição do Z80 (`posicao_z80_divergencias=0`); ordem e conteúdo das escritas de vídeo, PSG, YM do 68000 e BUSREQ (contagens finais iguais); YM do Z80 igual no prefixo.

@@ -21,7 +21,7 @@ impl FiltroAnalogico {
     pub fn novo(taxa_amostragem: f32) -> Self {
         let frequencia_corte = 3386.0;
         let rc = 1.0 / (2.0 * PI * frequencia_corte);
-        let dt = 1.0 / taxa_amostragem;
+        let dt = 1.0 / taxa_amostragem.max(1.0);
         let alpha = dt / (rc + dt);
         Self {
             frequencia_corte,
@@ -37,6 +37,22 @@ impl FiltroAnalogico {
         self.estado_l += self.alpha * (l - self.estado_l);
         self.estado_r += self.alpha * (r - self.estado_r);
         (self.estado_l, self.estado_r)
+    }
+
+    /// Processa um bloco estereo intercalado `[L0, R0, L1, R1, ...]` in-place.
+    #[inline]
+    pub fn processar_bloco_intercalado(&mut self, intercalado: &mut [f32]) {
+        let alpha = self.alpha;
+        let mut el = self.estado_l;
+        let mut er = self.estado_r;
+        for par in intercalado.chunks_exact_mut(2) {
+            el += alpha * (par[0] - el);
+            er += alpha * (par[1] - er);
+            par[0] = el;
+            par[1] = er;
+        }
+        self.estado_l = el;
+        self.estado_r = er;
     }
 
     /// Reseta os estados internos do filtro.
@@ -61,5 +77,40 @@ impl FiltroAnalogico {
         }
 
         resp
+    }
+}
+
+#[cfg(test)]
+mod testes {
+    use super::*;
+
+    #[test]
+    fn bloco_intercalado_equivale_a_processar_amostra_a_amostra() {
+        let mut f1 = FiltroAnalogico::novo(48_000.0);
+        let mut f2 = FiltroAnalogico::novo(48_000.0);
+        let entrada: Vec<f32> = (0..64)
+            .map(|i| ((i as f32) * 0.23).sin() * 0.75)
+            .collect();
+        let mut bloco = entrada.clone();
+        f1.processar_bloco_intercalado(&mut bloco);
+        for (i, par) in entrada.chunks_exact(2).enumerate() {
+            let (l, r) = f2.processar(par[0], par[1]);
+            assert!((bloco[i * 2] - l).abs() < 1e-6);
+            assert!((bloco[i * 2 + 1] - r).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn dc_estabiliza_em_ganho_unitario_e_reset_zera_estado() {
+        let mut f = FiltroAnalogico::novo(48_000.0);
+        let mut ultimo = (0.0, 0.0);
+        for _ in 0..2000 {
+            ultimo = f.processar(1.0, -0.5);
+        }
+        assert!((ultimo.0 - 1.0).abs() < 1e-4);
+        assert!((ultimo.1 + 0.5).abs() < 1e-4);
+        f.reset();
+        let apos_reset = f.processar(0.0, 0.0);
+        assert_eq!(apos_reset, (0.0, 0.0));
     }
 }

@@ -1,11 +1,17 @@
-// Coordenador da pagina: WebGL2, AudioWorklet, Worker de simulacao, entrada e HUD.
-import { criarRenderizadorGPU } from "./gpu.js";
+// Orquestrador da pagina: conecta Worker de simulacao, video, audio, entrada, Save States, HUD e PWA.
+import { criarControladorAudio } from "./audio.js";
+import { criarApresentadorVideo } from "./video.js";
+import { carregarPreferenciasVisuais, salvarPreferenciasVisuais } from "./preferencias.js";
+import { criarModalControles } from "./modal-controles.js";
 import { criarControladorEntrada } from "./entrada.js";
 import { criarHud } from "./hud.js";
+import { criarControladorSavesUi } from "./save-ui.js";
+import { inicializarPwa } from "./pwa.js";
 
 const LIMITE_BYTES = 16 * 1024 * 1024;
 
-// Elementos principais do DOM
+// Referencias do DOM
+const deckInicial = document.getElementById("deck-inicial");
 const entradaArquivo = document.getElementById("arquivo");
 const dropzone = document.getElementById("dropzone");
 const caixaResultado = document.getElementById("resultado");
@@ -14,6 +20,9 @@ const elSha1 = document.getElementById("sha1");
 const elTamanho = document.getElementById("tamanho");
 const elAviso = document.getElementById("aviso");
 const elErroJogo = document.getElementById("erro-jogo");
+const btnNavDiag = document.getElementById("btn-nav-diag");
+const btnToggleDiag = document.getElementById("btn-toggle-diag");
+const painelDiag = document.getElementById("painel-diag");
 
 const containerTela = document.getElementById("container-tela");
 const camadaCrt = document.getElementById("camada-crt");
@@ -26,57 +35,36 @@ const btnTrocarRom = document.getElementById("btn-trocar-rom");
 const btnFullscreen = document.getElementById("btn-fullscreen");
 const btnToque = document.getElementById("btn-toque");
 const btnHud = document.getElementById("btn-hud");
-const btnMudo = document.getElementById("btn-mudo");
-const sliderVolume = document.getElementById("slider-volume");
 const painelTeclas = document.getElementById("painel-teclas");
 const controlesToque = document.getElementById("controles-toque");
-const btnAudio = document.getElementById("btn-audio");
-const btnBipe = document.getElementById("btn-bipe");
 
-// Estado da sessao e video
-let tela = document.getElementById("tela");
-let compositor = null;
-let ctx2d = null;
-const imagem2d = new ImageData(320, 224);
-let contextoPerdido = false;
-let fpsDesbloqueado = false;
+const btnPausar = document.getElementById("btn-pausar");
+const btnPasso = document.getElementById("btn-passo");
+const btnRapido = document.getElementById("btn-rapido");
 
+// Estado da sessao
+let worker = null;
+let wasmPronto = false;
 let sessaoAtiva = 0;
 let jogando = false;
+let pausadoUsuario = false;
+let fastForwardToggle = false;
+let fastForwardHold = false;
+let fpsDesbloqueado = false;
 let romBytesAtual = null;
+let romSha1Atual = "";
 let animacao = 0;
 let quadroAtual = null;
 let quadroPendente = null;
 let quadroPendenteNovo = false;
+let quadroGpuNovo = false;
 let quadroNumAtual = 0;
 let ultimaMascaraJogo = -1;
 let ultimaMascaraTitulo = -1;
-
-// Estado do audio
-let audioCtx = null;
-let ganhoMasterNode = null;
-let workletNode = null;
-let volumeAtual = 1.0;
-let mudoAtivo = false;
-let ouvintesDesbloqueioRegistrados = false;
-
-// Tabela de conversao de 9 bits para RGBA (Uint32, little-endian) para fallback 2D
-const TABELA_COR_9BITS = new Uint32Array(512);
-for (let c = 0; c < 512; c++) {
-  const r = c & 7;
-  const g = (c >> 3) & 7;
-  const b = (c >> 6) & 7;
-  const r8 = (r << 5) | (r << 2) | (r >> 1);
-  const g8 = (g << 5) | (g << 2) | (g >> 1);
-  const b8 = (b << 5) | (b << 2) | (b >> 1);
-  TABELA_COR_9BITS[c] = 0xFF000000 | (b8 << 16) | (g8 << 8) | r8;
-}
-
-// Worker de simulacao e validacao
-let worker = null;
-let wasmPronto = false;
-let proxIdIdent = 1;
+let proxIdReq = 1;
+let idLeituraRom = 0;
 const promessasIdent = new Map();
+const promessasSave = new Map();
 
 function mostrarErroJogo(texto) {
   if (!elErroJogo) return;
@@ -99,7 +87,15 @@ function mostrarResultadoRom(valida, veredito, sha1, tamanho) {
   if (elTamanho) elTamanho.textContent = String(tamanho);
 }
 
-// HUD e painel de diagnostico
+// 1. PWA
+inicializarPwa({
+  btnInstalar: document.getElementById("btn-instalar"),
+  badgeOffline: document.getElementById("badge-offline"),
+  modalIos: document.getElementById("modal-ios-pwa"),
+  btnFecharModalIos: document.getElementById("btn-fechar-ios-pwa"),
+});
+
+// 2. HUD e painel de diagnostico
 const hud = criarHud({
   hudPerformance: document.getElementById("hud-performance"),
   btnHud,
@@ -108,8 +104,8 @@ const hud = criarHud({
   elHudFrameTime: document.getElementById("hud-frame-time"),
   elHudWasmTime: document.getElementById("hud-wasm-time"),
   canvasHudGrafico: document.getElementById("hud-grafico"),
-  btnToggleDiag: document.getElementById("btn-toggle-diag"),
-  painelDiag: document.getElementById("painel-diag"),
+  btnToggleDiag,
+  painelDiag,
   diagSeta: document.getElementById("diag-seta"),
   elDiagEstado: document.getElementById("diag-estado"),
   elDiagTaxa: document.getElementById("diag-taxa"),
@@ -124,26 +120,110 @@ const hud = criarHud({
   elDiagQuadrosSom: document.getElementById("diag-quadros-som"),
   elDiagWorklet: document.getElementById("diag-worklet"),
   badgeAudio: document.getElementById("badge-audio"),
-  btnAudio,
+  btnAudio: document.getElementById("btn-audio"),
   onToggleDiag(aberto) {
     if (worker) worker.postMessage({ tipo: "diag-visivel", visivel: aberto });
   },
 });
 
-// Controlador de entrada (teclado, gamepad, toque)
+if (btnNavDiag && btnToggleDiag && painelDiag) {
+  btnNavDiag.addEventListener("click", () => {
+    if (painelDiag.hidden) {
+      btnToggleDiag.click();
+    }
+    const reduzido = Boolean(
+      window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+    );
+    btnToggleDiag.scrollIntoView({ behavior: reduzido ? "auto" : "smooth", block: "nearest" });
+    btnToggleDiag.focus({ preventScroll: true });
+  });
+}
+
+// 3. Video (OffscreenCanvas zero-copy + fallback WebGL2/2D + tela cheia)
+let controladorAudio = null;
+
+const apresentadorVideo = criarApresentadorVideo({
+  canvasInicial: document.getElementById("tela"),
+  containerTela,
+  badgeGpu: document.getElementById("badge-gpu"),
+  onErro: mostrarErroJogo,
+  onLimparErro: limparErroJogo,
+  onInteracao: () => controladorAudio && controladorAudio.desbloquear(),
+  onContextoPerdido() {
+    cancelAnimationFrame(animacao);
+    animacao = 0;
+    if (worker) worker.postMessage({ tipo: "pausar" });
+    if (controladorAudio) controladorAudio.suspenderSeAtivo();
+  },
+  onContextoRestaurado() {
+    if (jogando && !document.hidden) {
+      if (worker) worker.postMessage({ tipo: "retomar" });
+      if (!pausadoUsuario && controladorAudio) controladorAudio.desbloquear();
+      if (!animacao) animacao = requestAnimationFrame(lacoApresentacao);
+    }
+  },
+});
+
+// 4. Audio (AudioContext + AudioWorklet + volume + bipe de teste)
+controladorAudio = criarControladorAudio({
+  btnMudo: document.getElementById("btn-mudo"),
+  sliderVolume: document.getElementById("slider-volume"),
+  btnAudio: document.getElementById("btn-audio"),
+  btnBipe: document.getElementById("btn-bipe"),
+  hud,
+  obterTela: () => apresentadorVideo.obterTela(),
+  obterWorker: () => worker,
+  estaPausadoUsuario: () => pausadoUsuario,
+  podeRetomarAudio: () => !document.hidden && !apresentadorVideo.estaPerdido() && !pausadoUsuario,
+  onErro: mostrarErroJogo,
+});
+
+// 5. Entrada e Modal de Remapeamento
 const controladorEntrada = criarControladorEntrada({
-  obterTela: () => tela,
+  obterTela: () => apresentadorVideo.obterTela(),
   badgeGamepad: document.getElementById("badge-gamepad"),
   controlesToque,
   btnToque,
   onAcaoEspecial(acao) {
-    if (acao === "fullscreen") alternarTelaCheia();
+    if (acao === "fullscreen") apresentadorVideo.alternarTelaCheia();
     else if (acao === "hud") hud.alternarHud();
+    else if (acao === "salvar-rapido") controladorSavesUi.salvarNoSlotAtual();
+    else if (acao === "carregar-rapido") controladorSavesUi.carregarDoSlotAtual();
+    else if (acao === "fast-forward-inicio") {
+      fastForwardHold = true;
+      atualizarVelocidadeWorker();
+    } else if (acao === "fast-forward-fim" && fastForwardHold) {
+      fastForwardHold = false;
+      atualizarVelocidadeWorker();
+    }
   },
-  onInteracao: desbloquearAudio,
+  onInteracao: () => controladorAudio.desbloquear(),
   estaJogando: () => jogando,
   onMudancaEntrada: sincronizarEntradaWorker,
 });
+
+criarModalControles({
+  modal: document.getElementById("modal-controles"),
+  listaRemap: document.getElementById("lista-remap"),
+  botoesAbrir: [
+    document.getElementById("btn-controles-topo"),
+    document.getElementById("btn-controles-spec"),
+    document.getElementById("btn-controles"),
+  ],
+  btnFechar: document.getElementById("btn-fechar-controles"),
+  btnConcluir: document.getElementById("btn-concluir-controles"),
+  btnRestaurar: document.getElementById("btn-restaurar-controles"),
+  controladorEntrada,
+  onFechar() {
+    const tela = apresentadorVideo.obterTela();
+    if (jogando && tela) tela.focus();
+  },
+});
+
+function focarTela() {
+  const tela = apresentadorVideo.obterTela();
+  if (tela) tela.focus();
+}
 
 function sincronizarEntradaWorker() {
   if (!worker || !jogando) return;
@@ -164,21 +244,161 @@ function devolverBufferVideo(arr) {
   worker.postMessage({ tipo: "devolver-video", buffer: arr.buffer }, [arr.buffer]);
 }
 
+// 6. Controles de reproducao (Pausa, +1 Quadro, Fast-Forward 2x)
+function atualizarUiPausa() {
+  if (btnPausar) {
+    const rotulo = btnPausar.querySelector(".btn-label");
+    if (rotulo) {
+      rotulo.textContent = pausadoUsuario ? "Retomar" : "Pausar";
+    } else {
+      btnPausar.textContent = pausadoUsuario ? "Retomar" : "Pausar";
+    }
+    btnPausar.classList.toggle("pausado", pausadoUsuario);
+    btnPausar.classList.toggle("btn-azul", pausadoUsuario);
+    btnPausar.classList.toggle("btn-cinza", !pausadoUsuario);
+    btnPausar.setAttribute("aria-pressed", String(pausadoUsuario));
+  }
+  if (btnPasso) {
+    btnPasso.disabled = !jogando || !pausadoUsuario;
+  }
+}
+
+function definirPausaUsuario(novoEstado) {
+  pausadoUsuario = Boolean(novoEstado);
+  atualizarUiPausa();
+  if (worker && jogando) {
+    worker.postMessage({ tipo: "pausar-usuario", pausado: pausadoUsuario });
+  }
+  if (pausadoUsuario) {
+    controladorAudio.suspenderSeAtivo();
+  } else if (jogando && !document.hidden && !apresentadorVideo.estaPerdido()) {
+    controladorAudio.desbloquear();
+  }
+}
+
+function atualizarVelocidadeWorker() {
+  const mult = (fastForwardToggle || fastForwardHold) ? 2 : 1;
+  if (btnRapido) {
+    btnRapido.classList.toggle("btn-azul", mult === 2);
+    btnRapido.classList.toggle("btn-cinza", mult !== 2);
+    btnRapido.setAttribute("aria-pressed", String(mult === 2));
+  }
+  if (worker && jogando) {
+    worker.postMessage({ tipo: "velocidade", multiplicador: mult });
+  }
+}
+
+if (btnPausar) {
+  btnPausar.addEventListener("click", () => {
+    if (!jogando) return;
+    definirPausaUsuario(!pausadoUsuario);
+    focarTela();
+  });
+}
+
+if (btnPasso) {
+  btnPasso.addEventListener("click", () => {
+    if (!jogando || !worker) return;
+    if (!pausadoUsuario) definirPausaUsuario(true);
+    worker.postMessage({ tipo: "passo-unico" });
+    focarTela();
+  });
+}
+
+if (btnRapido) {
+  btnRapido.addEventListener("click", () => {
+    fastForwardToggle = !fastForwardToggle;
+    atualizarVelocidadeWorker();
+    focarTela();
+  });
+}
+
+// 7. Save States (IndexedDB + .s1sav)
+function solicitarSaveWorker() {
+  return new Promise((resolve, reject) => {
+    if (!worker || !jogando) {
+      reject(new Error("Nenhuma partida em andamento."));
+      return;
+    }
+    const id = proxIdReq++;
+    promessasSave.set(id, { resolve, reject });
+    worker.postMessage({ tipo: "exportar-save", id });
+  });
+}
+
+const controladorSavesUi = criarControladorSavesUi({
+  seletorSlot: document.getElementById("seletor-slot"),
+  btnSalvar: document.getElementById("btn-salvar"),
+  btnCarregar: document.getElementById("btn-carregar"),
+  btnExportar: document.getElementById("btn-exportar-save"),
+  btnImportar: document.getElementById("btn-importar-save"),
+  inputImportar: document.getElementById("input-importar-save"),
+  elStatus: document.getElementById("status-save"),
+  estaJogando: () => jogando,
+  obterRomAtual: () => ({ bytes: romBytesAtual, sha1: romSha1Atual }),
+  solicitarSaveWorker,
+  onCarregarSave: iniciarSessaoComSave,
+  onErro: mostrarErroJogo,
+  onFocarTela: focarTela,
+});
+
+// 8. Worker de simulacao Wasm
+function ativarInterfaceJogo() {
+  jogando = true;
+  limparErroJogo();
+  if (deckInicial) deckInicial.hidden = true;
+  if (dropzone) dropzone.hidden = true;
+  if (containerTela) containerTela.hidden = false;
+  const tela = apresentadorVideo.obterTela();
+  if (tela) tela.hidden = false;
+  if (barraControles) barraControles.hidden = false;
+  if (painelTeclas) painelTeclas.hidden = false;
+  if (controlesToque) controlesToque.hidden = !controladorEntrada.toqueEstaAtivo();
+  if (elAviso) elAviso.hidden = false;
+  atualizarUiPausa();
+  atualizarVelocidadeWorker();
+  controladorSavesUi.atualizarRotulosSlots();
+  apresentadorVideo.ajustarEscala();
+  focarTela();
+  hud.resetar();
+  ultimaMascaraJogo = -1;
+  ultimaMascaraTitulo = -1;
+  sincronizarEntradaWorker();
+  if (!document.hidden && !apresentadorVideo.estaPerdido() && !animacao) {
+    animacao = requestAnimationFrame(lacoApresentacao);
+  }
+}
+
 function inicializarWorker() {
   if (typeof Worker === "undefined") {
     mostrarErroJogo("Este navegador não suporta Web Workers.");
+    apresentadorVideo.inicializarThreadPrincipal(false);
     return;
   }
   try {
     worker = new Worker(new URL("./sim-worker.js", import.meta.url), { type: "module" });
   } catch (e) {
     mostrarErroJogo("Falha ao criar Worker de simulação: " + e.message);
+    apresentadorVideo.inicializarThreadPrincipal(false);
     return;
   }
 
   worker.onerror = () => {
     wasmPronto = false;
     if (entradaArquivo) entradaArquivo.disabled = true;
+    for (const resolver of promessasIdent.values()) {
+      resolver({
+        valida: false,
+        motivo: "Worker de simulação indisponível",
+        sha1: "(erro)",
+        tamanho: 0,
+      });
+    }
+    promessasIdent.clear();
+    for (const p of promessasSave.values()) {
+      p.reject(new Error("Worker de simulação indisponível."));
+    }
+    promessasSave.clear();
     mostrarErroJogo("Falha ao carregar o módulo WebAssembly. Rode 'cargo xtask site' para gerar site/pkg.");
   };
 
@@ -187,19 +407,29 @@ function inicializarWorker() {
     if (!msg || !msg.tipo) return;
 
     switch (msg.tipo) {
-      case "pronto": {
+      case "pronto":
         wasmPronto = true;
         if (entradaArquivo) entradaArquivo.disabled = false;
         limparErroJogo();
         break;
-      }
 
-      case "erro-wasm": {
+      case "canvas-anexado":
+        apresentadorVideo.confirmarAnexoWorker(msg.ok);
+        break;
+
+      case "gpu-contexto-perdido":
+        apresentadorVideo.notificarPerdaNoWorker();
+        break;
+
+      case "gpu-contexto-restaurado":
+        apresentadorVideo.notificarRestauracaoNoWorker(msg.ok);
+        break;
+
+      case "erro-wasm":
         wasmPronto = false;
         if (entradaArquivo) entradaArquivo.disabled = true;
         mostrarErroJogo("Falha ao carregar WebAssembly: " + msg.mensagem);
         break;
-      }
 
       case "identificado": {
         const resolver = promessasIdent.get(msg.id);
@@ -210,36 +440,47 @@ function inicializarWorker() {
         break;
       }
 
-      case "iniciado": {
-        if (msg.sessao !== sessaoAtiva) return;
-        jogando = true;
-        limparErroJogo();
-        if (dropzone) dropzone.hidden = true;
-        if (containerTela) containerTela.hidden = false;
-        if (tela) tela.hidden = false;
-        if (barraControles) barraControles.hidden = false;
-        if (painelTeclas) painelTeclas.hidden = false;
-        if (controlesToque) controlesToque.hidden = !controladorEntrada.toqueEstaAtivo();
-        if (elAviso) elAviso.hidden = false;
-        ajustarEscala();
-        if (tela) tela.focus();
-        hud.resetar();
-        ultimaMascaraJogo = -1;
-        ultimaMascaraTitulo = -1;
-        sincronizarEntradaWorker();
-        if (!document.hidden && !contextoPerdido && !animacao) {
-          animacao = requestAnimationFrame(lacoApresentacao);
+      case "save-pronto": {
+        const p = promessasSave.get(msg.id);
+        if (p) {
+          promessasSave.delete(msg.id);
+          if (msg.erro) p.reject(new Error(msg.erro));
+          else p.resolve(msg);
         }
         break;
       }
 
-      case "erro-iniciar": {
+      case "save-carregado":
+        if (msg.sessao !== sessaoAtiva) return;
+        ativarInterfaceJogo();
+        controladorSavesUi.mostrarStatus(`Estado restaurado (q. ${msg.quadro})`);
+        break;
+
+      case "erro-save":
+        if (msg.sessao !== sessaoAtiva) return;
+        mostrarErroJogo("Falha ao carregar save state: " + msg.mensagem);
+        break;
+
+      case "iniciado":
+        if (msg.sessao !== sessaoAtiva) return;
+        ativarInterfaceJogo();
+        break;
+
+      case "erro-iniciar":
         if (msg.sessao !== sessaoAtiva) return;
         jogando = false;
+        if (deckInicial) deckInicial.hidden = false;
         if (dropzone) dropzone.hidden = false;
         mostrarErroJogo("Falha ao iniciar a simulação: " + msg.mensagem);
         break;
-      }
+
+      case "quadro-gpu":
+        if (msg.sessao !== sessaoAtiva || !jogando) return;
+        quadroNumAtual = msg.quadroNum;
+        quadroGpuNovo = true;
+        hud.registrarTempoWasm(msg.tempoWasm);
+        if (msg.diag) hud.atualizarDiag(msg.diag, controladorAudio.obterContexto());
+        break;
 
       case "quadro": {
         const novo = new Uint16Array(msg.buffer);
@@ -247,27 +488,20 @@ function inicializarWorker() {
           devolverBufferVideo(novo);
           return;
         }
-        if (quadroPendente) {
-          devolverBufferVideo(quadroPendente);
-        }
+        if (quadroPendente) devolverBufferVideo(quadroPendente);
         quadroPendente = novo;
         quadroPendenteNovo = true;
         quadroNumAtual = msg.quadroNum;
         hud.registrarTempoWasm(msg.tempoWasm);
-        if (msg.diag) {
-          hud.atualizarDiag(msg.diag, audioCtx);
-        }
+        if (msg.diag) hud.atualizarDiag(msg.diag, controladorAudio.obterContexto());
         break;
       }
 
-      case "worklet-status": {
-        if (msg.sessao === sessaoAtiva) {
-          hud.atualizarWorklet(msg.status);
-        }
+      case "worklet-status":
+        if (msg.sessao === sessaoAtiva) hud.atualizarWorklet(msg.status);
         break;
-      }
 
-      case "erro-nucleo": {
+      case "erro-nucleo":
         if (msg.sessao !== sessaoAtiva) return;
         jogando = false;
         cancelAnimationFrame(animacao);
@@ -277,297 +511,81 @@ function inicializarWorker() {
           quadroAtual = quadroPendente;
           quadroPendente = null;
           quadroPendenteNovo = false;
-          apresentar(quadroAtual);
+          apresentadorVideo.apresentar(quadroAtual);
         }
         mostrarErroJogo("O núcleo parou: " + msg.mensagem);
         break;
-      }
     }
   };
 
   worker.postMessage({ tipo: "init" });
+  apresentadorVideo.tentarAnexarNoWorker(worker);
 }
 
 inicializarWorker();
 
-// Audio
-function atualizarGanhoAudio() {
-  if (!ganhoMasterNode || !audioCtx) return;
-  const valor = mudoAtivo ? 0.0 : volumeAtual;
-  ganhoMasterNode.gain.setValueAtTime(valor, audioCtx.currentTime);
+// 9. Controles da barra superior, preferencias visuais persistentes e laco de apresentacao
+const storageVisual = typeof window !== "undefined" ? window.localStorage : null;
+const prefsVisuais = carregarPreferenciasVisuais(storageVisual);
+
+function aplicarPreferenciasVisuais() {
+  fpsDesbloqueado = prefsVisuais.fps === "desbloqueado";
+  if (seletorFps) seletorFps.value = prefsVisuais.fps;
+  if (seletorCrt) seletorCrt.value = prefsVisuais.crt;
+  if (camadaCrt) camadaCrt.classList.toggle("ativo", prefsVisuais.crt === "ligado");
+  if (seletorCram) seletorCram.value = prefsVisuais.cram;
 }
 
-if (sliderVolume) {
-  sliderVolume.addEventListener("input", (e) => {
-    volumeAtual = parseFloat(e.target.value);
-    if (mudoAtivo && volumeAtual > 0) {
-      mudoAtivo = false;
-      if (btnMudo) btnMudo.textContent = "🔊";
-    }
-    atualizarGanhoAudio();
-  });
-}
+aplicarPreferenciasVisuais();
 
-if (btnMudo) {
-  btnMudo.addEventListener("click", () => {
-    mudoAtivo = !mudoAtivo;
-    btnMudo.textContent = mudoAtivo ? "🔇" : "🔊";
-    atualizarGanhoAudio();
-    if (tela) tela.focus();
-  });
-}
-
-function criarAudioContext() {
-  if (!audioCtx) {
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    audioCtx = new AudioContextClass();
-    audioCtx.addEventListener("statechange", () => {
-      const ativo = audioCtx.state === "running";
-      if (worker) {
-        worker.postMessage({ tipo: "audio-ativo", ativo, resetar: ativo });
-      }
-      hud.atualizarEstadoAudio(audioCtx);
-    });
-  }
-  return audioCtx;
-}
-
-function desbloquearAudio() {
-  if (audioCtx && audioCtx.state === "suspended") {
-    audioCtx.resume().then(() => hud.atualizarEstadoAudio(audioCtx)).catch(() => {});
-  }
-}
-
-if (btnAudio) {
-  btnAudio.addEventListener("click", () => {
-    desbloquearAudio();
-    if (tela) tela.focus();
-  });
-}
-
-if (btnBipe) {
-  btnBipe.addEventListener("click", () => {
-    try {
-      const ctx = criarAudioContext();
-      ctx.resume().then(() => {
-        hud.atualizarEstadoAudio(audioCtx);
-        const osc = ctx.createOscillator();
-        const ganho = ctx.createGain();
-        osc.type = "sine";
-        osc.frequency.setValueAtTime(440, ctx.currentTime);
-        ganho.gain.setValueAtTime(0.25, ctx.currentTime);
-        ganho.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
-        osc.connect(ganho);
-        ganho.connect(ctx.destination);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.35);
-      }).catch((e) => {
-        mostrarErroJogo("Erro ao retomar áudio para bipe de teste: " + e.message);
-      });
-    } catch (e) {
-      mostrarErroJogo("Erro ao tocar bipe de teste: " + e.message);
-    }
-  });
-}
-
-async function iniciarAudio() {
-  if (audioCtx && workletNode) return;
-  try {
-    criarAudioContext();
-
-    if (!ganhoMasterNode) {
-      ganhoMasterNode = audioCtx.createGain();
-      ganhoMasterNode.gain.setValueAtTime(mudoAtivo ? 0.0 : volumeAtual, audioCtx.currentTime);
-      ganhoMasterNode.connect(audioCtx.destination);
-    }
-
-    try {
-      await audioCtx.audioWorklet.addModule("audio-worklet.js");
-      try {
-        workletNode = new AudioWorkletNode(audioCtx, "sonic-audio-processor", {
-          outputChannelCount: [2],
-        });
-      } catch {
-        workletNode = new AudioWorkletNode(audioCtx, "sonic-audio-processor");
-      }
-      workletNode.onprocessorerror = (e) => {
-        hud.definirErroWorklet("Erro no AudioWorkletProcessor!");
-        console.warn("AudioWorklet erro:", e);
-      };
-      workletNode.connect(ganhoMasterNode);
-      hud.definirPipeline("AudioWorklet (Worker direto)", "diag-ativo");
-    } catch (eWorklet) {
-      console.warn("AudioWorklet indisponivel:", eWorklet);
-      hud.definirPipeline("AudioWorklet indisponivel", "diag-aviso");
-      hud.definirErroWorklet("AudioWorklet indisponivel");
-    }
-
-    if (!ouvintesDesbloqueioRegistrados) {
-      ouvintesDesbloqueioRegistrados = true;
-      window.addEventListener("click", desbloquearAudio);
-      window.addEventListener("keydown", desbloquearAudio);
-      window.addEventListener("pointerdown", desbloquearAudio);
-      window.addEventListener("touchstart", desbloquearAudio);
-    }
-
-    desbloquearAudio();
-    hud.atualizarEstadoAudio(audioCtx);
-  } catch (e) {
-    hud.definirPipeline(`Falha ao iniciar audio: ${e.message}`, "diag-erro");
-  }
-}
-
-// Video (WebGL2 + fallback 2D)
-function registrarCliqueTela(canvas) {
-  canvas.addEventListener("click", () => {
-    canvas.focus();
-    desbloquearAudio();
-  });
-}
-
-function usarCpu(motivo) {
-  const nova = tela.cloneNode(false);
-  tela.replaceWith(nova);
-  tela = nova;
-  tela.tabIndex = 0;
-  registrarCliqueTela(tela);
-  compositor = null;
-  ctx2d = tela.getContext("2d");
-  contextoPerdido = false;
-  mostrarErroJogo(`Vídeo por software: ${motivo}`);
-}
-
-registrarCliqueTela(tela);
-
-try {
-  compositor = criarRenderizadorGPU(tela);
-  if (!compositor) usarCpu("WebGL2 indisponível.");
-} catch (erro) {
-  usarCpu(`falha ao iniciar WebGL2 (${erro.message}).`);
-}
-
-tela.addEventListener("webglcontextlost", (e) => {
-  e.preventDefault();
-  contextoPerdido = true;
-  cancelAnimationFrame(animacao);
-  animacao = 0;
-  if (worker) worker.postMessage({ tipo: "pausar" });
-  if (audioCtx && audioCtx.state === "running") {
-    audioCtx.suspend().then(() => {
-      if (!contextoPerdido && !document.hidden) desbloquearAudio();
-    }).catch(() => {});
-  }
-  mostrarErroJogo("Contexto gráfico perdido. Aguardando recuperação.");
-});
-
-tela.addEventListener("webglcontextrestored", () => {
-  try {
-    compositor = criarRenderizadorGPU(tela);
-    if (!compositor) throw new Error("WebGL2 indisponível");
-    contextoPerdido = false;
-    limparErroJogo();
-  } catch (erro) {
-    usarCpu(`falha ao restaurar WebGL2 (${erro.message}).`);
-  }
-  if (jogando && !document.hidden) {
-    if (worker) worker.postMessage({ tipo: "retomar" });
-    desbloquearAudio();
-    if (!animacao) animacao = requestAnimationFrame(lacoApresentacao);
-  }
-});
-
-function apresentar(pts) {
-  if (contextoPerdido || !pts) return;
-  if (compositor) {
-    try {
-      compositor.renderizar(pts);
-    } catch (erro) {
-      usarCpu(`falha de WebGL2 (${erro.message}).`);
-    }
-  } else if (ctx2d) {
-    const d32 = new Uint32Array(imagem2d.data.buffer);
-    for (let i = 0; i < 71680; i++) {
-      d32[i] = TABELA_COR_9BITS[pts[i] & 0x1FF];
-    }
-    ctx2d.putImageData(imagem2d, 0, 0);
-  }
-}
-
-function ajustarEscala() {
-  const larguraBase = 320;
-  const alturaBase = 224;
-  const emTelaCheia = Boolean(document.fullscreenElement);
-  let f;
-  if (emTelaCheia) {
-    f = Math.max(1, Math.floor(Math.min(window.innerWidth / larguraBase, window.innerHeight / alturaBase)));
-  } else {
-    const dispW = Math.min(window.innerWidth - 32, 960);
-    f = Math.max(1, Math.floor(Math.min(dispW / larguraBase, (window.innerHeight * 0.72) / alturaBase)));
-  }
-  tela.style.width = (larguraBase * f) + "px";
-  tela.style.height = (alturaBase * f) + "px";
-}
-
-window.addEventListener("resize", ajustarEscala);
-document.addEventListener("fullscreenchange", ajustarEscala);
-document.addEventListener("webkitfullscreenchange", ajustarEscala);
-
-function alternarTelaCheia() {
-  const alvo = containerTela || tela;
-  if (!document.fullscreenElement) {
-    if (alvo.requestFullscreen) {
-      alvo.requestFullscreen().catch(() => {});
-    } else if (alvo.webkitRequestFullscreen) {
-      alvo.webkitRequestFullscreen();
-    }
-  } else if (document.exitFullscreen) {
-    document.exitFullscreen().catch(() => {});
-  }
-}
-
-// Controles da barra superior
 if (seletorFps) {
   seletorFps.addEventListener("change", () => {
-    fpsDesbloqueado = seletorFps.value === "desbloqueado";
-    if (tela) tela.focus();
+    prefsVisuais.fps = seletorFps.value;
+    fpsDesbloqueado = prefsVisuais.fps === "desbloqueado";
+    salvarPreferenciasVisuais(storageVisual, prefsVisuais);
+    focarTela();
   });
 }
 
 if (seletorCrt && camadaCrt) {
   seletorCrt.addEventListener("change", () => {
-    camadaCrt.classList.toggle("ativo", seletorCrt.value === "ligado");
-    if (tela) tela.focus();
+    prefsVisuais.crt = seletorCrt.value;
+    camadaCrt.classList.toggle("ativo", prefsVisuais.crt === "ligado");
+    salvarPreferenciasVisuais(storageVisual, prefsVisuais);
+    focarTela();
   });
 }
 
 if (seletorCram) {
   seletorCram.addEventListener("change", () => {
+    prefsVisuais.cram = seletorCram.value;
+    salvarPreferenciasVisuais(storageVisual, prefsVisuais);
     if (worker) {
-      worker.postMessage({ tipo: "pontos-cram", valor: seletorCram.value === "hardware" });
+      worker.postMessage({ tipo: "pontos-cram", valor: prefsVisuais.cram === "hardware" });
     }
-    if (tela) tela.focus();
+    focarTela();
   });
 }
 
 if (btnFullscreen) {
   btnFullscreen.addEventListener("click", () => {
-    alternarTelaCheia();
-    if (tela) tela.focus();
+    apresentadorVideo.alternarTelaCheia();
+    focarTela();
   });
 }
 
 if (btnResetar) {
   btnResetar.addEventListener("click", () => {
-    if (romBytesAtual) {
-      iniciarSessao(romBytesAtual);
-    }
+    if (romBytesAtual) iniciarSessao(romBytesAtual);
   });
 }
 
 if (btnTrocarRom) {
   btnTrocarRom.addEventListener("click", () => {
     encerrarSessaoAtual();
+    if (deckInicial) deckInicial.hidden = false;
     if (dropzone) dropzone.hidden = false;
+    if (caixaResultado) caixaResultado.hidden = true;
     if (containerTela) containerTela.hidden = true;
     if (barraControles) barraControles.hidden = true;
     if (painelTeclas) painelTeclas.hidden = true;
@@ -578,10 +596,9 @@ if (btnTrocarRom) {
   });
 }
 
-// Laco de apresentacao na thread principal (apenas GPU, HUD e polling de gamepad)
 function lacoApresentacao(agora) {
   animacao = 0;
-  if (!jogando || document.hidden || contextoPerdido) return;
+  if (!jogando || document.hidden || apresentadorVideo.estaPerdido()) return;
 
   const inicioQuadro = performance.now();
 
@@ -590,17 +607,20 @@ function lacoApresentacao(agora) {
   }
 
   let apresentouNovo = false;
-  if (quadroPendenteNovo && quadroPendente) {
-    if (quadroAtual) {
-      devolverBufferVideo(quadroAtual);
+  if (apresentadorVideo.estaNoWorker()) {
+    if (quadroGpuNovo) {
+      quadroGpuNovo = false;
+      apresentouNovo = true;
     }
+  } else if (quadroPendenteNovo && quadroPendente) {
+    if (quadroAtual) devolverBufferVideo(quadroAtual);
     quadroAtual = quadroPendente;
     quadroPendente = null;
     quadroPendenteNovo = false;
-    apresentar(quadroAtual);
+    apresentadorVideo.apresentar(quadroAtual);
     apresentouNovo = true;
   } else if (fpsDesbloqueado && quadroAtual) {
-    apresentar(quadroAtual);
+    apresentadorVideo.apresentar(quadroAtual);
   }
 
   const frameTimeMs = performance.now() - inicioQuadro;
@@ -611,12 +631,11 @@ function lacoApresentacao(agora) {
   animacao = requestAnimationFrame(lacoApresentacao);
 }
 
-// Carga de ROM e ciclo de sessao
+// 10. Carga de ROM e ciclo de sessao
 function identificarNoWorker(bytes) {
   return new Promise((resolve) => {
-    const id = proxIdIdent++;
+    const id = proxIdReq++;
     promessasIdent.set(id, resolve);
-    // Copia leve para manter `bytes` disponivel caso o usuario inicie o jogo em seguida
     const copia = bytes.slice();
     worker.postMessage({ tipo: "identificar", id, bytes: copia }, [copia.buffer]);
   });
@@ -624,24 +643,32 @@ function identificarNoWorker(bytes) {
 
 async function carregarArquivoRom(arquivo) {
   if (!arquivo || !wasmPronto) return;
+  const leitura = ++idLeituraRom;
   if (arquivo.size > LIMITE_BYTES) {
     mostrarResultadoRom(false, "Recusada: arquivo grande demais para ser a REV01.", "(não calculado)", arquivo.size);
     return;
   }
   mostrarResultadoRom(true, "Lendo e validando ROM...", "calculando...", arquivo.size);
-  const bytes = new Uint8Array(await arquivo.arrayBuffer());
-  const r = await identificarNoWorker(bytes);
-  mostrarResultadoRom(r.valida, r.valida ? "ROM REV01 válida." : "Recusada: " + r.motivo + ".", r.sha1, r.tamanho);
-  if (r.valida) {
-    romBytesAtual = bytes;
-    iniciarSessao(bytes);
+  try {
+    const bytes = new Uint8Array(await arquivo.arrayBuffer());
+    if (leitura !== idLeituraRom) return;
+    const r = await identificarNoWorker(bytes);
+    if (leitura !== idLeituraRom) return;
+    mostrarResultadoRom(r.valida, r.valida ? "ROM REV01 válida." : "Recusada: " + r.motivo + ".", r.sha1, r.tamanho);
+    if (r.valida) {
+      romBytesAtual = bytes;
+      romSha1Atual = r.sha1;
+      iniciarSessao(bytes);
+    }
+  } catch (err) {
+    if (leitura !== idLeituraRom) return;
+    const msg = err && err.message ? err.message : String(err);
+    mostrarResultadoRom(false, "Falha ao ler arquivo: " + msg, "(erro)", arquivo.size || 0);
   }
 }
 
 if (entradaArquivo) {
-  entradaArquivo.addEventListener("change", () => {
-    carregarArquivoRom(entradaArquivo.files[0]);
-  });
+  entradaArquivo.addEventListener("change", () => carregarArquivoRom(entradaArquivo.files[0]));
 }
 
 if (dropzone) {
@@ -649,24 +676,23 @@ if (dropzone) {
     e.preventDefault();
     dropzone.classList.add("arrastando");
   });
-
-  dropzone.addEventListener("dragleave", () => {
-    dropzone.classList.remove("arrastando");
-  });
-
+  dropzone.addEventListener("dragleave", () => dropzone.classList.remove("arrastando"));
   dropzone.addEventListener("drop", (e) => {
     e.preventDefault();
     dropzone.classList.remove("arrastando");
     const arquivos = e.dataTransfer?.files;
-    if (arquivos && arquivos.length > 0) {
-      carregarArquivoRom(arquivos[0]);
-    }
+    if (arquivos && arquivos.length > 0) carregarArquivoRom(arquivos[0]);
   });
 }
 
 function encerrarSessaoAtual() {
   sessaoAtiva++;
   jogando = false;
+  pausadoUsuario = false;
+  fastForwardToggle = false;
+  fastForwardHold = false;
+  quadroGpuNovo = false;
+  atualizarUiPausa();
   cancelAnimationFrame(animacao);
   animacao = 0;
   if (worker) worker.postMessage({ tipo: "parar" });
@@ -681,38 +707,44 @@ function encerrarSessaoAtual() {
   }
 }
 
-async function iniciarSessao(bytes) {
-  encerrarSessaoAtual();
+async function enviarSessaoWorker(tipo, bytes, extras = {}) {
   const sessao = sessaoAtiva;
-
-  await iniciarAudio();
+  await controladorAudio.iniciar();
   if (sessao !== sessaoAtiva) return;
 
-  let portaWorkerAudio = null;
   const transferiveis = [];
-  if (workletNode && typeof MessageChannel !== "undefined") {
-    const canal = new MessageChannel();
-    workletNode.port.postMessage({ tipo: "porta", porta: canal.port1 }, [canal.port1]);
-    portaWorkerAudio = canal.port2;
-    transferiveis.push(canal.port2);
-  }
+  const portaAudio = controladorAudio.criarPortaParaWorker();
+  if (portaAudio) transferiveis.push(portaAudio);
 
   const copiaRom = bytes.slice();
   transferiveis.push(copiaRom.buffer);
 
   worker.postMessage(
     {
-      tipo: "iniciar",
+      tipo,
       sessao,
       bytes: copiaRom,
-      taxaBase: audioCtx ? audioCtx.sampleRate : 48000,
+      taxaBase: controladorAudio.obterTaxa(),
       pontosCram: Boolean(seletorCram && seletorCram.value === "hardware"),
-      audioAtivo: Boolean(audioCtx && audioCtx.state === "running"),
+      audioAtivo: controladorAudio.estaAtivo(),
       diagVisivel: hud.estaDiagAberto(),
-      portaAudio: portaWorkerAudio,
+      portaAudio,
+      ...extras,
     },
     transferiveis,
   );
+}
+
+async function iniciarSessao(bytes) {
+  encerrarSessaoAtual();
+  await enviarSessaoWorker("iniciar", bytes);
+}
+
+async function iniciarSessaoComSave(bytes, entradasRle) {
+  const manterPausado = pausadoUsuario;
+  encerrarSessaoAtual();
+  pausadoUsuario = manterPausado;
+  await enviarSessaoWorker("carregar-save", bytes, { entradasRle, manterPausado });
 }
 
 document.addEventListener("visibilitychange", () => {
@@ -720,13 +752,9 @@ document.addEventListener("visibilitychange", () => {
     cancelAnimationFrame(animacao);
     animacao = 0;
     if (worker && jogando) worker.postMessage({ tipo: "pausar" });
-    if (audioCtx && audioCtx.state === "running") {
-      audioCtx.suspend().then(() => {
-        if (!document.hidden && !contextoPerdido) desbloquearAudio();
-      }).catch(() => {});
-    }
-  } else if (jogando && !contextoPerdido) {
-    desbloquearAudio();
+    controladorAudio.suspenderSeAtivo();
+  } else if (jogando && !apresentadorVideo.estaPerdido()) {
+    if (!pausadoUsuario) controladorAudio.desbloquear();
     if (worker) worker.postMessage({ tipo: "retomar" });
     if (!animacao) animacao = requestAnimationFrame(lacoApresentacao);
   }

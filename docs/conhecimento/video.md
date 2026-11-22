@@ -2,7 +2,7 @@
 
 ## Escopo: o que o Sonic 1 usa da VDP e o que fica fora
 
-Vem de `docs/inventario-hardware.md` (`cargo xtask inventario`, caso `boot-demos`, 7200 quadros, rodado pelo Marcelo em 06/11/2026). Vale so para esse corpus. A tabela com a decisao de cada recurso esta em `docs/plano-etapa-4.md`, secao 2. Resumo:
+Vem de `docs/inventarios/inventario-hardware.md` (`cargo xtask inventario`, caso `boot-demos`, 7200 quadros, rodado pelo Marcelo em 06/11/2026). Vale so para esse corpus. A tabela com a decisao de cada recurso esta em `docs/arquivo/planos/plano-etapa-4.md`, secao 2. Resumo:
 
 - Dentro: cor de 9 bits (reg 0 = `0x04`), H40 (reg 12 = `0x81`), 28 linhas de celulas (reg 1 sem o bit 3), rolagem por linha e de plano inteiro (reg 11 = `0x03` e `0x00`), plano 64x32 (reg 16 = `0x01`), sprites, DMA de 68000 para VDP e preenchimento de VRAM, interrupcao de linha (por requisito, ainda sem prova no corpus).
 - Fora, com aviso: janela (regs 17 e 18 sempre 0), sombra e realce, entrelacamento, H32, V30, copia de VRAM por DMA.
@@ -79,7 +79,7 @@ ROM `programa_video` (escrita por nos): liga o display, grava a cor 0 da CRAM no
 
 ## Rodada 2 do host (06/11/2026): criterio da etapa cumprido para o corpus atual
 
-Comando: `sh scripts/etapa4-host.sh <ROM REV01>` depois de `docker build -t websonic-dev:ci -f .devcontainer/Dockerfile .`. Resultados colados pelo Marcelo:
+Comando: `sh scripts/arquivo/etapa4-host.sh <ROM REV01>` depois de `docker build -t websonic-dev:ci -f .devcontainer/Dockerfile .`. Resultados colados pelo Marcelo:
 
 | Prova | Resultado |
 | --- | --- |

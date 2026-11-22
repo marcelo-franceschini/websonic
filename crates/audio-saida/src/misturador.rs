@@ -28,7 +28,7 @@ pub struct MisturadorSaida {
     ganho_fm: f32,
     ganho_psg: f32,
 
-    buffer_audio: Vec<(f32, f32)>,
+    buffer_audio: VecDeque<(f32, f32)>,
     pendentes_fm: VecDeque<(f32, f32)>,
     pendentes_psg: VecDeque<f32>,
     ocupacao_externa: Option<usize>,
@@ -40,8 +40,6 @@ pub struct MisturadorSaida {
     cont_saida: u64,
     falhas: u64,
 
-    fm_float: Vec<(f32, f32)>,
-    psg_float: Vec<f32>,
     saida_fm: Vec<(f32, f32)>,
     saida_psg: Vec<f32>,
 }
@@ -62,9 +60,9 @@ impl MisturadorSaida {
             filtro_analogico,
             ganho_fm: 0.75,
             ganho_psg: 0.50,
-            buffer_audio: Vec::with_capacity(tamanho_alvo_buffer * 4),
-            pendentes_fm: VecDeque::new(),
-            pendentes_psg: VecDeque::new(),
+            buffer_audio: VecDeque::with_capacity(tamanho_alvo_buffer * 4),
+            pendentes_fm: VecDeque::with_capacity(1024),
+            pendentes_psg: VecDeque::with_capacity(1024),
             ocupacao_externa: None,
             ocupacao_externa_atualizada: false,
             tamanho_alvo_buffer,
@@ -72,10 +70,8 @@ impl MisturadorSaida {
             cont_psg_in: 0,
             cont_saida: 0,
             falhas: 0,
-            fm_float: Vec::new(),
-            psg_float: Vec::new(),
-            saida_fm: Vec::new(),
-            saida_psg: Vec::new(),
+            saida_fm: Vec::with_capacity(1024),
+            saida_psg: Vec::with_capacity(1024),
         }
     }
 
@@ -106,48 +102,79 @@ impl MisturadorSaida {
         self.cont_fm_in = self.cont_fm_in.wrapping_add(fm.len() as u64);
         self.cont_psg_in = self.cont_psg_in.wrapping_add(psg.len() as u64);
 
-        self.fm_float.clear();
-        self.psg_float.clear();
         self.saida_fm.clear();
         self.saida_psg.clear();
 
-        // Converte FM para f32 [-1.0, 1.0]
-        for (fl, fr) in fm {
-            let l = (fl as f32) / 2048.0;
-            let r = (fr as f32) / 2048.0;
-            self.fm_float.push((l * self.ganho_fm, r * self.ganho_fm));
-        }
-        self.reamostrador_fm.alimentar_estereo(&self.fm_float);
+        // Converte FM e PSG em passagem unica direto para os buffers internos dos reamostradores.
+        let escala_fm = self.ganho_fm * (1.0 / 2048.0);
+        self.reamostrador_fm
+            .alimentar_estereo_iter(fm.map(|(fl, fr)| ((fl as f32) * escala_fm, (fr as f32) * escala_fm)));
 
-        // Converte PSG para f32 mono centralizado
-        for canais in psg {
+        let escala_psg = 0.25 * self.ganho_psg;
+        self.reamostrador_psg.alimentar_mono_iter(psg.map(|canais| {
             let v0 = PSG_VOL_TABLE[usize::from(canais[0] & 15)];
             let v1 = PSG_VOL_TABLE[usize::from(canais[1] & 15)];
             let v2 = PSG_VOL_TABLE[usize::from(canais[2] & 15)];
             let v3 = PSG_VOL_TABLE[usize::from(canais[3] & 15)];
-            let soma = (v0 + v1 + v2 + v3) * 0.25 * self.ganho_psg;
-            self.psg_float.push(soma);
-        }
-        self.reamostrador_psg.alimentar_mono(&self.psg_float);
+            (v0 + v1 + v2 + v3) * escala_psg
+        }));
 
         // Processa reamostragem de ambos
         self.reamostrador_fm.processar(&mut self.saida_fm);
         self.reamostrador_psg.processar_mono(&mut self.saida_psg);
 
-        // Combina as saidas interpoladas e passa pelo filtro analogico
-        self.pendentes_fm.extend(self.saida_fm.iter().copied());
-        self.pendentes_psg.extend(self.saida_psg.iter().copied());
-        while !self.pendentes_fm.is_empty() && !self.pendentes_psg.is_empty() {
-            let (fml, fmr) = self.pendentes_fm.pop_front().expect("FM disponível");
-            let psg = self.pendentes_psg.pop_front().expect("PSG disponível");
+        // Combina FM e PSG diretamente sem copiar todo o quadro para as filas de pendentes:
+        // apenas o excedente (normalmente 0..2 amostras por quadro) entra em `pendentes_*`.
+        let total_fm = self.pendentes_fm.len() + self.saida_fm.len();
+        let total_psg = self.pendentes_psg.len() + self.saida_psg.len();
+        let pares_totais = total_fm.min(total_psg);
+        self.buffer_audio.reserve(pares_totais);
 
-            let mist_l = (fml + psg).clamp(-1.0, 1.0);
-            let mist_r = (fmr + psg).clamp(-1.0, 1.0);
+        let mut idx_fm = 0usize;
+        let mut idx_psg = 0usize;
 
-            // Como o passa-baixas de 1a ordem e combinacao convexa de entradas em [-1, 1],
-            // a saida ja permanece dentro de [-1.0, 1.0].
-            let filtrado = self.filtro_analogico.processar(mist_l, mist_r);
-            self.buffer_audio.push(filtrado);
+        if !self.pendentes_fm.is_empty() && !self.saida_psg.is_empty() {
+            let k = self.pendentes_fm.len().min(self.saida_psg.len());
+            for ((fml, fmr), &psg) in self.pendentes_fm.drain(..k).zip(&self.saida_psg[..k]) {
+                let mist_l = (fml + psg).clamp(-1.0, 1.0);
+                let mist_r = (fmr + psg).clamp(-1.0, 1.0);
+                self.buffer_audio
+                    .push_back(self.filtro_analogico.processar(mist_l, mist_r));
+            }
+            idx_psg = k;
+        } else if !self.pendentes_psg.is_empty() && !self.saida_fm.is_empty() {
+            let k = self.pendentes_psg.len().min(self.saida_fm.len());
+            for (&(fml, fmr), psg) in self.saida_fm[..k].iter().zip(self.pendentes_psg.drain(..k)) {
+                let mist_l = (fml + psg).clamp(-1.0, 1.0);
+                let mist_r = (fmr + psg).clamp(-1.0, 1.0);
+                self.buffer_audio
+                    .push_back(self.filtro_analogico.processar(mist_l, mist_r));
+            }
+            idx_fm = k;
+        }
+
+        if self.pendentes_fm.is_empty() && self.pendentes_psg.is_empty() {
+            let diretos = (self.saida_fm.len() - idx_fm).min(self.saida_psg.len() - idx_psg);
+            for (&(fml, fmr), &psg) in self.saida_fm[idx_fm..idx_fm + diretos]
+                .iter()
+                .zip(&self.saida_psg[idx_psg..idx_psg + diretos])
+            {
+                let mist_l = (fml + psg).clamp(-1.0, 1.0);
+                let mist_r = (fmr + psg).clamp(-1.0, 1.0);
+                self.buffer_audio
+                    .push_back(self.filtro_analogico.processar(mist_l, mist_r));
+            }
+            idx_fm += diretos;
+            idx_psg += diretos;
+        }
+
+        if idx_fm < self.saida_fm.len() {
+            self.pendentes_fm
+                .extend(self.saida_fm[idx_fm..].iter().copied());
+        }
+        if idx_psg < self.saida_psg.len() {
+            self.pendentes_psg
+                .extend(self.saida_psg[idx_psg..].iter().copied());
         }
 
         // Controlador proporcional de baixa banda para ajustar a taxa de amostragem
@@ -191,30 +218,54 @@ impl MisturadorSaida {
         let mut ultimo_l = 0.0f32;
         let mut ultimo_r = 0.0f32;
 
-        for (i, &(l, r)) in self.buffer_audio[..pares_disponiveis].iter().enumerate() {
-            destino_intercalado[i * 2] = l;
-            destino_intercalado[i * 2 + 1] = r;
+        for (par_dst, (l, r)) in destino_intercalado
+            .chunks_exact_mut(2)
+            .take(pares_disponiveis)
+            .zip(self.buffer_audio.drain(..pares_disponiveis))
+        {
+            par_dst[0] = l;
+            par_dst[1] = r;
             ultimo_l = l;
             ultimo_r = r;
         }
 
-        self.buffer_audio.drain(..pares_disponiveis);
         self.cont_saida = self.cont_saida.wrapping_add(pares_disponiveis as u64);
 
         // Se faltou dado, preenche com decaimento curto e registra a falha
         if pares_disponiveis < pares_pedidos {
             self.falhas = self.falhas.wrapping_add(1);
             let mut decay = 0.95f32;
-            for i in pares_disponiveis..pares_pedidos {
+            for par_dst in destino_intercalado
+                .chunks_exact_mut(2)
+                .skip(pares_disponiveis)
+                .take(pares_pedidos - pares_disponiveis)
+            {
                 ultimo_l *= decay;
                 ultimo_r *= decay;
-                destino_intercalado[i * 2] = ultimo_l;
-                destino_intercalado[i * 2 + 1] = ultimo_r;
+                par_dst[0] = ultimo_l;
+                par_dst[1] = ultimo_r;
                 decay *= 0.95;
             }
         }
 
         pares_disponiveis
+    }
+
+    /// Retira todas as amostras estereo prontas no buffer diretamente para `destino`
+    /// (intercaladas L, R, L, R...), sem exigir preenchimento previo com zeros.
+    pub fn extrair_todos_intercalados(&mut self, destino: &mut Vec<f32>) -> usize {
+        destino.clear();
+        let pares = self.buffer_audio.len();
+        if pares == 0 {
+            return 0;
+        }
+        destino.reserve(pares.saturating_mul(2));
+        for (l, r) in self.buffer_audio.drain(..) {
+            destino.push(l);
+            destino.push(r);
+        }
+        self.cont_saida = self.cont_saida.wrapping_add(pares as u64);
+        pares
     }
 
     /// Numero de amostras estereo prontas no buffer.
@@ -235,8 +286,6 @@ impl MisturadorSaida {
         self.buffer_audio.clear();
         self.pendentes_fm.clear();
         self.pendentes_psg.clear();
-        self.fm_float.clear();
-        self.psg_float.clear();
         self.saida_fm.clear();
         self.saida_psg.clear();
         self.ocupacao_externa = None;
@@ -245,5 +294,80 @@ impl MisturadorSaida {
         self.cont_psg_in = 0;
         self.cont_saida = 0;
         self.falhas = 0;
+    }
+}
+
+#[cfg(test)]
+mod testes {
+    use super::*;
+
+    #[test]
+    fn extracao_parcial_em_fila_o1_preserva_ordem_e_conta_falha() {
+        let mut m = MisturadorSaida::novo(48_000.0);
+        let fm = vec![(1024i16, -512i16); 890];
+        let psg = vec![0xFFFFu16; 3733];
+        m.alimentar_quadro_compacto(&fm, &psg);
+        let disponiveis = m.ocupacao_buffer();
+        assert!(disponiveis > 256);
+
+        let mut bloco1 = vec![0.0f32; 256];
+        let lidos1 = m.extrair_bloco_worklet(&mut bloco1);
+        assert_eq!(lidos1, 128);
+        assert_eq!(m.falhas(), 0);
+        assert_eq!(m.ocupacao_buffer(), disponiveis - 128);
+
+        let mut bloco2 = vec![0.0f32; (disponiveis + 64) * 2];
+        let lidos2 = m.extrair_bloco_worklet(&mut bloco2);
+        assert_eq!(lidos2, disponiveis - 128);
+        assert_eq!(m.falhas(), 1);
+        assert_eq!(m.ocupacao_buffer(), 0);
+    }
+
+    #[test]
+    fn extrair_todos_intercalados_equivale_a_extrair_bloco() {
+        let mut m1 = MisturadorSaida::novo(48_000.0);
+        let mut m2 = MisturadorSaida::novo(48_000.0);
+        let fm = vec![(900i16, -700i16); 890];
+        let psg = vec![0x00FFu16; 3733];
+        m1.alimentar_quadro_compacto(&fm, &psg);
+        m2.alimentar_quadro_compacto(&fm, &psg);
+
+        let disp = m1.ocupacao_buffer();
+        let mut via_bloco = vec![0.0f32; disp * 2];
+        assert_eq!(m1.extrair_bloco_worklet(&mut via_bloco), disp);
+
+        let mut via_todos = Vec::new();
+        assert_eq!(m2.extrair_todos_intercalados(&mut via_todos), disp);
+        assert_eq!(via_todos, via_bloco);
+        assert_eq!(m2.ocupacao_buffer(), 0);
+    }
+
+    #[test]
+    fn mistura_direta_preserva_alinhamento_em_lotes_assimetricos() {
+        let mut continuo = MisturadorSaida::novo(48_000.0);
+        let mut fracionado = MisturadorSaida::novo(48_000.0);
+        // Mantem ajuste_fino = 0.0 entre os lotes para comparar alinhamento exato amostra a amostra.
+        continuo.definir_ocupacao_externa(continuo.tamanho_alvo_buffer);
+        fracionado.definir_ocupacao_externa(fracionado.tamanho_alvo_buffer);
+
+        let fm_total: Vec<(i16, i16)> = (0..1800)
+            .map(|i| (((i * 19) % 1024) as i16 - 512, 512 - ((i * 13) % 1024) as i16))
+            .collect();
+        let psg_total: Vec<u16> = (0..7500)
+            .map(|i| if (i / 17) % 2 == 0 { 0x05AF } else { 0xFFFF })
+            .collect();
+
+        continuo.alimentar_quadro_compacto(&fm_total, &psg_total);
+        // Alimenta em lotes de tamanhos desiguais para exercitar pendentes_fm e pendentes_psg.
+        fracionado.alimentar_quadro_compacto(&fm_total[..1100], &psg_total[..2000]);
+        fracionado.alimentar_quadro_compacto(&fm_total[1100..], &psg_total[2000..]);
+
+        let mut a = Vec::new();
+        let mut b = Vec::new();
+        continuo.extrair_todos_intercalados(&mut a);
+        fracionado.extrair_todos_intercalados(&mut b);
+        assert!(!a.is_empty());
+        assert_eq!(a, b);
+        assert!(fracionado.pendentes_fm.is_empty() || fracionado.pendentes_psg.is_empty());
     }
 }

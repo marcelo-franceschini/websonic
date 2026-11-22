@@ -1,0 +1,34 @@
+{
+  "id": "./",
+  "name": "WebSonic - Sonic 1 REV01",
+  "short_name": "WebSonic",
+  "description": "Sonic the Hedgehog (1991) do Mega Drive reconstruído em Rust e WebAssembly com WebGL2 e AudioWorklet.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#0a0c10",
+  "background_color": "#0a0c10",
+  "lang": "pt-BR",
+  "categories": ["games", "entertainment"],
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

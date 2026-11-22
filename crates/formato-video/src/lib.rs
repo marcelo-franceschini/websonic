@@ -7,6 +7,7 @@
 //!   ponto diferente.
 //!
 //! Tudo little-endian, tamanho fixo por campo, sem relogio nem ordem de hash.
+#![forbid(unsafe_code)]
 
 use std::io::{self, Read, Write};
 

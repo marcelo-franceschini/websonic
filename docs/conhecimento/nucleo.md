@@ -1,6 +1,6 @@
 # Núcleo base (Etapa 5)
 
-Plano: `docs/plano-etapa-5.md`. Cada afirmação cita o teste ou o comando. Nada aqui tem dado da ROM. Estado de cada prova no fim do arquivo.
+Plano: `docs/arquivo/planos/plano-etapa-5.md`. Cada afirmação cita o teste ou o comando. Nada aqui tem dado da ROM. Estado de cada prova no fim do arquivo.
 
 ## Onde cada coisa mora
 
@@ -30,7 +30,7 @@ Plano: `docs/plano-etapa-5.md`. Cada afirmação cita o teste ou o comando. Nada
 
 ## Operações do 68000 (5.2)
 
-- Funções: ADD, ADDX, SUB, SUBX, NEG, NEGX, CMP, CMPA, ADDA, SUBA, CLR, TST, AND, OR, EOR, NOT, MOVE, EXT, SWAP, MULU, MULS, DIVU, DIVS, ABCD, SBCD, NBCD, as oito rotações e deslocamentos, BTST, BSET, BCLR, BCHG, as 16 condições, Scc e DBcc. A lista fechada "usada pelo jogo" sai do inventário `docs/inventario-68000.md` (bloco A); até lá, as famílias estão completas.
+- Funções: ADD, ADDX, SUB, SUBX, NEG, NEGX, CMP, CMPA, ADDA, SUBA, CLR, TST, AND, OR, EOR, NOT, MOVE, EXT, SWAP, MULU, MULS, DIVU, DIVS, ABCD, SBCD, NBCD, as oito rotações e deslocamentos, BTST, BSET, BCLR, BCHG, as 16 condições, Scc e DBcc. A lista fechada "usada pelo jogo" sai do inventário `docs/inventarios/inventario-68000.md` (bloco A); até lá, as famílias estão completas.
 - Fonte das flags: Motorola, M68000 Family Programmer's Reference Manual ([NXP](https://nxp.com/docs/en/reference-manual/M68000PM-PART2.pdf)). O gabarito independente usa as fórmulas booleanas de V e C do manual (`crates/teste-nucleo/src/ops.rs`); a implementação usa aritmética em tipo mais largo.
 - Flags indefinidas (N e V em ABCD, SBCD e NBCD; N, V, Z e C em DIV com estouro): o núcleo segue o oráculo, medido. Estouro de DIVU e DIVS: destino intacto, N e V ligados, C e Z desligados.
 - **O jgenesis em build de depuração entra em pânico em `i32::MIN / -1` (DIVS).** O caso `0x80000000 / 0xFFFF` fica fora do diferencial; o quociente não cabe em word de qualquer jeito (V ligado). Em build de release o oráculo não entra em pânico.
@@ -50,7 +50,7 @@ Plano: `docs/plano-etapa-5.md`. Cada afirmação cita o teste ou o comando. Nada
 - `Ponto { id, rotulo, inicio, fim, endereco, posicao }`. Uma interrupção gravada com PC na faixa da rotina é entregue no primeiro ponto que a cobre: `Antes` se o PC ainda não passou do acesso, `Depois` se já passou. Só a primeira pendente pode ser entregue (interrupções não se reordenam). Sem ponto que cubra, é entregue no fim dos passos e marcada `ponto: None`.
 - `conferir_entregas` compara as entregas do núcleo com o tempo gravado, quadro a quadro: interrupção perdida, extra, fora de ordem, ou ponto que não cobre o PC.
 - Evidência: testes `interrupcao_antes_e_depois_do_acesso_ve_valores_diferentes` (o tratador vê a variável antes ou depois da escrita, conforme o PC gravado), `interrupcao_em_rotina_sem_ponto_e_entregue_no_fim`, `duas_interrupcoes_no_mesmo_quadro_nao_se_reordenam`, `conferencia_acusa_perdida_extra_ordem_e_ponto_errado`.
-- A lista de pontos reais depende de `docs/inventario-interrupcoes.md` (bloco A) e de `docs/inventario-memoria.md` (546 variáveis compartilhadas de 751). Rotinas reais entram nas Etapas 6 a 12.
+- A lista de pontos reais depende de `docs/inventarios/inventario-interrupcoes.md` (bloco A) e de `docs/inventarios/inventario-memoria.md` (546 variáveis compartilhadas de 751). Rotinas reais entram nas Etapas 6 a 12.
 
 ## Patch 0004 do oráculo (5.0)
 
@@ -109,9 +109,9 @@ Plano: `docs/plano-etapa-5.md`. Cada afirmação cita o teste ou o comando. Nada
 
 - Patch 0004 do oráculo aplicado, testes do oráculo OK.
 - Casos: boot-demos 7200 quadros, lz-agua 2000, partida-ghz1 8309, demos-quatro 11700 (29209 no total). Tempo gravado: de 58 MB a 345 MB por caso (só local, nunca no git).
-- `docs/inventario-68000.md`: 56 classes de instrução executadas. Fora da família aritmética e lógica já coberta por `ops68k`, o jogo usa MOVEM, LEA, EXG, MOVE USP, MOVE de e para SR e CCR, deslocamento aritmético na memória (13 vezes) e rotação com X.
-- `docs/inventario-barramento.md`: 17 linhas. Acessos fora da RAM: E/S, VDP, janela do Z80, barramento do Z80 e reset do Z80. Sem acesso a SRAM ou a registradores de Sega CD.
-- `docs/inventario-interrupcoes.md`: 82 rotinas e níveis, 337 quadros de lag em 29209. A maioria das interrupções cai em `WaitForVBlank`. Rotinas de descompressão (`Kos_*`, `NemDec_*`, `EniDec_*`) e de desenho de sprites são as outras interrompidas. Candidatas a ponto de checagem nas Etapas 6 a 12.
+- `docs/inventarios/inventario-68000.md`: 56 classes de instrução executadas. Fora da família aritmética e lógica já coberta por `ops68k`, o jogo usa MOVEM, LEA, EXG, MOVE USP, MOVE de e para SR e CCR, deslocamento aritmético na memória (13 vezes) e rotação com X.
+- `docs/inventarios/inventario-barramento.md`: 17 linhas. Acessos fora da RAM: E/S, VDP, janela do Z80, barramento do Z80 e reset do Z80. Sem acesso a SRAM ou a registradores de Sega CD.
+- `docs/inventarios/inventario-interrupcoes.md`: 82 rotinas e níveis, 337 quadros de lag em 29209. A maioria das interrupções cai em `WaitForVBlank`. Rotinas de descompressão (`Kos_*`, `NemDec_*`, `EniDec_*`) e de desenho de sprites são as outras interrompidas. Candidatas a ponto de checagem nas Etapas 6 a 12.
 - Diferencial de operações: as duas falhas vistas numa execução antiga em depuração não se repetem em release (1500 casos, 10 s).
 
 ## Bloco B, primeira rodada
@@ -126,7 +126,7 @@ Plano: `docs/plano-etapa-5.md`. Cada afirmação cita o teste ou o comando. Nada
 
 - Bloco B2: `KosDec` 6 casos, `EniDec` 34, `NemDecToRAM` 145, todos sem falha (6 `AUSENTE` no Nemesis são rótulos que não existem na REV01). Mapa de decisões: 7 de 9, conferido de novo com `--mapa`. `EniDec:incremental` e `EniDec:modo_lista` não têm desvio condicional no original (despacho por `JMP` com tabela de saltos): exclusão proposta em `cobertura/exclusoes-propostas.txt`.
 - Cobertura do corpus: 1788 desvios condicionais distintos executados (1790 com as rotinas), 575 em um caminho só. O universo é só o que o oráculo executou (backlog: decodificação estática).
-- Os traces completos não ficam em disco (de 0,6 a 3,3 GB por caso). `scripts/etapa5-cobertura.sh` os gera, extrai e apaga.
+- Os traces completos não ficam em disco (de 0,6 a 3,3 GB por caso). `scripts/arquivo/etapa5-cobertura.sh` os gera, extrai e apaga.
 - Assinatura: a senha da chave antiga foi perdida. Chave nova `websonic_assinatura_nova`, `refs/assinante.pub` trocado. Manifesto de 352 linhas, `assinatura: OK`, veredito do relatório `PASSOU`, 6 casos ocultos passam, segundo oráculo com 3 diferenças registradas e 0 sem decisão.
 - Bugs conhecidos: 0 de 315 cobertos. Esperado: o teste de cada item (`BK_nnnn` no nome) entra nas Etapas 6 a 12.
 - Patch de congelamento aplicado (`verifica-config.sh` e `checa-core.sh` OK). A imagem do contêiner precisa ser reconstruída.

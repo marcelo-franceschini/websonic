@@ -16,7 +16,7 @@
 - **Alimentacao mono sem copia redundante (item A1):** em `crates/audio-saida/src/reamostrador.rs`, `alimentar_mono` alimenta exclusivamente `buffer_in_l`. O buffer do canal direito nao recebe copias desnecessarias e `processar_mono` drena apenas o canal esquerdo, economizando cerca de 15 us por quadro.
 - **Guarda de sintese nativa (item G1):** o teste `crates/console/tests/guarda_sintese.rs` afere as amostras nativas pre-reamostragem de FM e PSG e as taxas do site (47.938,19 Hz e 44.043,22 Hz), conferindo os 5 hashes de referencia do Anexo A.2 do relatorio da rodada 2.
 
-Plano: `docs/plano-etapa-8.md`. Cada afirmação cita o teste ou o comando. Nada aqui tem dado da ROM.
+Plano: `docs/arquivo/planos/plano-etapa-8.md`. Cada afirmação cita o teste ou o comando. Nada aqui tem dado da ROM.
 
 ## Licenças e fontes (8.0, bloco 1 do Marcelo, 09/11/2026)
 
@@ -25,7 +25,7 @@ Plano: `docs/plano-etapa-8.md`. Cada afirmação cita o teste ou o comando. Nada
 | Nuked-OPN2 (`ym3438.c`, `ym3438.h`) | `335747d78cb0abbc3b55b004e62dad9763140115` | LGPL 2.1 ou superior (cabeçalho e `LICENSE`) | `b386b371ce94933e63ced1052aa72a60da5485ff` |
 | Nuked-PSG (`ympsg.c`, `ympsg.h`) | `d15a168c676f4669e23660be9225b34ad7c1764e` | GPL 2 ou superior (cabeçalho e `LICENSE`) | `4cc77b90af91e615a64ae04893fdffa7939db84c` |
 
-Comando: `sh scripts/etapa8-bloco1.sh` (commits conferidos iguais aos fixados; `cc` GCC 16.2.1; Rust 1.99.1; o host não tem `rustup` nem `wasmtime`, então o alvo wasm e os testes wasm rodam na imagem). Uso permitido: comparação local, no workspace `diferencial-sintese/` (GPLv3), fora do `core`, do `crates/audio` e do site. O fonte dos chips fica em `$SONIC1_EXT_DIR/trabalho/nuked`, fora do git.
+Comando: `sh scripts/arquivo/etapa8-bloco1.sh` (commits conferidos iguais aos fixados; `cc` GCC 16.2.1; Rust 1.99.1; o host não tem `rustup` nem `wasmtime`, então o alvo wasm e os testes wasm rodam na imagem). Uso permitido: comparação local, no workspace `diferencial-sintese/` (GPLv3), fora do `core`, do `crates/audio` e do site. O fonte dos chips fica em `$SONIC1_EXT_DIR/trabalho/nuked`, fora do git.
 
 ## Decisões
 
@@ -77,11 +77,11 @@ Comando: `sh scripts/etapa8-bloco1.sh` (commits conferidos iguais aos fixados; `
 - **Comparador em memória:** `diferencial-sintese/src/comparador.rs` e binário `diferencial-sintese/src/bin/sintese.rs`. Compara FM e PSG simultaneamente alimentados pelas mesmas escritas.
 - **Relatório por bloco de 4096 amostras:** calcula hashes SHA-1 por bloco de 4096 amostras e hash global do relatório.
 - **Bateria sintética:** executada via `cargo run --manifest-path diferencial-sintese/Cargo.toml --release --bin sintese -- --sintetico`, produzindo 100% `IGUAL`.
-- **Script do Bloco 2 do Marcelo:** `scripts/etapa8-bloco2.sh` preparado e testado para execução contra os traces de oráculo da ROM real.
+- **Script do Bloco 2 do Marcelo:** `scripts/arquivo/etapa8-bloco2.sh` preparado e testado para execução contra os traces de oráculo da ROM real.
 
 ## Prova com a ROM real (8.5 e fechamento, Marcelo em 10/11/2026)
 
-Comando: `sh scripts/etapa8-bloco2.sh "$HOME/sonic1-ext/rom/Sonic The Hedgehog (W) (REV01) [!].gen" 600`.
+Comando: `sh scripts/arquivo/etapa8-bloco2.sh "$HOME/sonic1-ext/rom/Sonic The Hedgehog (W) (REV01) [!].gen" 600`.
 
 - **Veredito:** `VEREDITO GERAL DA ETAPA: IGUAL` (exit code 0).
 - **Hash do relatório:** `55a112765775af740cb43a49f1100e91c841630a`

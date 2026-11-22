@@ -246,7 +246,7 @@ fn arquivos_com(dir: &str, sufixo: &str) -> Result<Vec<std::path::PathBuf>, Stri
 pub fn executar(args: &[String]) -> Result<(), String> {
     let traces = opcao(args, "--traces").ok_or("falta --traces")?;
     let tempos = opcao(args, "--tempos").ok_or("falta --tempos")?;
-    let saida = opcao(args, "--saida").unwrap_or("docs/inventario-som.md");
+    let saida = opcao(args, "--saida").unwrap_or("docs/inventarios/inventario-som.md");
     let mut r = Resumo::default();
     let mut casos = Vec::new();
     for p in arquivos_com(traces, ".a.s1t")? {

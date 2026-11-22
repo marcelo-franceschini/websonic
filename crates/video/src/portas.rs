@@ -9,6 +9,7 @@ use crate::registros::{ModoDma, QUANTIDADE, Registros};
 use std::collections::VecDeque;
 
 pub const TAMANHO_VRAM: usize = 0x1_0000;
+const TAMANHO_TILES_8BPP: usize = TAMANHO_VRAM * 2;
 pub const PALAVRAS_CRAM: usize = 64;
 pub const PALAVRAS_VSRAM: usize = 40;
 
@@ -159,6 +160,8 @@ fn eh_acesso_externo(slot: usize) -> bool {
 pub struct Vdp {
     pub registros: Registros,
     pub(crate) vram: Vec<u8>,
+    /// Cache linear dos pixels da VRAM decodificados em 1 byte/pixel (0..=15), atualizado na escrita.
+    pub(crate) tiles_8bpp: Vec<u8>,
     pub(crate) cram: [u16; PALAVRAS_CRAM],
     pub(crate) cram_9bits: [u16; PALAVRAS_CRAM],
     pub(crate) vsram: [u16; PALAVRAS_VSRAM],
@@ -204,6 +207,7 @@ impl Vdp {
         Self {
             registros: Registros::novo(),
             vram: vec![0; TAMANHO_VRAM],
+            tiles_8bpp: vec![0; TAMANHO_TILES_8BPP],
             cram: [0; PALAVRAS_CRAM],
             cram_9bits: [0; PALAVRAS_CRAM],
             vsram: [0; PALAVRAS_VSRAM],
@@ -217,17 +221,17 @@ impl Vdp {
             imagem_ligada: false,
             habilitacao_pendente: false,
             em_vblank: false,
-            fifo: VecDeque::new(),
-            fifo_pendentes: VecDeque::new(),
+            fifo: VecDeque::with_capacity(TAMANHO_FIFO),
+            fifo_pendentes: VecDeque::with_capacity(8),
             dma_ativo: false,
             dma_comprimento: 0,
             dma_latencia: 0,
-            fila_dma: VecDeque::new(),
+            fila_dma: VecDeque::with_capacity(1024),
             preenchimento: None,
-            pendentes: Vec::new(),
-            pendentes_reserva: Vec::new(),
+            pendentes: Vec::with_capacity(32),
+            pendentes_reserva: Vec::with_capacity(32),
             gravacoes_de_vram: 0,
-            ao_gravar_vram: Vec::new(),
+            ao_gravar_vram: Vec::with_capacity(256),
         }
     }
 
@@ -375,6 +379,7 @@ impl Vdp {
         mudou
     }
 
+    #[cold]
     fn notar_recursos_fora_do_inventario(&mut self, reg: usize) {
         let somar = |c: &mut u32| *c = c.saturating_add(1);
         match reg {
@@ -509,20 +514,44 @@ impl Vdp {
         self.preenchimento = None;
     }
 
+    /// Registra uma escrita na VRAM para o cache de sprites apenas quando cai na faixa da SAT
+    /// e nos 4 primeiros bytes do sprite (os unicos armazenados em cache pelo hardware).
+    #[inline]
+    fn registrar_escrita_sprite(&mut self, endereco: u32, valor: u8) {
+        if (endereco & 4) != 0 {
+            return;
+        }
+        let tabela = self.registros.tabela_de_sprites();
+        let fim = tabela.saturating_add(8 * 80);
+        if endereco >= tabela && endereco < fim {
+            self.ao_gravar_vram.push((endereco, valor));
+        }
+    }
+
     /// Põe na FIFO. O cache de sprites vê a escrita neste momento (como no oráculo).
     fn empurrar(&mut self, e: EntradaFifo) {
         if e.sentido == Sentido::Escrita && e.alvo == Alvo::Vram {
             let [hi, lo] = e.palavra.to_be_bytes();
-            self.ao_gravar_vram.push((e.endereco, hi));
-            self.ao_gravar_vram.push((e.endereco ^ 1, lo));
+            self.registrar_escrita_sprite(e.endereco, hi);
+            self.registrar_escrita_sprite(e.endereco ^ 1, lo);
         }
         self.fifo.push_back(e);
     }
 
+    #[inline]
     fn gravar_byte_vram(&mut self, endereco: usize, valor: u8) {
+        let Some(b) = self.vram.get_mut(endereco) else {
+            return;
+        };
+        if *b == valor {
+            return;
+        }
+        *b = valor;
         self.gravacoes_de_vram = self.gravacoes_de_vram.wrapping_add(1);
-        if let Some(b) = self.vram.get_mut(endereco) {
-            *b = valor;
+        let idx = endereco.wrapping_mul(2);
+        if let Some(dest) = self.tiles_8bpp.get_mut(idx..idx.saturating_add(2)) {
+            dest[0] = valor >> 4;
+            dest[1] = valor & 15;
         }
     }
 
@@ -628,8 +657,7 @@ impl Vdp {
         let a = usize::try_from((self.endereco_de_dados ^ 1) & 0xffff).unwrap_or(0);
         let byte = dado.to_be_bytes()[0];
         self.gravar_byte_vram(a, byte);
-        self.ao_gravar_vram
-            .push((u32::try_from(a).unwrap_or(0), byte));
+        self.registrar_escrita_sprite(u32::try_from(a).unwrap_or(0), byte);
         self.endereco_de_dados = self
             .endereco_de_dados
             .wrapping_add(u32::from(self.registros.incremento()));

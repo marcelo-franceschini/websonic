@@ -264,7 +264,7 @@ pub fn instrucoes(args: &[String]) -> Result<(), String> {
     let m = somar_ins(&textos)?;
     gravar(
         &renderizar_68000(&m, &nomes),
-        unica(args, "--saida", "docs/inventario-68000.md"),
+        unica(args, "--saida", "docs/inventarios/inventario-68000.md"),
     )?;
     println!("inventário do 68000: {} classes", m.len());
     Ok(())
@@ -275,7 +275,7 @@ pub fn barramento(args: &[String]) -> Result<(), String> {
     let m = somar_bar(&textos)?;
     gravar(
         &renderizar_barramento(&m, &nomes),
-        unica(args, "--saida", "docs/inventario-barramento.md"),
+        unica(args, "--saida", "docs/inventarios/inventario-barramento.md"),
     )?;
     println!("inventário do barramento: {} linhas", m.len());
     Ok(())
@@ -307,7 +307,7 @@ pub fn interrupcoes(args: &[String]) -> Result<(), String> {
     }
     gravar(
         &renderizar_interrupcoes(&acc, &lag, espera, &nomes),
-        unica(args, "--saida", "docs/inventario-interrupcoes.md"),
+        unica(args, "--saida", "docs/inventarios/inventario-interrupcoes.md"),
     )?;
     println!(
         "inventário de interrupções: {} rotinas/níveis, {} quadros, {} com lag",

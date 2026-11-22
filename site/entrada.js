@@ -1,4 +1,39 @@
-// Entrada deterministica de teclado, gamepad e toque para o controle de 3 botoes do Mega Drive.
+// Entrada deterministica de teclado (com remapeamento persistente), gamepad e toque para o Mega Drive.
+
+export const CHAVE_STORAGE_CONTROLES = "websonic:controles:v1";
+
+export const ACOES_REMAP = [
+  { id: "cima", rotulo: "Cima", bit: 0x01, padrao: "KeyW" },
+  { id: "baixo", rotulo: "Baixo", bit: 0x02, padrao: "KeyS" },
+  { id: "esquerda", rotulo: "Esquerda", bit: 0x04, padrao: "KeyA" },
+  { id: "direita", rotulo: "Direita", bit: 0x08, padrao: "KeyD" },
+  { id: "a", rotulo: "Botão A (Pulo)", bit: 0x40, padrao: "KeyZ" },
+  { id: "b", rotulo: "Botão B (Pulo)", bit: 0x10, padrao: "KeyX" },
+  { id: "c", rotulo: "Botão C (Pulo)", bit: 0x20, padrao: "KeyC" },
+  { id: "start", rotulo: "Start / Pausa", bit: 0x80, padrao: "Enter" },
+];
+
+export const MAPA_PADRAO_ACAO = Object.freeze(
+  Object.fromEntries(ACOES_REMAP.map((a) => [a.id, a.padrao])),
+);
+
+// Teclas secundarias ergonomicas que continuam ativas caso nao sejam sobrescritas pelo usuario.
+const MAPA_SECUNDARIO_CODE = {
+  ArrowUp: 0x01,
+  Numpad8: 0x01,
+  ArrowDown: 0x02,
+  Numpad2: 0x02,
+  ArrowLeft: 0x04,
+  Numpad4: 0x04,
+  ArrowRight: 0x08,
+  Numpad6: 0x08,
+  KeyJ: 0x40,
+  KeyK: 0x10,
+  KeyL: 0x20,
+  Space: 0x20,
+  NumpadEnter: 0x80,
+  KeyP: 0x80,
+};
 
 export const MAPA_TECLAS_CODE = {
   // Direcionais
@@ -29,6 +64,66 @@ export const MAPA_TECLAS_KEY = {
   Enter: 0x80, p: 0x80, P: 0x80,
 };
 
+export function formatarCodigoTecla(code) {
+  if (!code) return "-";
+  if (code.startsWith("Key")) return code.slice(3);
+  if (code.startsWith("Digit")) return code.slice(5);
+  if (code.startsWith("Numpad")) return "Num " + code.slice(6);
+  const nomes = {
+    Space: "Espaço",
+    Enter: "Enter",
+    ArrowUp: "↑",
+    ArrowDown: "↓",
+    ArrowLeft: "←",
+    ArrowRight: "→",
+    ShiftLeft: "Shift E",
+    ShiftRight: "Shift D",
+    ControlLeft: "Ctrl E",
+    ControlRight: "Ctrl D",
+    Backspace: "Backspace",
+  };
+  return nomes[code] || code;
+}
+
+export function construirMapaTeclas(mapaAcoes) {
+  const mapa = { ...MAPA_SECUNDARIO_CODE };
+  for (const acao of ACOES_REMAP) {
+    const code = mapaAcoes?.[acao.id] || acao.padrao;
+    if (code) {
+      mapa[code] = acao.bit;
+    }
+  }
+  return mapa;
+}
+
+export function carregarMapaPersonalizado(storage) {
+  const base = { ...MAPA_PADRAO_ACAO };
+  if (!storage) return base;
+  try {
+    const bruto = storage.getItem(CHAVE_STORAGE_CONTROLES);
+    if (!bruto) return base;
+    const salvo = JSON.parse(bruto);
+    if (!salvo || typeof salvo !== "object") return base;
+    for (const acao of ACOES_REMAP) {
+      if (typeof salvo[acao.id] === "string" && salvo[acao.id].length > 0) {
+        base[acao.id] = salvo[acao.id];
+      }
+    }
+  } catch {
+    // Storage indisponivel ou corrompido: usa padrao.
+  }
+  return base;
+}
+
+export function salvarMapaPersonalizado(storage, mapaAcoes) {
+  if (!storage) return;
+  try {
+    storage.setItem(CHAVE_STORAGE_CONTROLES, JSON.stringify(mapaAcoes));
+  } catch {
+    // Ignora erros de quota ou modo privado.
+  }
+}
+
 export function ehModoTituloOuDemo(modo) {
   return modo === 0x00 || modo === 0x04 || modo === 0x08;
 }
@@ -40,13 +135,14 @@ export function cancelarOpostas(mascara) {
   return limpa;
 }
 
-export function calcularMascaraTeclado(teclasSeguradas, modo = 4) {
+export function calcularMascaraTeclado(teclasSeguradas, modo = 4, mapaCustom = null) {
   let mascara = 0;
   const telaTituloOuDemo = ehModoTituloOuDemo(modo);
+  const mapaCode = mapaCustom || MAPA_TECLAS_CODE;
 
   for (const chave of teclasSeguradas) {
-    let b = MAPA_TECLAS_CODE[chave] || MAPA_TECLAS_KEY[chave] || 0;
-    if (chave === "Space" || chave === " " || chave === "Spacebar") {
+    let b = mapaCode[chave] || (!mapaCustom ? (MAPA_TECLAS_KEY[chave] || 0) : 0);
+    if ((chave === "Space" || chave === " " || chave === "Spacebar") && b === 0x20) {
       b = telaTituloOuDemo ? 0x80 : 0x20;
     }
     mascara |= b;
@@ -140,17 +236,36 @@ export function criarControladorEntrada({
   let toqueAtivo = temSuporteToque;
   let temGamepadConectado = false;
 
+  const storageSeguro = typeof localStorage !== "undefined" ? localStorage : null;
+  let mapaAcoes = carregarMapaPersonalizado(storageSeguro);
+  let mapaTeclasAtivo = construirMapaTeclas(mapaAcoes);
+  let capturaAtiva = null;
+
   const cacheKeycaps = new Map();
-  document.querySelectorAll(".tecla-cap[data-code]").forEach((cap) => {
-    const code = cap.getAttribute("data-code");
-    if (!code) return;
-    let lista = cacheKeycaps.get(code);
-    if (!lista) {
-      lista = [];
-      cacheKeycaps.set(code, lista);
-    }
-    lista.push(cap);
-  });
+
+  function reconstruirCacheKeycaps() {
+    cacheKeycaps.clear();
+    document.querySelectorAll(".tecla-cap[data-acao]").forEach((cap) => {
+      const acao = cap.getAttribute("data-acao");
+      const code = mapaAcoes[acao];
+      if (code) {
+        cap.setAttribute("data-code", code);
+        cap.textContent = formatarCodigoTecla(code);
+      }
+    });
+    document.querySelectorAll(".tecla-cap[data-code]").forEach((cap) => {
+      const code = cap.getAttribute("data-code");
+      if (!code) return;
+      let lista = cacheKeycaps.get(code);
+      if (!lista) {
+        lista = [];
+        cacheKeycaps.set(code, lista);
+      }
+      lista.push(cap);
+    });
+  }
+
+  reconstruirCacheKeycaps();
 
   function iluminarKeycap(code, ativa) {
     if (!code) return;
@@ -165,22 +280,99 @@ export function criarControladorEntrada({
     if (onMudancaEntrada) onMudancaEntrada();
   }
 
-  window.addEventListener("keydown", (e) => {
-    if (e.repeat) return;
-    if (e.code === "KeyF" && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      if (onAcaoEspecial) onAcaoEspecial("fullscreen");
-      e.preventDefault();
-      return;
+  function definirTeclaAcao(acaoId, code) {
+    if (!Object.prototype.hasOwnProperty.call(MAPA_PADRAO_ACAO, acaoId)) return;
+    // Se outra acao ja usava esta tecla, troca para evitar duplicidade.
+    const anterior = mapaAcoes[acaoId];
+    for (const outra of ACOES_REMAP) {
+      if (outra.id !== acaoId && mapaAcoes[outra.id] === code) {
+        mapaAcoes[outra.id] = anterior;
+      }
     }
-    if (e.code === "F3" && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      if (onAcaoEspecial) onAcaoEspecial("hud");
+    mapaAcoes[acaoId] = code;
+    mapaTeclasAtivo = construirMapaTeclas(mapaAcoes);
+    salvarMapaPersonalizado(storageSeguro, mapaAcoes);
+    teclasSeguradas.clear();
+    reconstruirCacheKeycaps();
+    notificarMudanca();
+  }
+
+  function restaurarPadrao() {
+    mapaAcoes = { ...MAPA_PADRAO_ACAO };
+    mapaTeclasAtivo = construirMapaTeclas(mapaAcoes);
+    salvarMapaPersonalizado(storageSeguro, mapaAcoes);
+    teclasSeguradas.clear();
+    reconstruirCacheKeycaps();
+    notificarMudanca();
+  }
+
+  function iniciarCapturaRemap(acaoId, callback) {
+    capturaAtiva = { acaoId, callback };
+    teclasSeguradas.clear();
+    notificarMudanca();
+  }
+
+  function cancelarCapturaRemap() {
+    capturaAtiva = null;
+  }
+
+  function elementoEhCampoDeTexto(el) {
+    if (!el) return false;
+    const tag = el.tagName;
+    return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+  }
+
+  window.addEventListener("keydown", (e) => {
+    if (capturaAtiva) {
       e.preventDefault();
+      e.stopImmediatePropagation();
+      const { acaoId, callback } = capturaAtiva;
+      capturaAtiva = null;
+      if (e.code === "Escape") {
+        if (callback) callback(null);
+        return;
+      }
+      if (e.code) {
+        definirTeclaAcao(acaoId, e.code);
+        if (callback) callback(e.code);
+      }
       return;
     }
 
-    const b = MAPA_TECLAS_CODE[e.code] || MAPA_TECLAS_KEY[e.key];
+    if (e.repeat) return;
+
+    const semMod = !e.ctrlKey && !e.metaKey && !e.altKey;
+    if (semMod && !elementoEhCampoDeTexto(document.activeElement)) {
+      if (e.code === "KeyF") {
+        if (onAcaoEspecial) onAcaoEspecial("fullscreen");
+        e.preventDefault();
+        return;
+      }
+      if (e.code === "F3") {
+        if (onAcaoEspecial) onAcaoEspecial("hud");
+        e.preventDefault();
+        return;
+      }
+      if (e.code === "F5" && estaJogando && estaJogando()) {
+        if (onAcaoEspecial) onAcaoEspecial("salvar-rapido");
+        e.preventDefault();
+        return;
+      }
+      if (e.code === "F8" && estaJogando && estaJogando()) {
+        if (onAcaoEspecial) onAcaoEspecial("carregar-rapido");
+        e.preventDefault();
+        return;
+      }
+      if (e.code === "Tab" && estaJogando && estaJogando()) {
+        if (onAcaoEspecial) onAcaoEspecial("fast-forward-inicio");
+        e.preventDefault();
+        return;
+      }
+    }
+
+    const b = mapaTeclasAtivo[e.code];
     if (b) {
-      teclasSeguradas.add(e.code || e.key);
+      teclasSeguradas.add(e.code);
       iluminarKeycap(e.code, true);
       if (onInteracao) onInteracao();
 
@@ -200,10 +392,15 @@ export function criarControladorEntrada({
   });
 
   window.addEventListener("keyup", (e) => {
-    const b = MAPA_TECLAS_CODE[e.code] || MAPA_TECLAS_KEY[e.key];
+    if (e.code === "Tab" && estaJogando && estaJogando()) {
+      if (onAcaoEspecial) onAcaoEspecial("fast-forward-fim");
+      e.preventDefault();
+      return;
+    }
+
+    const b = mapaTeclasAtivo[e.code];
     if (b) {
       teclasSeguradas.delete(e.code);
-      teclasSeguradas.delete(e.key);
       iluminarKeycap(e.code, false);
       e.preventDefault();
       notificarMudanca();
@@ -213,6 +410,7 @@ export function criarControladorEntrada({
   window.addEventListener("blur", () => {
     teclasSeguradas.clear();
     toquesAtivos.clear();
+    if (onAcaoEspecial) onAcaoEspecial("fast-forward-fim");
     document.querySelectorAll(".tecla-cap.ativa").forEach((cap) => cap.classList.remove("ativa"));
     if (controlesToque) {
       controlesToque.querySelectorAll(".btn-toque.ativo").forEach((b) => b.classList.remove("ativo"));
@@ -224,11 +422,11 @@ export function criarControladorEntrada({
     if (!badgeGamepad) return;
     if (gp && gp.connected) {
       const nome = gp.id.length > 22 ? gp.id.slice(0, 20) + "..." : gp.id;
-      badgeGamepad.className = "pill ativo";
-      badgeGamepad.textContent = `🎮 ${nome}`;
+      badgeGamepad.className = "status-item ativo";
+      badgeGamepad.textContent = `Gamepad · ${nome}`;
     } else {
-      badgeGamepad.className = "pill";
-      badgeGamepad.textContent = "🎮 Gamepad";
+      badgeGamepad.className = "status-item";
+      badgeGamepad.textContent = "Gamepad pronto";
     }
   }
 
@@ -292,6 +490,7 @@ export function criarControladorEntrada({
       btnToque.classList.add("btn-azul");
       btnToque.classList.remove("btn-cinza");
     }
+    btnToque.setAttribute("aria-pressed", String(toqueAtivo));
     btnToque.addEventListener("click", () => {
       toqueAtivo = !toqueAtivo;
       if (controlesToque && estaJogando && estaJogando()) {
@@ -299,6 +498,7 @@ export function criarControladorEntrada({
       }
       btnToque.classList.toggle("btn-azul", toqueAtivo);
       btnToque.classList.toggle("btn-cinza", !toqueAtivo);
+      btnToque.setAttribute("aria-pressed", String(toqueAtivo));
       const tela = obterTela ? obterTela() : null;
       if (tela) tela.focus();
       notificarMudanca();
@@ -309,7 +509,7 @@ export function criarControladorEntrada({
     const gp = temGamepadConectado && navigator.getGamepads
       ? calcularMascaraGamepad(navigator.getGamepads(), modo)
       : 0;
-    const tk = calcularMascaraTeclado(teclasSeguradas, modo);
+    const tk = calcularMascaraTeclado(teclasSeguradas, modo, mapaTeclasAtivo);
     const tq = toqueAtivo ? calcularMascaraToque(toquesAtivos, modo) : 0;
     return combinarMascaras(tk, gp, tq);
   }
@@ -328,5 +528,12 @@ export function criarControladorEntrada({
     toqueEstaAtivo() {
       return toqueAtivo;
     },
+    obterMapaAcoes() {
+      return { ...mapaAcoes };
+    },
+    definirTeclaAcao,
+    restaurarPadrao,
+    iniciarCapturaRemap,
+    cancelarCapturaRemap,
   };
 }

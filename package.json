@@ -2,11 +2,13 @@
   "name": "websonic",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "node server.mjs",
     "start": "node server.mjs",
-    "build": "node --check server.mjs site/app.js site/entrada.js site/hud.js site/sim-worker.js site/audio-worklet.js site/gpu.js site/relogio.js",
-    "lint": "node --check server.mjs site/app.js site/entrada.js site/hud.js site/sim-worker.js site/audio-worklet.js site/gpu.js site/relogio.js",
-    "test": "node --test site/tests/relogio.test.mjs site/tests/ritmo-60hz.test.mjs site/tests/audio-worklet.test.cjs site/tests/audio-worklet-carga.test.cjs site/tests/entrada.test.mjs site/tests/audio-worklet-canal.test.cjs"
+    "build": "node --check server.mjs site/app.js site/audio.js site/video.js site/preferencias.js site/modal-controles.js site/entrada.js site/hud.js site/saves.js site/save-ui.js site/buffers.js site/pwa.js site/sw.js site/sim-worker.js site/audio-worklet.js site/gpu.js site/relogio.js",
+    "lint": "node --check server.mjs site/app.js site/audio.js site/video.js site/preferencias.js site/modal-controles.js site/entrada.js site/hud.js site/saves.js site/save-ui.js site/buffers.js site/pwa.js site/sw.js site/sim-worker.js site/audio-worklet.js site/gpu.js site/relogio.js",
+    "test": "node --test site/tests/relogio.test.mjs site/tests/ritmo-60hz.test.mjs site/tests/audio-worklet.test.cjs site/tests/audio-worklet-carga.test.cjs site/tests/entrada.test.mjs site/tests/audio-worklet-canal.test.cjs site/tests/saves.test.mjs site/tests/save-ui.test.mjs site/tests/buffers.test.mjs site/tests/hud.test.mjs site/tests/video.test.mjs site/tests/audio.test.mjs site/tests/preferencias.test.mjs site/tests/server.test.mjs site/tests/gpu.test.mjs site/tests/modal-controles.test.mjs site/tests/pwa.test.mjs",
+    "test:coverage": "node --test --experimental-test-coverage site/tests/relogio.test.mjs site/tests/ritmo-60hz.test.mjs site/tests/audio-worklet.test.cjs site/tests/audio-worklet-carga.test.cjs site/tests/entrada.test.mjs site/tests/audio-worklet-canal.test.cjs site/tests/saves.test.mjs site/tests/save-ui.test.mjs site/tests/buffers.test.mjs site/tests/hud.test.mjs site/tests/video.test.mjs site/tests/audio.test.mjs site/tests/preferencias.test.mjs site/tests/server.test.mjs site/tests/gpu.test.mjs site/tests/modal-controles.test.mjs site/tests/pwa.test.mjs"
   }
 }

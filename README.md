@@ -98,15 +98,36 @@ Bloqueiam ROM por extensão, tamanho e hash, no commit e no push. Detalhes e lim
 
 ## Código e comandos
 
-Dentro do contêiner (ou na imagem):
+Dentro do contêiner (ou na imagem) para Rust e WebAssembly:
 
 ```sh
 cargo test --workspace
-cargo xtask site        # monta dist/
+cargo xtask verify-js   # testes unitários do frontend (Node.js)
+cargo xtask site        # monta dist/ (Wasm SIMD + wasm-opt + PWA + cache busting)
+cargo xtask bench       # confere tamanho do .wasm e benchmarks de vídeo/áudio/JS
 cargo xtask anti-rom    # procura ROM no repositório
 ```
 
-Estrutura e decisões em `docs/conhecimento/esqueleto.md`.
+Para o frontend e o servidor estático local (Node.js 22+, sem dependências externas):
+
+```sh
+npm start               # sobe server.mjs na porta 3000 (serve dist/ ou site/)
+npm run lint            # checa sintaxe de server.mjs e de todos os módulos em site/
+npm test                # roda as 17 suítes unitárias do frontend e do servidor (58 testes)
+npm run test:coverage   # roda a suíte com relatório nativo de cobertura do Node
+```
+
+## Documentação
+
+- `docs/requisitos.md`: fonte única de verdade do projeto (congelada).
+- `docs/estado.md`: andamento vivo das etapas, medições e pendências.
+- `docs/arquitetura.md`: mapa do repositório, fluxo no navegador e fronteira de determinismo.
+- `docs/conhecimento/README.md`: índice da base de conhecimento técnico com evidências.
+- `docs/backlog.md`: itens pendentes fora do caminho crítico da etapa atual.
+- `docs/bugs-conhecidos.md`: lista de verificação dos 315 itens `FixBugs` do disassembly.
+- `docs/inventarios/`: inventários gerados de hardware, memória, 68000, barramento, interrupções e som.
+- `docs/relatorios/`: relatórios de performance web e auditorias técnicas.
+- `docs/arquivo/planos/`: planos históricos das etapas já concluídas.
 
 ## CI
 

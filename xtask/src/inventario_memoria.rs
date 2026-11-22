@@ -174,7 +174,7 @@ pub fn executar(args: &[String]) -> Result<(), String> {
     let saida = opcoes("--saida")
         .first()
         .copied()
-        .unwrap_or("docs/inventario-memoria.md");
+        .unwrap_or("docs/inventarios/inventario-memoria.md");
     let mut todos: BTreeMap<usize, u16> = BTreeMap::new();
     let mut fontes = Vec::new();
     for a in &arquivos {

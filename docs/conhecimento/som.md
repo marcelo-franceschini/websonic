@@ -1,6 +1,6 @@
 # Som (Etapa 6)
 
-Plano: `docs/plano-etapa-6.md`. Cada afirmação cita o teste ou o comando. Nada aqui tem dado da ROM. Estado de cada prova no fim do arquivo.
+Plano: `docs/arquivo/planos/plano-etapa-6.md`. Cada afirmação cita o teste ou o comando. Nada aqui tem dado da ROM. Estado de cada prova no fim do arquivo.
 
 ## Como o Z80 do oráculo avança (sub-etapa 6.0)
 
@@ -23,7 +23,7 @@ Plano: `docs/plano-etapa-6.md`. Cada afirmação cita o teste ou o comando. Nada
 
 ## Inventário do som
 
-- `cargo xtask inventario-som` (2 testes) lê traces e tempos e escreve `docs/inventario-som.md`. Teste de ponta a ponta com a ROM sintética do Z80 (`oraculo rodar` com `--tempo`, depois o xtask): 25 pontos, 9 posições distintas, DAC e desvios do Z80 contados por origem. Com a ROM real: bloco 1 do Marcelo.
+- `cargo xtask inventario-som` (2 testes) lê traces e tempos e escreve `docs/inventarios/inventario-som.md`. Teste de ponta a ponta com a ROM sintética do Z80 (`oraculo rodar` com `--tempo`, depois o xtask): 25 pontos, 9 posições distintas, DAC e desvios do Z80 contados por origem. Com a ROM real: bloco 1 do Marcelo.
 
 ## Estado das provas
 
@@ -35,7 +35,7 @@ Plano: `docs/plano-etapa-6.md`. Cada afirmação cita o teste ou o comando. Nada
 ## Barramento e programa do Z80 no núcleo (6.1 e 6.2)
 
 - `crates/core/src/som/z80.rs`: `Banco` (9 bits), `MaquinaZ80` com os dois programas, `PontoZ80` e `DivergenciaZ80`. `Memoria` consome um ponto do Z80 gravado a cada acesso do 68000 que toca o Z80 (BUSREQ, RESET, janela), avança a máquina pelos ciclos gravados e confere PC, ciclos que faltam e banco. Sem ponto na fila, o Z80 fica parado (comportamento da Etapa 5 intacto).
-- O layout dos trechos do programa B foi montado a partir da ordem das instruções e do tamanho de cada uma (manual do Z80). **Conferência com dados reais:** todos os endereços de desvio do Z80 que o oráculo executou no corpus (`docs/inventario-som.md`) caem em endereços de instrução que o layout prevê (`1E` DJNZ, `20` JR, `37` JP P, `3F` JR NC, `8E`, `A4`, `CA` DJNZ, `AC`, `B3`, `B6`, `D0`, `D3` e, no programa A, `25` JP (HL)).
+- O layout dos trechos do programa B foi montado a partir da ordem das instruções e do tamanho de cada uma (manual do Z80). **Conferência com dados reais:** todos os endereços de desvio do Z80 que o oráculo executou no corpus (`docs/inventarios/inventario-som.md`) caem em endereços de instrução que o layout prevê (`1E` DJNZ, `20` JR, `37` JP P, `3F` JR NC, `8E`, `A4`, `CA` DJNZ, `AC`, `B3`, `B6`, `D0`, `D3` e, no programa A, `25` JP (HL)).
 - Prova com o oráculo (ROM sintética, programas montados à mão a partir do manual, tabelas e amostras inventadas): `diferencial-som/tests/z80.rs`, 3 testes passam: o programa A inteiro (LDIR de 8153 voltas, salto para si mesmo), o programa B tocando as três amostras de DPCM em instantes variados, e o programa B tocando a voz SEGA pela janela de ROM. Em todos: zero divergências de posição em todos os pontos (PC, ciclos que faltam, banco), as escritas do Z80 no YM2612 idênticas e na mesma ordem, e a RAM do Z80 idêntica no fim.
 - Falha achada e corrigida no jogo: o reconhecimento do programa no endereço zero só valia depois de um reset, então o programa A, ao saltar para zero, recomeçava em vez de cair no salto para si mesmo. Agora todo trecho em zero reconhece o programa de novo.
 - `diferencial-som/` é um workspace novo (GPLv3, como o oráculo) porque `diferencial/` foi congelado na Etapa 5.
@@ -70,5 +70,5 @@ Plano: `docs/plano-etapa-6.md`. Cada afirmação cita o teste ou o comando. Nada
 
 ## Fechamento (08/11/2026)
 
-- Manifesto refeito e assinado depois do patch 0005 (`sh scripts/etapa5-assinar.sh`): 383 linhas, `assinatura: OK`, `referências: OK`, `manifesto`, `determinismo` e `traces` PASSOU, segundo oráculo com 3 diferenças registradas e 0 sem decisão, `veredito: PASSOU`, ocultos `passou` nas seis zonas. Os traces do corpus foram regenerados com o oráculo novo e o determinismo passou.
+- Manifesto refeito e assinado depois do patch 0005 (`sh scripts/arquivo/etapa5-assinar.sh`): 383 linhas, `assinatura: OK`, `referências: OK`, `manifesto`, `determinismo` e `traces` PASSOU, segundo oráculo com 3 diferenças registradas e 0 sem decisão, `veredito: PASSOU`, ocultos `passou` nas seis zonas. Os traces do corpus foram regenerados com o oráculo novo e o determinismo passou.
 - A seção de cobertura mostra 107 decisões do núcleo, 9 nos dois caminhos nos testes, e 98 do som "sem teste": o relatório de cobertura só considera os testes do núcleo e não o harness com a ROM. Fica no backlog (Etapa 14).

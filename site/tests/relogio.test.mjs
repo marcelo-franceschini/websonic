@@ -55,3 +55,14 @@ test("rAF com pausas e vigia: 60 passos por segundo, sem contar tempo duas vezes
   assert.ok(naPausa >= 60, `${naPausa} passos durante as pausas`);
 });
 
+test("trava longo e limitado a 10 quadros de acumulado para evitar espiral da morte", () => {
+  const r = new Relogio();
+  r.iniciar(0);
+  // Salto de 25 quadros deve ser limitado a 10 quadros no acumulador (4 + 4 + 2 = 10).
+  assert.equal(r.avancar(PERIODO_QUADRO * 25), 4);
+  assert.equal(r.avancar(PERIODO_QUADRO * 25), 4);
+  assert.equal(r.avancar(PERIODO_QUADRO * 25), 2);
+  assert.equal(r.avancar(PERIODO_QUADRO * 25), 0);
+});
+
+

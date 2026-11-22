@@ -101,9 +101,10 @@ struct Nome {
     padrao: u16,
 }
 
-fn ler_nome(vram: &[u8], base: u16, largura: u16, linha: u16, coluna: u16) -> Nome {
+#[inline]
+fn ler_nome_linha(vram: &[u8], base: u16, linha_base: u16, coluna: u16) -> Nome {
     // A tabela de nomes tem no máximo 8 KiB: acima disso os endereços dão a volta.
-    let rel = 2u16.wrapping_mul(linha.wrapping_mul(largura).wrapping_add(coluna)) & 0x1fff;
+    let rel = 2u16.wrapping_mul(linha_base.wrapping_add(coluna)) & 0x1fff;
     let w = be16(vram, base.wrapping_add(rel));
     Nome {
         prioridade: w & 0x8000 != 0,
@@ -112,6 +113,10 @@ fn ler_nome(vram: &[u8], base: u16, largura: u16, linha: u16, coluna: u16) -> No
         h_flip: w & 0x0800 != 0,
         padrao: w & 0x07ff,
     }
+}
+
+fn ler_nome(vram: &[u8], base: u16, largura: u16, linha: u16, coluna: u16) -> Nome {
+    ler_nome_linha(vram, base, linha.wrapping_mul(largura), coluna)
 }
 
 /// Uma linha de 8 pontos de um tile de 8 por 8 (4 bits por ponto).
@@ -250,11 +255,41 @@ pub fn desenhar_planos(
     }
 }
 
+/// Lê uma linha de 8 pontos já decodificados (0..=15) do cache `tiles_8bpp`.
+#[inline]
+fn linha_do_tile_8bpp(
+    tiles_8bpp: &[u8],
+    padrao: u16,
+    linha: u16,
+    v_flip: bool,
+    h_flip: bool,
+) -> [u8; 8] {
+    let l = if v_flip {
+        7u16.saturating_sub(linha & 7)
+    } else {
+        linha & 7
+    };
+    let celula = usize::from(padrao & 0x07ff).wrapping_mul(64);
+    let base = celula.wrapping_add(usize::from(l).wrapping_mul(8));
+    let Some(src) = tiles_8bpp.get(base..base.saturating_add(8)) else {
+        return [0; 8];
+    };
+    if h_flip {
+        [
+            src[7], src[6], src[5], src[4], src[3], src[2], src[1], src[0],
+        ]
+    } else {
+        [
+            src[0], src[1], src[2], src[3], src[4], src[5], src[6], src[7],
+        ]
+    }
+}
+
 /// Escreve os 8 pontos compactos (bit 7 = prioridade, bits 5..4 = paleta, bits 3..0 = cor)
-/// de uma linha de tile diretamente em `dest`.
+/// de uma linha de tile diretamente em `dest` a partir do cache 8bpp.
 #[inline]
 fn desenhar_tile_compacto(
-    vram: &[u8],
+    tiles_8bpp: &[u8],
     padrao: u16,
     linha: u16,
     v_flip: bool,
@@ -267,37 +302,28 @@ fn desenhar_tile_compacto(
     } else {
         linha & 7
     };
-    let celula = 32u16.wrapping_mul(padrao);
-    let base = usize::from(celula.wrapping_add(4u16.wrapping_mul(l)));
-    let Some(b) = vram.get(base..base.saturating_add(4)) else {
+    let celula = usize::from(padrao & 0x07ff).wrapping_mul(64);
+    let base = celula.wrapping_add(usize::from(l).wrapping_mul(8));
+    let Some(src) = tiles_8bpp
+        .get(base..base.saturating_add(8))
+        .and_then(|s| <[u8; 8]>::try_from(s).ok())
+    else {
         dest.fill(attrs);
         return;
     };
+    let mut palavra = u64::from_ne_bytes(src);
     if h_flip {
-        dest[0] = (b[3] & 15) | attrs;
-        dest[1] = (b[3] >> 4) | attrs;
-        dest[2] = (b[2] & 15) | attrs;
-        dest[3] = (b[2] >> 4) | attrs;
-        dest[4] = (b[1] & 15) | attrs;
-        dest[5] = (b[1] >> 4) | attrs;
-        dest[6] = (b[0] & 15) | attrs;
-        dest[7] = (b[0] >> 4) | attrs;
-    } else {
-        dest[0] = (b[0] >> 4) | attrs;
-        dest[1] = (b[0] & 15) | attrs;
-        dest[2] = (b[1] >> 4) | attrs;
-        dest[3] = (b[1] & 15) | attrs;
-        dest[4] = (b[2] >> 4) | attrs;
-        dest[5] = (b[2] & 15) | attrs;
-        dest[6] = (b[3] >> 4) | attrs;
-        dest[7] = (b[3] & 15) | attrs;
+        palavra = palavra.swap_bytes();
     }
+    let mascara = u64::from_ne_bytes([attrs; 8]);
+    *dest = (palavra | mascara).to_ne_bytes();
 }
 
 /// Versão compacta de [`desenhar_planos`]: 1 byte por ponto (`bit 7 = prioridade`,
-/// `bits 5..4 = paleta`, `bits 3..0 = cor`), evitando o buffer de 3 bytes por ponto.
+/// `bits 5..4 = paleta`, `bits 3..0 = cor`), lendo tiles pré-decodificados de `tiles_8bpp`.
 pub(crate) fn desenhar_planos_compacto(
     p: &ParametrosDosPlanos<'_>,
+    tiles_8bpp: &[u8],
     buf_a: &mut [u8],
     buf_b: &mut [u8],
 ) {
@@ -342,15 +368,15 @@ pub(crate) fn desenhar_planos_compacto(
         let fino = i32::from(h_scroll & 15);
         let primeira: i32 = if fino != 0 { -1 } else { 0 };
         let linha_rolada_tela = linha.wrapping_add(v_tela) & mascara_v;
-        let celula_v_tela = linha_rolada_tela >> 3;
+        let linha_nome_tela = (linha_rolada_tela >> 3).wrapping_mul(largura_nome);
 
         for coluna in primeira..ultima_coluna {
-            let (linha_rolada, celula_v) = if v_por_tela {
-                (linha_rolada_tela, celula_v_tela)
+            let (linha_rolada, linha_nome_base) = if v_por_tela {
+                (linha_rolada_tela, linha_nome_tela)
             } else {
                 let v = rolagem_v(vsram, reg, plano, coluna, v_tela_cheia);
                 let lr = linha.wrapping_add(v) & mascara_v;
-                (lr, lr >> 3)
+                (lr, (lr >> 3).wrapping_mul(largura_nome))
             };
             let pixel_rolado = u16::try_from((coluna.wrapping_mul(16)) & 0xffff)
                 .unwrap_or(0)
@@ -366,7 +392,7 @@ pub(crate) fn desenhar_planos_compacto(
                 }
                 let celula_h =
                     celula_h_base.wrapping_add(u16::try_from(desloc).unwrap_or(0)) & h_celulas_mask;
-                let nome = ler_nome(vram, base, largura_nome, celula_v, celula_h);
+                let nome = ler_nome_linha(vram, base, linha_nome_base, celula_h);
                 let attrs = (u8::from(nome.prioridade) << 7) | (nome.paleta << 4);
                 if col_fb >= ini_pos && col_fb.wrapping_add(8) <= fim {
                     let inicio = usize::try_from(col_fb).unwrap_or(0);
@@ -375,7 +401,7 @@ pub(crate) fn desenhar_planos_compacto(
                         .and_then(|s| <&mut [u8; 8]>::try_from(s).ok())
                     {
                         desenhar_tile_compacto(
-                            vram,
+                            tiles_8bpp,
                             nome.padrao,
                             linha_rolada,
                             nome.v_flip,
@@ -387,7 +413,7 @@ pub(crate) fn desenhar_planos_compacto(
                     }
                 }
                 let cores =
-                    linha_do_tile(vram, nome.padrao, linha_rolada, nome.v_flip, nome.h_flip);
+                    linha_do_tile_8bpp(tiles_8bpp, nome.padrao, linha_rolada, nome.v_flip, nome.h_flip);
                 for (k, &cor) in cores.iter().enumerate() {
                     let x = col_fb.wrapping_add(i32::try_from(k).unwrap_or(0));
                     if x < ini || x >= fim {
@@ -572,20 +598,29 @@ pub fn desenhar_sprites(
     estouro
 }
 
-/// Versão compacta de [`desenhar_sprites`] (1 byte por ponto, 0 = transparente).
+/// Versão compacta de [`desenhar_sprites`] (1 byte por ponto, 0 = transparente),
+/// lendo tiles pré-decodificados de `tiles_8bpp`.
+/// Devolve `(estouro_de_pontos, desenhou_algum_pixel)`.
 pub(crate) fn desenhar_sprites_compacto(
-    vram: &[u8],
+    tiles_8bpp: &[u8],
     sprites: &[Sprite],
     linha: u16,
     pular_tiles: u16,
     estouro_anterior: bool,
+    limpar_buffer: bool,
     pontos: &mut [u8],
-) -> bool {
-    pontos.fill(0);
+) -> (bool, bool) {
+    if limpar_buffer {
+        pontos.fill(0);
+    }
+    if sprites.is_empty() {
+        return (false, false);
+    }
     let max_tiles = 40u16.saturating_sub(pular_tiles);
     let linha_sprite = INICIO_SPRITES.wrapping_add(linha);
     let mut buscados: u16 = 0;
     let mut estouro = false;
+    let mut desenhou = false;
     let mut achou_nao_zero = estouro_anterior;
     let mut mascara = false;
     let inicio = INICIO_SPRITES;
@@ -628,13 +663,30 @@ pub(crate) fn desenhar_sprites_compacto(
             if esq >= fim || dir <= inicio {
                 continue;
             }
-            let cores = linha_do_tile(vram, padrao, linha_do_tile_, false, s.h_flip);
+            let cores = linha_do_tile_8bpp(tiles_8bpp, padrao, linha_do_tile_, false, s.h_flip);
+            if u64::from_ne_bytes(cores) == 0 {
+                continue;
+            }
             if esq >= inicio && dir <= fim {
                 let x0 = usize::from(esq.wrapping_sub(inicio));
-                if let Some(dest) = pontos.get_mut(x0..x0.saturating_add(8)) {
-                    for (p, &cor) in dest.iter_mut().zip(cores.iter()) {
-                        if cor != 0 && (*p & 0x0f) == 0 {
-                            *p = cor | attrs;
+                if let Some(dest) = pontos
+                    .get_mut(x0..x0.saturating_add(8))
+                    .and_then(|s| <&mut [u8; 8]>::try_from(s).ok())
+                {
+                    // Caminho rapido: destino ainda transparente (primeiro sprite naquela faixa).
+                    if u64::from_ne_bytes(*dest) == 0 {
+                        for (p, &cor) in dest.iter_mut().zip(cores.iter()) {
+                            if cor != 0 {
+                                *p = cor | attrs;
+                            }
+                        }
+                        desenhou = true;
+                    } else {
+                        for (p, &cor) in dest.iter_mut().zip(cores.iter()) {
+                            if cor != 0 && (*p & 0x0f) == 0 {
+                                *p = cor | attrs;
+                                desenhou = true;
+                            }
                         }
                     }
                     continue;
@@ -653,11 +705,12 @@ pub(crate) fn desenhar_sprites_compacto(
                     && (*p & 0x0f) == 0
                 {
                     *p = cor | attrs;
+                    desenhou = true;
                 }
             }
         }
     }
-    estouro
+    (estouro, desenhou)
 }
 
 /// Escolhe o índice de cor de 6 bits do ponto, pela prioridade (sem sombra nem realce).
@@ -685,31 +738,44 @@ pub fn resolver_ponto(
     indice_do_fundo
 }
 
-/// Versão compacta de [`resolver_ponto`] operando em pontos de 1 byte.
+/// Versão especializada de [`resolver_ponto_compacto`] quando não há ponto de sprite (`sprite == 0`).
 #[inline]
-pub(crate) fn resolver_ponto_compacto(sprite: u8, a: u8, b: u8, indice_do_fundo: u8) -> u8 {
-    let s_cor = sprite & 0x0f;
+pub(crate) fn resolver_ponto_sem_sprite(a: u8, b: u8, indice_do_fundo: u8) -> u8 {
     let a_cor = a & 0x0f;
     let b_cor = b & 0x0f;
-    let (p0, c0, p1, c1, p2, c2) = match (sprite & 0x80 != 0, a & 0x80 != 0, b & 0x80 != 0) {
-        (false, false, false)
-        | (true, false, false)
-        | (true, true, false)
-        | (true, true, true) => (sprite, s_cor, a, a_cor, b, b_cor),
-        (false, true, false) => (a, a_cor, sprite, s_cor, b, b_cor),
-        (false, false, true) => (b, b_cor, sprite, s_cor, a, a_cor),
-        (true, false, true) => (sprite, s_cor, b, b_cor, a, a_cor),
-        (false, true, true) => (a, a_cor, b, b_cor, sprite, s_cor),
-    };
-    if c0 != 0 {
-        p0 & 0x3f
-    } else if c1 != 0 {
-        p1 & 0x3f
-    } else if c2 != 0 {
-        p2 & 0x3f
+    if (a & 0x80) == 0 && (b & 0x80) != 0 {
+        if b_cor != 0 {
+            b & 0x3f
+        } else if a_cor != 0 {
+            a & 0x3f
+        } else {
+            indice_do_fundo
+        }
+    } else if a_cor != 0 {
+        a & 0x3f
+    } else if b_cor != 0 {
+        b & 0x3f
     } else {
         indice_do_fundo
     }
+}
+
+/// Versão compacta de [`resolver_ponto`] operando em pontos de 1 byte.
+#[inline]
+pub(crate) fn resolver_ponto_compacto(sprite: u8, a: u8, b: u8, indice_do_fundo: u8) -> u8 {
+    if (sprite & 0x0f) == 0 {
+        return resolver_ponto_sem_sprite(a, b, indice_do_fundo);
+    }
+    if (sprite & 0x80) != 0 {
+        return sprite & 0x3f;
+    }
+    if (a & 0x80) != 0 && (a & 0x0f) != 0 {
+        return a & 0x3f;
+    }
+    if (b & 0x80) != 0 && (b & 0x0f) != 0 {
+        return b & 0x3f;
+    }
+    sprite & 0x3f
 }
 
 #[cfg(test)]
@@ -741,6 +807,12 @@ mod testes {
                                     resolver_ponto_compacto(emp(ps), emp(pa), emp(pb), fundo),
                                     resolver_ponto(ps, pa, pb, fundo)
                                 );
+                                if sc == 0 {
+                                    assert_eq!(
+                                        resolver_ponto_sem_sprite(emp(pa), emp(pb), fundo),
+                                        resolver_ponto(ps, pa, pb, fundo)
+                                    );
+                                }
                             }
                         }
                     }
@@ -989,5 +1061,137 @@ mod testes {
         desenhar_planos(&par, &mut a, &mut b);
         assert_eq!(a[8].cor, 3);
         assert_eq!(a[0].cor, 0);
+    }
+
+    #[test]
+    fn cache_8bpp_equivale_a_decodificacao_direta_da_vram() {
+        let mut vram = vec![0u8; 65536];
+        let mut tiles_8bpp = vec![0u8; 65536 * 2];
+        // Preenche o tile 7 com padrão distinto por linha e nibble.
+        for linha in 0..8usize {
+            for col in 0..4usize {
+                let addr = 7usize
+                    .saturating_mul(32)
+                    .saturating_add(linha.saturating_mul(4))
+                    .saturating_add(col);
+                let hi = (linha.saturating_mul(2).saturating_add(col)) & 15;
+                let lo = (linha.saturating_add(col.saturating_mul(3))) & 15;
+                let byte = u8::try_from((hi << 4) | lo).unwrap_or(0);
+                vram[addr] = byte;
+                let base8 = addr.saturating_mul(2);
+                tiles_8bpp[base8] = byte >> 4;
+                tiles_8bpp[base8.saturating_add(1)] = byte & 15;
+            }
+        }
+        for linha in 0..8u16 {
+            for v_flip in [false, true] {
+                for h_flip in [false, true] {
+                    let direto = linha_do_tile(&vram, 7, linha, v_flip, h_flip);
+                    let cache = linha_do_tile_8bpp(&tiles_8bpp, 7, linha, v_flip, h_flip);
+                    assert_eq!(cache, direto);
+                    let mut dest = [0u8; 8];
+                    let attrs = 0xA0;
+                    desenhar_tile_compacto(&tiles_8bpp, 7, linha, v_flip, h_flip, attrs, &mut dest);
+                    for i in 0..8 {
+                        assert_eq!(dest[i], direto[i] | attrs);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn desenhar_sprites_compacto_equivale_ao_completo() {
+        let mut vram = vec![0u8; 65536];
+        let mut tiles_8bpp = vec![0u8; 65536 * 2];
+        // Preenche tiles 1..=4 com combinacoes de transparente (0) e cores nao-zero.
+        for tile in 1..=4usize {
+            for linha in 0..8usize {
+                for col in 0..4usize {
+                    let addr = tile
+                        .saturating_mul(32)
+                        .saturating_add(linha.saturating_mul(4))
+                        .saturating_add(col);
+                    let hi = u8::try_from(
+                        tile.saturating_add(linha).saturating_add(col) & 7,
+                    )
+                    .unwrap_or(0);
+                    let lo = if col == 1 {
+                        0
+                    } else {
+                        u8::try_from(tile.saturating_mul(3).saturating_add(col) & 15).unwrap_or(1)
+                    };
+                    let byte = (hi << 4) | lo;
+                    vram[addr] = byte;
+                    let base8 = addr.saturating_mul(2);
+                    tiles_8bpp[base8] = hi;
+                    tiles_8bpp[base8.saturating_add(1)] = lo;
+                }
+            }
+        }
+
+        let sprites = [
+            // Sprite parcialmente fora da borda esquerda
+            Sprite {
+                padrao: 1,
+                v_pos: INICIO_SPRITES,
+                h_pos: INICIO_SPRITES.saturating_sub(4),
+                larg: 2,
+                alt: 1,
+                paleta: 1,
+                v_flip: false,
+                h_flip: false,
+                prioridade: true,
+            },
+            // Sprite inteiramente dentro, sobrepondo o proximo
+            Sprite {
+                padrao: 2,
+                v_pos: INICIO_SPRITES,
+                h_pos: INICIO_SPRITES.saturating_add(32),
+                larg: 2,
+                alt: 1,
+                paleta: 2,
+                v_flip: false,
+                h_flip: true,
+                prioridade: false,
+            },
+            // Sprite sobreposto (deve preencher apenas pixels transparentes do anterior)
+            Sprite {
+                padrao: 3,
+                v_pos: INICIO_SPRITES,
+                h_pos: INICIO_SPRITES.saturating_add(36),
+                larg: 2,
+                alt: 1,
+                paleta: 3,
+                v_flip: true,
+                h_flip: false,
+                prioridade: true,
+            },
+        ];
+
+        let mut esperado = vec![PontoDeTile::default(); LARGURA];
+        let est_ref = desenhar_sprites(&vram, &sprites, 0, 0, false, &mut esperado);
+
+        let mut compacto = [0u8; LARGURA];
+        let (est_cmp, desenhou) = desenhar_sprites_compacto(
+            &tiles_8bpp,
+            &sprites,
+            0,
+            0,
+            false,
+            true,
+            &mut compacto,
+        );
+
+        assert_eq!(est_cmp, est_ref);
+        assert!(desenhou);
+        for (i, (&c, e)) in compacto.iter().zip(esperado.iter()).enumerate() {
+            if e.cor == 0 {
+                assert_eq!(c & 0x0f, 0, "ponto {i} deveria ser transparente");
+            } else {
+                let emp = (u8::from(e.prioridade) << 7) | (e.paleta << 4) | e.cor;
+                assert_eq!(c, emp, "ponto {i} divergiu");
+            }
+        }
     }
 }

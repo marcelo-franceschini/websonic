@@ -2,9 +2,24 @@
 
 Documento de acompanhamento do progresso das etapas.
 
+## Evolução do frontend, redesign de UI e qualidade de código (22/11/2026)
+
+Registro completo com evidências em `docs/conhecimento/frontend.md`.
+
+### Entregas
+1. **Frontend modular e servidor local:** separação limpa de responsabilidades em `site/` (`app.js`, `video.js`, `gpu.js`, `audio.js`, `audio-worklet.js`, `entrada.js`, `modal-controles.js`, `hud.js`, `saves.js`, `save-ui.js`, `buffers.js`, `preferencias.js`, `pwa.js`, `sw.js`, `sim-worker.js`, `relogio.js`) e servidor estático local em `server.mjs` (porta 3000, cabeçalhos de segurança e proteção contra *path traversal*).
+2. **Redesign completo da UI/UX:** nova interface desktop e mobile responsiva, controles de preferências visuais (FPS, CRT, CRAM), modal acessível de remapeamento de teclado com restauração de foco, fluxo de Save States determinísticos `.s1sav` (RLE + IndexedDB) e suporte PWA offline-first. Validada em Chromium headless (`1440x900` e `390x844`) com 0 erros de console, 0 avisos e sem overflow horizontal.
+3. **Clean Code e Clean Architecture:** *swap-pop* O(1) em `PoolBuffers.adquirir` sem descartar buffers incompatíveis, limpeza de vertex shader em erro de compilação do fragment shader em `site/gpu.js`, injeção opcional `{ idb }` em `criarGerenciadorSaves` e extração de `prepararNovaSessao` em `site/sim-worker.js`.
+4. **Cobertura de testes JS (Node 22 nativo):** `npm test` e `npm run test:coverage` passaram de 9 testes (56,01% linhas) para **58 de 58 testes passando** em 17 arquivos, com **99,78% de cobertura de linhas** global e **100,00% de linhas nos 12 módulos testáveis de `site/`** (`server.mjs` em 93,23% com testes HTTP reais).
+5. **Auditoria estática de Rust (sem `cargo` no contêiner atual):** 0 `unsafe` nas 9 crates de produção (`#![forbid(unsafe_code)]`), 0 `TODO`/`FIXME`/`panic!`/`todo!`/`unimplemented!`, e perfis `release`/`wasm-release` conferidos.
+
+### Pendências no host (com Rust/Cargo e ROM REV01)
+1. Sincronizar `xtask/src/bench.rs` (`verificar_js`) com `package.json` adicionando `site/tests/gpu.test.mjs`, `site/tests/modal-controles.test.mjs` e `site/tests/pwa.test.mjs`.
+2. Rodar `cargo test --workspace`, `cargo clippy --workspace --all-targets` e `cargo xtask site` para validar o pacote Wasm atualizado com a ROM REV01 real no navegador.
+
 ## Remediação de desempenho web, rodada 2 (19/11/2026)
 
-O plano de `docs/relatorio-performance-2.md` foi executado (itens E0.1 a D1).
+O plano de `docs/relatorios/relatorio-performance-2.md` foi executado (itens E0.1 a D1).
 
 ### Decisões
 1. **PSG por amostra estavel:** quando os canais mantem a saida e nao ha escritas pendentes, o laco do PSG avanca 16 ciclos mestre de uma vez em `Psg::amostra_estavel`, mantendo fidelidade total amostra a amostra (teste `psg_amostra_estavel`).
@@ -31,7 +46,7 @@ O plano de `docs/relatorio-performance-2.md` foi executado (itens E0.1 a D1).
 
 ## Remediação de desempenho web e revisão pós-execução (17/11/2026)
 
-O plano de `docs/relatorio-performance.md` foi executado em 31 itens (commits `b274da4` a `beb3175`). Uma sessão de revisão conferiu cada commit, mediu de novo e corrigiu os desvios (commits `3a54493` a `fe49e48`, mais este registro).
+O plano de `docs/relatorios/relatorio-performance.md` foi executado em 31 itens (commits `b274da4` a `beb3175`). Uma sessão de revisão conferiu cada commit, mediu de novo e corrigiu os desvios (commits `3a54493` a `fe49e48`, mais este registro).
 
 ### Decisões
 1. **60 Hz exatos no navegador:** `PERIODO_QUADRO = 1000 / 60` em `site/relogio.js`. O `site/app.js` passa `taxa × (53693175 / 896040) / 60` a `criar_com_audio`, e o reamostrador entrega 800 pares por quadro a 48 kHz. A janela de estabilização começa em 0,8 quadro: com 0,75, três quartos de quadro somados em ponto flutuante disparavam um passo antes da hora no teste de interpolação.
@@ -106,15 +121,15 @@ O plano de `docs/relatorio-performance.md` foi executado em 31 itens (commits `b
 
 **Por que o detector fica em `hooks/`.** Se ele estivesse em `xtask/`, a própria IA poderia alterá-lo no mesmo commit em que copia a tabela. Em `hooks/`, a proibição de editar itens congelados protege o código.
 
-**Pendência fora da L1.** Os scripts de fidelidade, como `scripts/etapa8-bloco2.sh`, gravam em `$SONIC1_EXT_DIR/privado`, pasta que o contêiner não monta (ver a seção Ambiente de `docs/requisitos.md`). Para rodá-los dentro do contêiner, a saída precisa ir para `trabalho`, e o caminho da ROM precisa apontar para `/mnt/rom`. Isso ainda não foi feito.
+**Pendência fora da L1.** Os scripts de fidelidade, como `scripts/arquivo/etapa8-bloco2.sh`, gravam em `$SONIC1_EXT_DIR/privado`, pasta que o contêiner não monta (ver a seção Ambiente de `docs/requisitos.md`). Para rodá-los dentro do contêiner, a saída precisa ir para `trabalho`, e o caminho da ROM precisa apontar para `/mnt/rom`. Isso ainda não foi feito.
 
 **Aviso sobre a prova.** Com a leitura liberada, o corpus visível deixa de ser prova independente. Relatórios com o corpus visível valem como progresso. A prova fica com os testes ocultos e a auditoria.
 
 ## Etapa 8 (Sintetizador WebSonic): concluída, falta aplicar os patches, assinar o manifesto e a sessão de revisão (10/11/2026)
 
-Plano aprovado em 09/11/2026 (`docs/plano-etapa-8.md`). Decisões D8.1 a D8.14 em `docs/conhecimento/sintese.md`.
+Plano aprovado em 09/11/2026 (`docs/arquivo/planos/plano-etapa-8.md`). Decisões D8.1 a D8.14 em `docs/conhecimento/sintese.md`.
 
-**Critério cumprido:** `sh scripts/etapa8-bloco2.sh ROM 600` dá **veredito IGUAL** em todos os casos de FM e PSG (exit code 0, hash do relatório `55a112765775af740cb43a49f1100e91c841630a`, SHA-1 do arquivo `1013000deae3943a496a94031618c83a2cac4565`). Mais de 135 milhões de amostras de áudio comparadas amostra a amostra sem divergência:
+**Critério cumprido:** `sh scripts/arquivo/etapa8-bloco2.sh ROM 600` dá **veredito IGUAL** em todos os casos de FM e PSG (exit code 0, hash do relatório `55a112765775af740cb43a49f1100e91c841630a`, SHA-1 do arquivo `1013000deae3943a496a94031618c83a2cac4565`). Mais de 135 milhões de amostras de áudio comparadas amostra a amostra sem divergência:
 - Bateria sintética: 100% IGUAL.
 - `boot-demos` (7200 quadros): FM 1563/1563 blocos iguais, PSG 6563/6563 blocos iguais -> **IGUAL**.
 - `demos-quatro` (11700 quadros): FM 2540/2540 blocos iguais, PSG 10665/10665 blocos iguais -> **IGUAL**.
@@ -137,58 +152,58 @@ Plano aprovado em 09/11/2026 (`docs/plano-etapa-8.md`). Decisões D8.1 a D8.14 e
 
 ## Etapa 7 (Telas de abertura): concluída, falta aplicar os patches, assinar o manifesto e a sessão de revisão (09/11/2026)
 
-Plano aprovado em 08/11/2026 (`docs/plano-etapa-7.md`, com D7.3, D7.4 e a exclusão da pilha). Decisões D7.9 a D7.34 em `docs/conhecimento/abertura.md`.
+Plano aprovado em 08/11/2026 (`docs/arquivo/planos/plano-etapa-7.md`, com D7.3, D7.4 e a exclusão da pilha). Decisões D7.9 a D7.34 em `docs/conhecimento/abertura.md`.
 
-**Critério cumprido:** `sh scripts/etapa7-bloco2.sh ROM 1170` dá **veredito IGUAL**. Do quadro 0 a `Level_StartGame` (quadro 1166) não há divergência na RAM do 68000 e do Z80 (822 esperas de VBlank iguais), na posição do Z80, na ordem e no conteúdo das escritas de vídeo, PSG, YM e BUSREQ, nem na imagem de 320x224, na VRAM, na CRAM e na VSRAM (1166 quadros comparados, 0 diferentes). O núcleo roda no navegador pelo mesmo caminho: `sh scripts/etapa7-bloco5.sh ROM 1200` mostra determinismo, hashes iguais no nativo e em WebAssembly nos 1200 quadros, 652 imagens distintas, site montado e testes em wasm passando.
+**Critério cumprido:** `sh scripts/arquivo/etapa7-bloco2.sh ROM 1170` dá **veredito IGUAL**. Do quadro 0 a `Level_StartGame` (quadro 1166) não há divergência na RAM do 68000 e do Z80 (822 esperas de VBlank iguais), na posição do Z80, na ordem e no conteúdo das escritas de vídeo, PSG, YM e BUSREQ, nem na imagem de 320x224, na VRAM, na CRAM e na VSRAM (1166 quadros comparados, 0 diferentes). O núcleo roda no navegador pelo mesmo caminho: `sh scripts/arquivo/etapa7-bloco5.sh ROM 1200` mostra determinismo, hashes iguais no nativo e em WebAssembly nos 1200 quadros, 652 imagens distintas, site montado e testes em wasm passando.
 
 **Sub-etapas:** 7.0 a 7.9 feitas. 7.8 (experimento do nível 2): laços curtos a poucos ppm com o refresh 128/126; a voz SEGA erra 1,54% (BACKLOG, Etapa 15).
 
 **Falta (Marcelo):**
 1. Aplicar `docs/pedidos/etapa7-ci.patch` e `docs/pedidos/etapa7-relatorio.patch` (os dois aplicam limpo; o segundo põe `diferencial-som/` e `diferencial-abertura/` no manifesto).
-2. Refazer e assinar o manifesto (`sh scripts/etapa5-assinar.sh` ou o equivalente da Etapa 7).
+2. Refazer e assinar o manifesto (`sh scripts/arquivo/etapa5-assinar.sh` ou o equivalente da Etapa 7).
 3. Sessão de revisão, só do que a Etapa 7 mudou.
 
 **Limites aceitos (backlog):** só a partida da GHZ1 (Sonic parado no chão plano, HUD, anéis e monitores); física completa, outros objetos e zonas, água da LZ e as demos dos créditos e do estágio especial ficam para as Etapas 9 e 10. O som é silêncio no navegador (Etapa 8), o tempo no navegador é nominal (Etapa 15).
 
 ## Etapa 6 (Driver de som): concluída, falta a sessão de revisão (08/11/2026)
 
-Plano aprovado em 08/11/2026 (`docs/plano-etapa-6.md`). Relatório do som com a ROM real: **78 IGUAL, 0 DIVERGE** (hash `ff49435d25246d1734cc344369bfe58f0c104735`), cobrindo todas as músicas, todos os efeitos e os comandos: escritas nos chips (incluindo o DAC) idênticas em conteúdo e ordem, estado do driver na RAM, RAM do Z80 e posição do Z80 idênticos. Máquina do Z80 (programas de partida e do DAC, bateria e voz SEGA) provada também contra o oráculo em ROM sintética. Detalhes, desvios do plano e evidência em `docs/conhecimento/som.md`. **Fechamento (Marcelo, 08/11/2026):** manifesto refeito e assinado (383 linhas, commit `4d9358f`), `assinatura: OK`, `veredito: PASSOU`, ocultos passam nas seis zonas. A seção de cobertura do relatório lista 98 decisões do som "sem teste" porque a cobertura só conta os testes do núcleo, não o harness com a ROM; isso é BACKLOG (cobertura do som, Etapa 14) e não entra no veredito. **Pendente, sem bloquear:** rodar os testes wasm na imagem (`cargo test --target wasm32-wasip1 -p sonic1-core -p sonic1-teste-som`). (BACKLOG) cobertura e mutantes do som, roteiros para seis bugs conhecidos, patch do relatório e do manifesto para o som. Bugs conhecidos do som: 8 de 20 com teste nomeado, os outros mapeados em `cobertura/bugs-som.txt`.
+Plano aprovado em 08/11/2026 (`docs/arquivo/planos/plano-etapa-6.md`). Relatório do som com a ROM real: **78 IGUAL, 0 DIVERGE** (hash `ff49435d25246d1734cc344369bfe58f0c104735`), cobrindo todas as músicas, todos os efeitos e os comandos: escritas nos chips (incluindo o DAC) idênticas em conteúdo e ordem, estado do driver na RAM, RAM do Z80 e posição do Z80 idênticos. Máquina do Z80 (programas de partida e do DAC, bateria e voz SEGA) provada também contra o oráculo em ROM sintética. Detalhes, desvios do plano e evidência em `docs/conhecimento/som.md`. **Fechamento (Marcelo, 08/11/2026):** manifesto refeito e assinado (383 linhas, commit `4d9358f`), `assinatura: OK`, `veredito: PASSOU`, ocultos passam nas seis zonas. A seção de cobertura do relatório lista 98 decisões do som "sem teste" porque a cobertura só conta os testes do núcleo, não o harness com a ROM; isso é BACKLOG (cobertura do som, Etapa 14) e não entra no veredito. **Pendente, sem bloquear:** rodar os testes wasm na imagem (`cargo test --target wasm32-wasip1 -p sonic1-core -p sonic1-teste-som`). (BACKLOG) cobertura e mutantes do som, roteiros para seis bugs conhecidos, patch do relatório e do manifesto para o som. Bugs conhecidos do som: 8 de 20 com teste nomeado, os outros mapeados em `cobertura/bugs-som.txt`.
 
 ## Etapa 5 (Núcleo base): concluída, falta a sessão de revisão (texto do cabeçalho corrigido em 08/11/2026)
 
-Plano aprovado em 08/11/2026 (`docs/plano-etapa-5.md`). Implementado e provado com dados sintéticos: memória espelhada (5.1), operações do 68000 (5.2), tempo gravado e laço de quadro (5.3), pontos de checagem (5.4), patch 0004 do oráculo com inventários e tempo (5.0), harness de teste por rotina (5.5), cobertura (5.6), bugs injetados (5.7) e lista de bugs conhecidos (5.8, 315 itens). Detalhes, desvios do plano e evidência em `docs/conhecimento/nucleo.md`.
+Plano aprovado em 08/11/2026 (`docs/arquivo/planos/plano-etapa-5.md`). Implementado e provado com dados sintéticos: memória espelhada (5.1), operações do 68000 (5.2), tempo gravado e laço de quadro (5.3), pontos de checagem (5.4), patch 0004 do oráculo com inventários e tempo (5.0), harness de teste por rotina (5.5), cobertura (5.6), bugs injetados (5.7) e lista de bugs conhecidos (5.8, 315 itens). Detalhes, desvios do plano e evidência em `docs/conhecimento/nucleo.md`.
 
 **Falta (Marcelo, host):**
 1. Bloco A: FEITO (inventários commitados, evidência em nucleo.md).
 2. Bloco B e B2: FEITOS (mapa de decisões commitado; EniDec:incremental e modo_lista em exclusoes-propostas).
 3. Assinatura e cobertura: FEITAS (manifesto de 352 linhas, veredito PASSOU). Pendências do Marcelo: commit de refs e oracle, reconstruir a imagem, aprovar as duas exclusões, sessão de revisão.
-3. Assinatura: `sh scripts/etapa5-assinar.sh` (pede senhas; refaz os traces, o manifesto, assina e roda `cargo fidelidade fidelidade`).
+3. Assinatura: `sh scripts/arquivo/etapa5-assinar.sh` (pede senhas; refaz os traces, o manifesto, assina e roda `cargo fidelidade fidelidade`).
 4. Congelamento e CI: `git apply docs/pedidos/etapa5-congelar.patch` e reconstruir a imagem do contêiner (corrige também o `esperado-cargo-config.txt` defasado desde a Etapa 2).
 5. Decisão do Marcelo: aprovar ou não a exclusão da pilha na comparação (`cobertura/exclusoes-propostas.txt`; recomendação: aprovar).
 6. Sessão de revisão da Etapa 5 (só do que ela mudou).
 
 ## Etapa 2 (Corpus e integridade): revisão do fechamento feita (08/11/2026); fecha quando o Marcelo reconstruir a imagem do contêiner
 
-Revisão feita por sessão nova em 07/11/2026 (só do que a Etapa 2 mudou). Ela achou três linhas do "Pronto quando" sem cumprimento literal (segundo oráculo, TAS, quatro demos) e mais cinco pontos do requisito sem cumprimento (partida gravada no corpus, congelamento do que mede, trace sem cópias, senha das chaves, IA no contêiner). O Marcelo pediu que a IA decidisse. O plano com as decisões está em `docs/plano-fechamento-etapa-2.md`: sub-etapa 2.10 (IA, no contêiner), um script único do host (Marcelo) e a 2.11 (registro). **Atualização de 08/11/2026:** 2.10, script do host e 2.11 feitos (ver `docs/conhecimento/corpus.md`). Veredito do relatório `PASSOU`, ocultos `passou` nas seis zonas, partida `REPRODUZ`. Os dois TAS foram descartados por perda de sincronia, então o corpus não tem TAS aceito (backlog). **Revisão do fechamento (sessão nova, 08/11/2026):** dois itens BLOQUEIA, B1 (chave de assinatura sem senha) e B2 (saída dos TAS). B2 corrigido (corpus.md). B1: o script agora aborta com senha vazia, mas **a senha ainda não foi definida** (conferido em 08/11/2026: a chave abre sem senha). **Decisão do Marcelo em 08/11/2026: aceita o corpus sem TAS aceito** (os dois foram descartados por perda de sincronia; investigação na Etapa 14). **B1 resolvido em 08/11/2026:** a chave de assinatura agora exige senha (conferido: `ssh-keygen -y -P ''` falha). **Para fechar a Etapa 2:** reconstruir a imagem do contêiner. Depois disso nenhum BLOQUEIA resta e a Etapa 5 pode começar.
+Revisão feita por sessão nova em 07/11/2026 (só do que a Etapa 2 mudou). Ela achou três linhas do "Pronto quando" sem cumprimento literal (segundo oráculo, TAS, quatro demos) e mais cinco pontos do requisito sem cumprimento (partida gravada no corpus, congelamento do que mede, trace sem cópias, senha das chaves, IA no contêiner). O Marcelo pediu que a IA decidisse. O plano com as decisões está em `docs/arquivo/planos/plano-fechamento-etapa-2.md`: sub-etapa 2.10 (IA, no contêiner), um script único do host (Marcelo) e a 2.11 (registro). **Atualização de 08/11/2026:** 2.10, script do host e 2.11 feitos (ver `docs/conhecimento/corpus.md`). Veredito do relatório `PASSOU`, ocultos `passou` nas seis zonas, partida `REPRODUZ`. Os dois TAS foram descartados por perda de sincronia, então o corpus não tem TAS aceito (backlog). **Revisão do fechamento (sessão nova, 08/11/2026):** dois itens BLOQUEIA, B1 (chave de assinatura sem senha) e B2 (saída dos TAS). B2 corrigido (corpus.md). B1: o script agora aborta com senha vazia, mas **a senha ainda não foi definida** (conferido em 08/11/2026: a chave abre sem senha). **Decisão do Marcelo em 08/11/2026: aceita o corpus sem TAS aceito** (os dois foram descartados por perda de sincronia; investigação na Etapa 14). **B1 resolvido em 08/11/2026:** a chave de assinatura agora exige senha (conferido: `ssh-keygen -y -P ''` falha). **Para fechar a Etapa 2:** reconstruir a imagem do contêiner. Depois disso nenhum BLOQUEIA resta e a Etapa 5 pode começar.
 
-**Sub-etapa 2.10 (IA, no contêiner, 07/11/2026): feita; falta o script do host.** Entregue: pacote `relatorio` em `docs/pedidos/etapa2-relatorio.patch` (aplicar numa cópia limpa e testes do pacote passam), `docs/pedidos/etapa2-congelar.patch` (`oracle2/` e `crates/corpus/`), `xtask` sem os comandos que medem, `cargo xtask tas converter|conferir`, os dois TAS convertidos em `corpus/` (ainda **não conferidos** contra a REV01), `demos-quatro` em `corpus/demos.txt`, zona `corpus` no `scripts/etapa2-gravar.sh`, D1a a D1c em `oraculos.md` e `scripts/etapa2-fechamento.sh`. Detalhes e provas em `docs/conhecimento/corpus.md`. **O Marcelo roda no host:** `sh scripts/etapa2-fechamento.sh ROM`, reconstrói a imagem do contêiner e cola `/tmp/etapa2-fechamento.txt` na sessão do contêiner (2.11).
+**Sub-etapa 2.10 (IA, no contêiner, 07/11/2026): feita; falta o script do host.** Entregue: pacote `relatorio` em `docs/pedidos/etapa2-relatorio.patch` (aplicar numa cópia limpa e testes do pacote passam), `docs/pedidos/etapa2-congelar.patch` (`oracle2/` e `crates/corpus/`), `xtask` sem os comandos que medem, `cargo xtask tas converter|conferir`, os dois TAS convertidos em `corpus/` (ainda **não conferidos** contra a REV01), `demos-quatro` em `corpus/demos.txt`, zona `corpus` no `scripts/arquivo/etapa2-gravar.sh`, D1a a D1c em `oraculos.md` e `scripts/arquivo/etapa2-fechamento.sh`. Detalhes e provas em `docs/conhecimento/corpus.md`. **O Marcelo roda no host:** `sh scripts/arquivo/etapa2-fechamento.sh ROM`, reconstrói a imagem do contêiner e cola `/tmp/etapa2-fechamento.txt` na sessão do contêiner (2.11).
 
 Rodadas do host de 06 e 07/11/2026. Provas, com comando e resultado em `docs/conhecimento/corpus.md` e `docs/conhecimento/oraculos.md`:
 - Patch 0003 do oráculo aplicado (mapa de acessos à RAM por contexto e gravador de entradas); testes do oráculo OK, incluindo o que falha sem a correção dos botões no quadro.
-- Inventário de memória compartilhada gerado (`docs/inventario-memoria.md`: 751 variáveis, 546 compartilhadas).
+- Inventário de memória compartilhada gerado (`docs/inventarios/inventario-memoria.md`: 751 variáveis, 546 compartilhadas).
 - Gravador (2.2): `gravacao: REPRODUZ` na prova e nas 6 partidas dos testes ocultos.
 - Testes ocultos (2.8): um caso cifrado por zona (ghz, mz, syz, lz, slz, sbz); a auditoria imprime `zona: passou (1 casos)` para as seis. Limite: o sistema sob teste da Etapa 2 (`scripts/sut-reproduz.sh`) só confere que o oráculo roda o caso até o fim sem erro. "passou" aqui prova decifração e execução, não fidelidade. O sistema real entra na Etapa 5.
 - Manifesto assinado (207 linhas); `cargo xtask fidelidade`: manifesto, determinismo e traces `PASSOU`; `veredito: PASSOU`. Hashes novos: `lz-agua` `9f8d8be1…`, `boot-demos` `52ed49ce…`.
 - Segundo oráculo: **não concorda** em todos os quadros, então a linha "concorda nas demos" da Etapa 2 não foi cumprida. D1 foi medido só nos quadros 51, 52, 53, 60, 120 e 600 do `boot-demos` (4, 1, 3, 13 e 197 bytes, conforme a rodada). A região explicava `v_megadrive` (corrigida, provado no quadro 53). O resto são variáveis de tempo, que a hipótese atribui ao ponto de fechamento do quadro em relação ao VBlank. **É hipótese, sem prova**, e a diferença cresce com o tempo. Decisão registrada: vale o oráculo principal. Isso atende o critério 5 do pronto (diferença com decisão registrada), não a linha da Etapa 2.
   - Atualização (07/11/2026, quarta a sexta rodadas, `oraculos.md`): o principal no quadro N contra o segundo no quadro N+1 deixa, em 14 quadros do `boot-demos` (até o 5600), só pilha (`FFFCC0..FFFDFF`) e 3 variáveis de tempo (`v_vblank_routine`, `v_jpadhold1`, `v_jpadpress1`). Nenhuma variável de lógica difere. A causa continua hipótese. Não cobre os quadros 5601 a 7200.
-  - Decisão (IA, a pedido do Marcelo, pela regra do requisitos): D1 vira D1a (alinhamento), D1b (pilha) e D1c (3 variáveis de tempo), todas com "vale o principal". Faltam amostras do fim da MZ, da SYZ e da special stage. Ver `docs/plano-fechamento-etapa-2.md`, D-R1.
+  - Decisão (IA, a pedido do Marcelo, pela regra do requisitos): D1 vira D1a (alinhamento), D1b (pilha) e D1c (3 variáveis de tempo), todas com "vale o principal". Faltam amostras do fim da MZ, da SYZ e da special stage. Ver `docs/arquivo/planos/plano-fechamento-etapa-2.md`, D-R1.
 - Limite aceito: os testes ocultos desta etapa são um caso curto por zona; os atos completos ficam para a Etapa 14.
-- Revisão da Etapa 2: feita em 07/11/2026. Fechamento em `docs/plano-fechamento-etapa-2.md`.
+- Revisão da Etapa 2: feita em 07/11/2026. Fechamento em `docs/arquivo/planos/plano-fechamento-etapa-2.md`.
 - Aviso: esta sessão de revisão e as sessões desde a Etapa 1 rodaram no host, fora do contêiner. O requisito decide que a IA roda no contêiner. O fechamento roda no contêiner.
 
 ## Etapa 4 (Renderizador fiel): implementada e provada no corpus atual (06/11/2026)
 
-Plano aprovado em 06/11/2026 (`docs/plano-etapa-4.md`). 4.0 a 4.9 feitas. Prova com a ROM real (rodada 2, `docs/conhecimento/video.md`): `video-comparar` **IGUAL em 7200 quadros** (`boot-demos`) e **em 2000 quadros** (`lz-agua`, Labyrinth, com 1530 interrupcoes de linha de nivel 4); VRAM, CRAM e VSRAM iguais ao trace em todos os quadros; nenhum aviso fora do inventario; lints do nucleo e testes wasm do `sonic1-video` ok na imagem; manifesto assinado. Falta a sessao de revisao (so do que a Etapa 4 mudou) e o resumo para o chat de planejamento. A Etapa 2 foi fechada depois (ver o topo deste arquivo).
+Plano aprovado em 06/11/2026 (`docs/arquivo/planos/plano-etapa-4.md`). 4.0 a 4.9 feitas. Prova com a ROM real (rodada 2, `docs/conhecimento/video.md`): `video-comparar` **IGUAL em 7200 quadros** (`boot-demos`) e **em 2000 quadros** (`lz-agua`, Labyrinth, com 1530 interrupcoes de linha de nivel 4); VRAM, CRAM e VSRAM iguais ao trace em todos os quadros; nenhum aviso fora do inventario; lints do nucleo e testes wasm do `sonic1-video` ok na imagem; manifesto assinado. Falta a sessao de revisao (so do que a Etapa 4 mudou) e o resumo para o chat de planejamento. A Etapa 2 foi fechada depois (ver o topo deste arquivo).
 
 ## Etapa atual
 

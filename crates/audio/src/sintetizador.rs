@@ -101,8 +101,8 @@ pub struct Sintetizador {
 
     buffer_fm: [(i16, i16); 24],
 
-    fila_fm: Vec<(u64, u32, u8)>,
-    fila_psg: Vec<(u64, u8)>,
+    fila_fm: Vec<(u64, u64, u32, u8)>,
+    fila_psg: Vec<(u64, u64, u8)>,
     pos_fm: usize,
     pos_psg: usize,
 }
@@ -125,8 +125,8 @@ impl Sintetizador {
             subciclo_fm: 0,
             subciclo_psg: 0,
             buffer_fm: [(0, 0); 24],
-            fila_fm: Vec::new(),
-            fila_psg: Vec::new(),
+            fila_fm: Vec::with_capacity(256),
+            fila_psg: Vec::with_capacity(64),
             pos_fm: 0,
             pos_psg: 0,
         }
@@ -177,12 +177,24 @@ impl Sintetizador {
     pub fn agendar(&mut self, mclk: u64, chip: Chip, porta: u32, valor: u8) {
         match chip {
             Chip::Fm => {
-                let idx = self.fila_fm.partition_point(|&(m, _, _)| m <= mclk);
-                self.fila_fm.insert(idx, (mclk, porta, valor));
+                let ciclo = mclk / MCLK_POR_CICLO_FM;
+                match self.fila_fm.last() {
+                    Some(&(m, _, _, _)) if m > mclk => {
+                        let idx = self.fila_fm.partition_point(|&(t, _, _, _)| t <= mclk);
+                        self.fila_fm.insert(idx, (mclk, ciclo, porta, valor));
+                    }
+                    _ => self.fila_fm.push((mclk, ciclo, porta, valor)),
+                }
             }
             Chip::Psg => {
-                let idx = self.fila_psg.partition_point(|&(m, _)| m <= mclk);
-                self.fila_psg.insert(idx, (mclk, valor));
+                let ciclo = mclk / MCLK_POR_CICLO_PSG;
+                match self.fila_psg.last() {
+                    Some(&(m, _, _)) if m > mclk => {
+                        let idx = self.fila_psg.partition_point(|&(t, _, _)| t <= mclk);
+                        self.fila_psg.insert(idx, (mclk, ciclo, valor));
+                    }
+                    _ => self.fila_psg.push((mclk, ciclo, valor)),
+                }
             }
         }
     }
@@ -279,8 +291,7 @@ impl Sintetizador {
         let ciclos_alvo_fm = mclk_alvo / MCLK_POR_CICLO_FM;
         while self.ciclos_fm < ciclos_alvo_fm {
             while self.pos_fm < self.fila_fm.len() {
-                let (m, p, v) = self.fila_fm[self.pos_fm];
-                let c_escrita = m / MCLK_POR_CICLO_FM;
+                let (_, c_escrita, p, v) = self.fila_fm[self.pos_fm];
                 if c_escrita <= self.ciclos_fm {
                     self.fm.escreve(p, v);
                     self.pos_fm = self.pos_fm.wrapping_add(1);
@@ -290,11 +301,22 @@ impl Sintetizador {
             }
 
             let proxima_escrita = if self.pos_fm < self.fila_fm.len() {
-                self.fila_fm[self.pos_fm].0 / MCLK_POR_CICLO_FM
+                self.fila_fm[self.pos_fm].1
             } else {
                 ciclos_alvo_fm
             };
             let limite = ciclos_alvo_fm.min(proxima_escrita);
+
+            if !COM_PINOS && self.subciclo_fm == 0 {
+                let amostras = limite.saturating_sub(self.ciclos_fm) / 24;
+                if amostras > 0 {
+                    for _ in 0..amostras {
+                        self.fm.amostra_sem_pinos();
+                        ao_fm(self.fm.saida_misturada(), &self.buffer_fm);
+                    }
+                    self.ciclos_fm = self.ciclos_fm.wrapping_add(amostras.wrapping_mul(24));
+                }
+            }
 
             while self.ciclos_fm < limite {
                 if COM_PINOS {
@@ -316,8 +338,7 @@ impl Sintetizador {
         let ciclos_alvo_psg = mclk_alvo / MCLK_POR_CICLO_PSG;
         while self.ciclos_psg < ciclos_alvo_psg {
             while self.pos_psg < self.fila_psg.len() {
-                let (m, v) = self.fila_psg[self.pos_psg];
-                let c_escrita = m / MCLK_POR_CICLO_PSG;
+                let (_, c_escrita, v) = self.fila_psg[self.pos_psg];
                 if c_escrita <= self.ciclos_psg {
                     self.psg.escreve(v);
                     self.pos_psg = self.pos_psg.wrapping_add(1);
@@ -327,41 +348,90 @@ impl Sintetizador {
             }
 
             let proxima_escrita = if self.pos_psg < self.fila_psg.len() {
-                self.fila_psg[self.pos_psg].0 / MCLK_POR_CICLO_PSG
+                self.fila_psg[self.pos_psg].1
             } else {
                 ciclos_alvo_psg
             };
             let limite = ciclos_alvo_psg.min(proxima_escrita);
 
-            while self.ciclos_psg < limite {
-                // Amostra inteira sem escrita: os 16 ciclos de uma vez (igual a 16 `ciclo()`).
-                if self.subciclo_psg == 0
-                    && limite.saturating_sub(self.ciclos_psg) >= 16
-                    && self.psg.amostra_estavel()
-                {
-                    self.ciclos_psg = self.ciclos_psg.wrapping_add(16);
+            if self.subciclo_psg == 0 {
+                let amostras = limite.saturating_sub(self.ciclos_psg) >> 4;
+                let mut feitas: u64 = 0;
+                while feitas < amostras && self.psg.amostra_estavel() {
                     ao_psg(self.psg.saida_empacotada());
-                    continue;
+                    feitas = feitas.wrapping_add(1);
                 }
+                if feitas > 0 {
+                    self.ciclos_psg = self.ciclos_psg.wrapping_add(feitas << 4);
+                }
+            }
+
+            while self.ciclos_psg < limite {
                 self.psg.ciclo();
                 self.subciclo_psg = self.subciclo_psg.wrapping_add(1);
                 self.ciclos_psg = self.ciclos_psg.wrapping_add(1);
                 if self.subciclo_psg >= 16 {
                     self.subciclo_psg = 0;
                     ao_psg(self.psg.saida_empacotada());
+                    if limite.saturating_sub(self.ciclos_psg) >= 16 {
+                        let amostras = limite.saturating_sub(self.ciclos_psg) >> 4;
+                        let mut feitas: u64 = 0;
+                        while feitas < amostras && self.psg.amostra_estavel() {
+                            ao_psg(self.psg.saida_empacotada());
+                            feitas = feitas.wrapping_add(1);
+                        }
+                        if feitas > 0 {
+                            self.ciclos_psg = self.ciclos_psg.wrapping_add(feitas << 4);
+                        }
+                    }
                 }
             }
         }
 
-        if self.pos_fm > 0 {
+        if self.pos_fm >= self.fila_fm.len() {
+            self.fila_fm.clear();
+        } else if self.pos_fm > 0 {
             self.fila_fm.drain(..self.pos_fm);
-            self.pos_fm = 0;
         }
-        if self.pos_psg > 0 {
+        self.pos_fm = 0;
+
+        if self.pos_psg >= self.fila_psg.len() {
+            self.fila_psg.clear();
+        } else if self.pos_psg > 0 {
             self.fila_psg.drain(..self.pos_psg);
-            self.pos_psg = 0;
         }
+        self.pos_psg = 0;
 
         self.mclk = mclk_alvo;
+    }
+}
+
+#[cfg(test)]
+mod testes {
+    use super::*;
+
+    #[test]
+    fn agendamento_fora_de_ordem_preserva_desempate_por_mclk_no_mesmo_ciclo() {
+        let mut ordenado = Sintetizador::novo();
+        let mut fora = Sintetizador::novo();
+
+        // Duas escritas PSG dentro do mesmo ciclo (mclk 16 e 20 -> ciclo 1): a de mclk 16 deve vir primeiro.
+        ordenado.agendar(16, Chip::Psg, 0, 0x90);
+        ordenado.agendar(20, Chip::Psg, 0, 0x95);
+        ordenado.agendar(420, Chip::Fm, 0, 0x28);
+        ordenado.agendar(425, Chip::Fm, 1, 0xF0);
+
+        fora.agendar(20, Chip::Psg, 0, 0x95);
+        fora.agendar(16, Chip::Psg, 0, 0x90);
+        fora.agendar(425, Chip::Fm, 1, 0xF0);
+        fora.agendar(420, Chip::Fm, 0, 0x28);
+
+        let (mut fm_a, mut psg_a) = (Vec::new(), Vec::new());
+        let (mut fm_b, mut psg_b) = (Vec::new(), Vec::new());
+        ordenado.avancar_ate_compacto(4_032, &mut fm_a, &mut psg_a);
+        fora.avancar_ate_compacto(4_032, &mut fm_b, &mut psg_b);
+
+        assert_eq!(fm_a, fm_b);
+        assert_eq!(psg_a, psg_b);
     }
 }

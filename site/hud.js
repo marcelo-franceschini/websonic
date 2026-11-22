@@ -3,6 +3,37 @@ import { PERIODO_QUADRO } from "./relogio.js";
 
 const HISTORICO_TEMPOS_MAX = 80;
 
+/**
+ * Calcula media e percentil 95 de uma janela de tempos em ms sem alocar memoria no laco quente.
+ */
+export function calcularMediaEP95(amostras, quantidade, scratch) {
+  const n = Math.min(quantidade, amostras.length);
+  if (n <= 0) return { media: 0, p95: 0 };
+
+  const destino = scratch && scratch.length >= n ? scratch : new Float32Array(n);
+  let soma = 0;
+  for (let i = 0; i < n; i++) {
+    const v = amostras[i];
+    soma += v;
+    destino[i] = v;
+  }
+  const ordenados = destino.subarray(0, n).sort();
+  const idxP95 = Math.min(n - 1, Math.floor(n * 0.95));
+  return {
+    media: soma / n,
+    p95: ordenados[idxP95],
+  };
+}
+
+/**
+ * Classifica o tempo de quadro para a cor da barra do HUD (60 FPS / 30 FPS / lento).
+ */
+export function classificarFrametime(tempoMs) {
+  if (tempoMs <= 16.67) return "#10b981";
+  if (tempoMs <= 33.33) return "#ffbe0b";
+  return "#ef4444";
+}
+
 export function criarHud(el) {
   const ctxHudGrafico = el.canvasHudGrafico ? el.canvasHudGrafico.getContext("2d") : null;
   let hudVisivel = false;
@@ -31,6 +62,7 @@ export function criarHud(el) {
     if (el.btnHud) {
       el.btnHud.classList.toggle("btn-azul", hudVisivel);
       el.btnHud.classList.toggle("btn-cinza", !hudVisivel);
+      el.btnHud.setAttribute("aria-pressed", String(hudVisivel));
     }
   }
 
@@ -58,7 +90,7 @@ export function criarHud(el) {
     const y16 = Math.round(h - (16.67 * h / 40));
     const y33 = Math.round(h - (33.33 * h / 40));
 
-    ctxHudGrafico.fillStyle = "rgba(0, 212, 255, 0.35)";
+    ctxHudGrafico.fillStyle = "rgba(59, 125, 248, 0.45)";
     ctxHudGrafico.fillRect(0, y16, w, 1);
 
     ctxHudGrafico.fillStyle = "rgba(239, 68, 68, 0.35)";
@@ -74,14 +106,7 @@ export function criarHud(el) {
       const x = i * larguraBarra;
       const y = h - altura;
 
-      if (tempo <= 16.67) {
-        ctxHudGrafico.fillStyle = "#10b981";
-      } else if (tempo <= 33.33) {
-        ctxHudGrafico.fillStyle = "#ffbe0b";
-      } else {
-        ctxHudGrafico.fillStyle = "#ef4444";
-      }
-
+      ctxHudGrafico.fillStyle = classificarFrametime(tempo);
       ctxHudGrafico.fillRect(x, y, Math.max(1, larguraBarra - 0.5), altura);
     }
   }
@@ -171,15 +196,7 @@ export function criarHud(el) {
     }
 
     if (el.elDiagTempoWasm) {
-      let soma = 0;
-      const n = Math.min(totalWasm, HISTORICO_TEMPOS_MAX);
-      for (let i = 0; i < n; i++) {
-        soma += historicoWasmTime[i];
-        copiaWasmTime[i] = historicoWasmTime[i];
-      }
-      const ordenados = copiaWasmTime.subarray(0, n).sort();
-      const media = n > 0 ? soma / n : 0;
-      const p95 = n > 0 ? ordenados[Math.floor(n * 0.95)] : 0;
+      const { media, p95 } = calcularMediaEP95(historicoWasmTime, totalWasm, copiaWasmTime);
       const strTempo = `${media.toFixed(2)} ms (p95: ${p95.toFixed(2)} ms)`;
       if (el.elDiagTempoWasm.textContent !== strTempo) el.elDiagTempoWasm.textContent = strTempo;
     }
@@ -208,41 +225,41 @@ export function criarHud(el) {
         el.elDiagEstado.textContent = "Não inicializado";
         el.elDiagEstado.className = "diag-mudo";
       }
-      if (el.badgeAudio && el.badgeAudio.textContent !== "🔇 Áudio Desligado") {
-        el.badgeAudio.className = "pill";
-        el.badgeAudio.textContent = "🔇 Áudio Desligado";
+      if (el.badgeAudio && el.badgeAudio.textContent !== "Áudio inativo") {
+        el.badgeAudio.className = "status-item";
+        el.badgeAudio.textContent = "Áudio inativo";
       }
       return;
     }
 
     const st = audioCtx.state;
     if (st === "running") {
-      if (el.elDiagEstado && el.elDiagEstado.textContent !== "🟢 Ativo (running)") {
-        el.elDiagEstado.textContent = "🟢 Ativo (running)";
+      if (el.elDiagEstado && el.elDiagEstado.textContent !== "Ativo (running)") {
+        el.elDiagEstado.textContent = "Ativo (running)";
         el.elDiagEstado.className = "diag-ativo";
       }
-      if (el.btnAudio && el.btnAudio.textContent !== "🔊 Áudio Ativo") {
-        el.btnAudio.textContent = "🔊 Áudio Ativo";
+      if (el.btnAudio && el.btnAudio.textContent !== "Áudio ativo") {
+        el.btnAudio.textContent = "Áudio ativo";
         el.btnAudio.classList.remove("btn-verde", "btn-audio-aviso");
         el.btnAudio.classList.add("btn-audio-ativo");
       }
-      if (el.badgeAudio && el.badgeAudio.textContent !== "🔊 Áudio Ativo") {
-        el.badgeAudio.className = "pill ativo";
-        el.badgeAudio.textContent = "🔊 Áudio Ativo";
+      if (el.badgeAudio && el.badgeAudio.textContent !== "Áudio ativo") {
+        el.badgeAudio.className = "status-item ativo";
+        el.badgeAudio.textContent = "Áudio ativo";
       }
     } else if (st === "suspended") {
-      if (el.elDiagEstado && el.elDiagEstado.textContent !== "🟡 Pausado pelo navegador (suspended)") {
-        el.elDiagEstado.textContent = "🟡 Pausado pelo navegador (suspended)";
+      if (el.elDiagEstado && el.elDiagEstado.textContent !== "Suspenso pelo navegador") {
+        el.elDiagEstado.textContent = "Suspenso pelo navegador";
         el.elDiagEstado.className = "diag-aviso";
       }
-      if (el.btnAudio && el.btnAudio.textContent !== "⚠️ Desbloquear Áudio") {
-        el.btnAudio.textContent = "⚠️ Desbloquear Áudio";
+      if (el.btnAudio && el.btnAudio.textContent !== "Desbloquear áudio") {
+        el.btnAudio.textContent = "Desbloquear áudio";
         el.btnAudio.classList.remove("btn-verde", "btn-audio-ativo");
         el.btnAudio.classList.add("btn-audio-aviso");
       }
-      if (el.badgeAudio && el.badgeAudio.textContent !== "🟡 Clique para Áudio") {
-        el.badgeAudio.className = "pill aviso";
-        el.badgeAudio.textContent = "🟡 Clique para Áudio";
+      if (el.badgeAudio && el.badgeAudio.textContent !== "Clique para ativar áudio") {
+        el.badgeAudio.className = "status-item aviso";
+        el.badgeAudio.textContent = "Clique para ativar áudio";
       }
     } else if (el.elDiagEstado && el.elDiagEstado.textContent !== st) {
       el.elDiagEstado.textContent = st;

@@ -101,12 +101,12 @@ O laço web usava frequência de 59,9227 Hz da VDP do Mega Drive enquanto o nave
 
 ## 7. Desempenho Web, Rodada 2 (19/11/2026)
 
-Fatos técnicos e medições da auditoria e execução da rodada 2 (`docs/relatorio-performance-2.md`):
+Fatos técnicos e medições da auditoria e execução da rodada 2 (`docs/relatorios/relatorio-performance-2.md`):
 
-1. **DevTools e compilação do V8:** com o DevTools aberto, o V8 roda o Wasm 2,4 vezes mais devagar (13,84 contra 5,79 ms na microbancada). Medições de desempenho web devem ser feitas com o DevTools fechado (`docs/relatorio-performance-2.md`, seção 3.1).
-2. **Topologia de núcleos e frequência:** o processador i5-1334U possui núcleos P e E. Com o turbo desligado, o Wasm consome 6,20 ms no núcleo P e 10,79 ms no núcleo E (`docs/relatorio-performance-2.md`, seção 3.1). Com turbo ligado, o executor mediu na base média de 3,47 ms no núcleo P e 5,09 ms no núcleo E.
-3. **Pausas do compositor no navegador:** o Chrome suspende chamadas de `requestAnimationFrame` por 50 a 242 ms periodicamente, mesmo sem sobrecarga da CPU. Temporizadores via `setInterval` continuam sendo atendidos durante essas pausas (`docs/relatorio-performance-2.md`, seção 3.1). O vigia implementado em `site/app.js` utiliza esse mecanismo para manter a cadência de simulação e evitar faltas no buffer do AudioWorklet.
-4. **Divergência de libm no áudio Wasm:** o áudio gerado pelo Wasm diverge do nativo em amostras fracionárias devido a implementações distintas de `f32::sin` e `f32::cos` na libm. A renderização visual é idêntica bit a bit. A integridade do Wasm é garantida pela guarda própria `site/tests/guarda-wasm.test.mjs` (`docs/relatorio-performance-2.md`, seção 3.1).
+1. **DevTools e compilação do V8:** com o DevTools aberto, o V8 roda o Wasm 2,4 vezes mais devagar (13,84 contra 5,79 ms na microbancada). Medições de desempenho web devem ser feitas com o DevTools fechado (`docs/relatorios/relatorio-performance-2.md`, seção 3.1).
+2. **Topologia de núcleos e frequência:** o processador i5-1334U possui núcleos P e E. Com o turbo desligado, o Wasm consome 6,20 ms no núcleo P e 10,79 ms no núcleo E (`docs/relatorios/relatorio-performance-2.md`, seção 3.1). Com turbo ligado, o executor mediu na base média de 3,47 ms no núcleo P e 5,09 ms no núcleo E.
+3. **Pausas do compositor no navegador:** o Chrome suspende chamadas de `requestAnimationFrame` por 50 a 242 ms periodicamente, mesmo sem sobrecarga da CPU. Temporizadores via `setInterval` continuam sendo atendidos durante essas pausas (`docs/relatorios/relatorio-performance-2.md`, seção 3.1). O vigia implementado em `site/app.js` utiliza esse mecanismo para manter a cadência de simulação e evitar faltas no buffer do AudioWorklet.
+4. **Divergência de libm no áudio Wasm:** o áudio gerado pelo Wasm diverge do nativo em amostras fracionárias devido a implementações distintas de `f32::sin` e `f32::cos` na libm. A renderização visual é idêntica bit a bit. A integridade do Wasm é garantida pela guarda própria `site/tests/guarda-wasm.test.mjs` (`docs/relatorios/relatorio-performance-2.md`, seção 3.1).
 5. **Otimizações descartadas e medidas:**
    - Desenrolar FM: +0,45 ms no Wasm e +52 KB no binário.
    - Tabela de índices no FM: sem ganho comprovado no Wasm (razão de 0,97 a 1,15 no nativo).
@@ -114,7 +114,7 @@ Fatos técnicos e medições da auditoria e execução da rodada 2 (`docs/relato
    - Saída antecipada da VDP em FIFO vazia: razão de 0,99 a 1,05 no nativo.
    - Flags do compilador (`opt-level = 2`, `codegen-units = 1`, `+simd128`): sem ganho de tempo de execução.
    - Otimizador `wasm-opt` (-O3 e -O4): ganho no ruído (-1% a -3%) e piora severa de aquecimento (6,5 ms contra 4,0 ms nos primeiros 60 quadros).
-6. **Detector de vazamento da ROM:** o script detector foi validado com controle positivo (código de saída 1) e negativo (código de saída 0), operando sobre o índice git antes de cada commit (`docs/relatorio-performance-2.md`, seção 0.7).
+6. **Detector de vazamento da ROM:** o script detector foi validado com controle positivo (código de saída 1) e negativo (código de saída 0), operando sobre o índice git antes de cada commit (`docs/relatorios/relatorio-performance-2.md`, seção 0.7).
 7. **Resultados medidos pelo executor após a rodada 2 (com turbo ativo):**
    - Quadro Wasm `partida-ghz1`, núcleo P (média intercalada, 3 rodadas): 1,51 ms (base 1,80 ms, razão de 0,84x, comando: `taskset -c 2 $(command -v node) /tmp/websonic-exec/bancada-wasm.mjs dist/pkg`).
    - Quadro Wasm, núcleo E: média 2,34 ms, p95 2,55 ms, zero quadros acima de 16,67 ms (comando: `taskset -c 6 $(command -v node) site/tests/desempenho-wasm.test.mjs`).

@@ -254,9 +254,29 @@ impl Fm {
         let _ = self.ciclo_interno::<false>();
     }
 
+    /// Executa uma amostra inteira (24 ciclos internos) sem calcular a saida nos pinos.
+    /// Quando alinhado em `cycles == 0`, o indice estatico `0..24` permite ao compilador eliminar
+    /// checagens de limite e propagar constantes de slot/operador em cada estagio do pipeline.
+    pub fn amostra_sem_pinos(&mut self) {
+        if self.cycles == 0 {
+            for c in 0..24u32 {
+                let _ = self.passo_slot::<false>(c);
+            }
+        } else {
+            for _ in 0..24 {
+                let _ = self.ciclo_interno::<false>();
+            }
+        }
+    }
+
     #[inline]
     fn ciclo_interno<const COM_PINOS: bool>(&mut self) -> (i16, i16) {
         let c = self.cycles;
+        self.passo_slot::<COM_PINOS>(c)
+    }
+
+    #[inline]
+    fn passo_slot<const COM_PINOS: bool>(&mut self, c: u32) -> (i16, i16) {
         self.eg_cycle = self.eg_cycle.wrapping_add(1);
 
         if c == 1 && self.eg_quotient == 2 {
@@ -817,5 +837,45 @@ mod testes {
         assert_eq!(completo.diag_saida_op(), compacto.diag_saida_op());
         assert_eq!(completo.diag_saida_canal(), compacto.diag_saida_canal());
         assert_eq!(completo.diag_eg(), compacto.diag_eg());
+    }
+
+    #[test]
+    fn amostra_sem_pinos_equivale_a_24_ciclos() {
+        let mut completo = Fm::novo();
+        let mut lote = Fm::novo();
+        for (porta, valor) in [
+            (0, 0x30),
+            (1, 0x71),
+            (0, 0x40),
+            (1, 0x08),
+            (0, 0x50),
+            (1, 0x1F),
+            (0, 0xB0),
+            (1, 0x32),
+            (0, 0xA4),
+            (1, 0x22),
+            (0, 0xA0),
+            (1, 0x69),
+            (0, 0x28),
+            (1, 0xF0),
+        ] {
+            completo.escreve(porta, valor);
+            lote.escreve(porta, valor);
+            for _ in 0..24 {
+                let _ = completo.ciclo();
+            }
+            lote.amostra_sem_pinos();
+        }
+        for _ in 0..120 {
+            for _ in 0..24 {
+                let _ = completo.ciclo();
+            }
+            lote.amostra_sem_pinos();
+        }
+        assert_eq!(completo.saida_misturada(), lote.saida_misturada());
+        assert_eq!(completo.diag_fase(), lote.diag_fase());
+        assert_eq!(completo.diag_saida_op(), lote.diag_saida_op());
+        assert_eq!(completo.diag_saida_canal(), lote.diag_saida_canal());
+        assert_eq!(completo.diag_eg(), lote.diag_eg());
     }
 }

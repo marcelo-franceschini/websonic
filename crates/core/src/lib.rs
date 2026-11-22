@@ -10,6 +10,7 @@ pub mod abertura;
 pub mod aritmetica;
 pub mod cobertura;
 pub mod descompressao;
+pub mod jogo;
 pub mod memoria;
 pub mod nivel2;
 pub mod ops68k;

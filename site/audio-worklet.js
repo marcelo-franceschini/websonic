@@ -24,6 +24,14 @@ class SonicAudioProcessor extends AudioWorkletProcessor {
     this.chamadasProcess = 0;
     // Porta direta do MessageChannel com o Worker de simulacao (quando ativa).
     this.portaDados = null;
+    // Objeto reutilizado para telemetria (evita alocacao no thread de audio em tempo real).
+    this.msgStatus = {
+      tipo: "status",
+      disponiveis: 0,
+      falhas: 0,
+      descartadas: 0,
+      processados: 0,
+    };
 
     this.port.onmessage = (e) => this.receberMensagem(e, this.port);
   }
@@ -62,18 +70,38 @@ class SonicAudioProcessor extends AudioWorkletProcessor {
 
     const dados = msg instanceof Float32Array ? msg : new Float32Array(msg);
     const pares = dados.length >> 1;
-    const mascara = this.mascara;
-    const tam = this.tam;
-    for (let i = 0; i < pares; i++) {
-      if (this.disponiveis < tam) {
-        this.bufL[this.escrita] = dados[i * 2];
-        this.bufR[this.escrita] = dados[i * 2 + 1];
-        this.escrita = (this.escrita + 1) & mascara;
-        this.disponiveis++;
-      } else {
-        this.descartadas++;
-      }
+    const livres = this.tam - this.disponiveis;
+    const copiar = pares <= livres ? pares : livres;
+    if (pares > livres) {
+      this.descartadas += pares - livres;
     }
+
+    let escrita = this.escrita;
+    const tam = this.tam;
+    const bufL = this.bufL;
+    const bufR = this.bufR;
+    const ateFim = tam - escrita;
+    const primeiraParte = copiar <= ateFim ? copiar : ateFim;
+    for (let i = 0; i < primeiraParte; i++) {
+      const idx = i << 1;
+      bufL[escrita + i] = dados[idx];
+      bufR[escrita + i] = dados[idx + 1];
+    }
+    const restante = copiar - primeiraParte;
+    if (restante > 0) {
+      const baseDados = primeiraParte << 1;
+      for (let i = 0; i < restante; i++) {
+        const idx = baseDados + (i << 1);
+        bufL[i] = dados[idx];
+        bufR[i] = dados[idx + 1];
+      }
+      escrita = restante;
+    } else {
+      escrita = (escrita + primeiraParte) & this.mascara;
+    }
+    this.escrita = escrita;
+    this.disponiveis += copiar;
+
     if (dados.buffer) {
       origem.postMessage(dados.buffer, [dados.buffer]);
     }
@@ -95,41 +123,64 @@ class SonicAudioProcessor extends AudioWorkletProcessor {
       this.tevePrimeiraPartida = true;
     }
 
-    for (let i = 0; i < n; i++) {
-      if (!this.iniciado) {
-        this.ultimoL *= 0.95;
-        this.ultimoR *= 0.95;
-      } else if (this.disponiveis > 0) {
-        this.ultimoL = this.bufL[this.leitura];
-        this.ultimoR = this.bufR[this.leitura];
-        this.leitura = (this.leitura + 1) & mascara;
-        this.disponiveis--;
+    // Caminho rapido sem ramificacoes por amostra (99.9% dos callbacks em estereo estavel).
+    if (this.iniciado && this.disponiveis >= n && outR) {
+      const bufL = this.bufL;
+      const bufR = this.bufR;
+      let leitura = this.leitura;
+      if (leitura + n <= this.tam) {
+        outL.set(bufL.subarray(leitura, leitura + n));
+        outR.set(bufR.subarray(leitura, leitura + n));
+        leitura = (leitura + n) & mascara;
       } else {
-        // Falta de dado: decaimento suave para evitar estalidos
-        this.falhas++;
-        this.iniciado = false;
-        this.ultimoL *= 0.95;
-        this.ultimoR *= 0.95;
+        const primeiraParte = this.tam - leitura;
+        outL.set(bufL.subarray(leitura, this.tam), 0);
+        outR.set(bufR.subarray(leitura, this.tam), 0);
+        const restante = n - primeiraParte;
+        outL.set(bufL.subarray(0, restante), primeiraParte);
+        outR.set(bufR.subarray(0, restante), primeiraParte);
+        leitura = restante;
       }
+      this.leitura = leitura;
+      this.disponiveis -= n;
+      this.ultimoL = outL[n - 1];
+      this.ultimoR = outR[n - 1];
+    } else {
+      for (let i = 0; i < n; i++) {
+        if (!this.iniciado) {
+          this.ultimoL *= 0.95;
+          this.ultimoR *= 0.95;
+        } else if (this.disponiveis > 0) {
+          this.ultimoL = this.bufL[this.leitura];
+          this.ultimoR = this.bufR[this.leitura];
+          this.leitura = (this.leitura + 1) & mascara;
+          this.disponiveis--;
+        } else {
+          // Falta de dado: decaimento suave para evitar estalidos
+          this.falhas++;
+          this.iniciado = false;
+          this.ultimoL *= 0.95;
+          this.ultimoR *= 0.95;
+        }
 
-      if (outR) {
-        outL[i] = this.ultimoL;
-        outR[i] = this.ultimoR;
-      } else {
-        // Saida mono: faz a media dos dois canais
-        outL[i] = (this.ultimoL + this.ultimoR) * 0.5;
+        if (outR) {
+          outL[i] = this.ultimoL;
+          outR[i] = this.ultimoR;
+        } else {
+          // Saida mono: faz a media dos dois canais
+          outL[i] = (this.ultimoL + this.ultimoR) * 0.5;
+        }
       }
     }
 
     if (this.chamadasProcess % 24 === 0) {
       const destino = this.portaDados || this.port;
-      destino.postMessage({
-        tipo: "status",
-        disponiveis: this.disponiveis,
-        falhas: this.falhas,
-        descartadas: this.descartadas,
-        processados: this.chamadasProcess * n,
-      });
+      const msg = this.msgStatus;
+      msg.disponiveis = this.disponiveis;
+      msg.falhas = this.falhas;
+      msg.descartadas = this.descartadas;
+      msg.processados = this.chamadasProcess * n;
+      destino.postMessage(msg);
     }
 
     return true; // Continua rodando

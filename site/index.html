@@ -4,6 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Sonic the Hedgehog (1991) do Mega Drive reconstruído em Rust e WebAssembly com WebGL2 e AudioWorklet.">
+  <meta name="theme-color" content="#0a0c10">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="WebSonic">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="stylesheet" href="style.css">
 
@@ -12,99 +18,316 @@
   <meta property="og:url" content="https://marcelo-franceschini.github.io/websonic/">
   <meta property="og:title" content="WebSonic - Sonic the Hedgehog em Rust e WebAssembly">
   <meta property="og:description" content="Reconstrução fiel do Sonic the Hedgehog (1991) em Rust nativo e WebAssembly, com WebGL2 e AudioWorklet.">
-  <meta property="og:image" content="https://marcelo-franceschini.github.io/websonic/favicon.svg">
+  <meta property="og:image" content="https://marcelo-franceschini.github.io/websonic/icon-512.png">
 
   <!-- Twitter / X -->
   <meta name="twitter:card" content="summary">
   <meta name="twitter:url" content="https://marcelo-franceschini.github.io/websonic/">
   <meta name="twitter:title" content="WebSonic - Sonic the Hedgehog em Rust e WebAssembly">
   <meta name="twitter:description" content="Reconstrução fiel do Sonic the Hedgehog (1991) em Rust nativo e WebAssembly, com WebGL2 e AudioWorklet.">
-  <meta name="twitter:image" content="https://marcelo-franceschini.github.io/websonic/favicon.svg">
+  <meta name="twitter:image" content="https://marcelo-franceschini.github.io/websonic/icon-512.png">
 
-  <!-- So codigo do proprio site e WebAssembly. Nada de rede, nada de script ou estilo inline. -->
+  <!-- So codigo do proprio site e WebAssembly. Nada de rede externa, nada de script ou estilo inline. -->
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self'; img-src 'self'; connect-src 'self'">
+        content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self'; img-src 'self'; connect-src 'self'; manifest-src 'self'">
   <title>WebSonic - Sonic the Hedgehog REV01 em Rust e WebAssembly</title>
 </head>
 <body>
-  <div class="app-container">
-    <!-- Cabecalho -->
-    <header>
-      <div class="marca">
-        <div class="logo-icone" aria-hidden="true">⚡</div>
-        <div class="marca-texto">
-          <h1>WebSonic</h1>
-          <p>Sonic the Hedgehog REV01 em Rust/Wasm nominal com WebGL2</p>
+  <!-- Barra Superior (3 zonas limpas, sem pilulas estaticas) -->
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand-lockup">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 28 28" width="24" height="24" fill="none">
+            <rect x="2" y="2" width="24" height="24" rx="6" fill="#151a24" stroke="#2b6ef2" stroke-width="1.5"/>
+            <path d="M8 9.5H19.5L14 14.5H18.5L10.5 21L12.5 15.5H8.5L13 11.5H8V9.5Z" fill="#edf1f7"/>
+            <rect x="7" y="6" width="14" height="1.5" rx="0.75" fill="#eab308"/>
+          </svg>
+        </span>
+        <span class="brand-name">WebSonic</span>
+      </div>
+
+      <nav class="topbar-nav" aria-label="Navegação principal">
+        <button id="btn-controles-topo" type="button" class="nav-link" title="Remapear teclas do controle">Controles</button>
+        <button id="btn-nav-diag" type="button" class="nav-link" title="Abrir telemetria e diagnóstico de áudio">Diagnóstico</button>
+        <a href="https://github.com/marcelo-franceschini/websonic/blob/main/docs/requisitos.md" target="_blank" rel="noopener noreferrer" class="nav-link nav-link-desktop">Fidelidade</a>
+        <a href="https://github.com/marcelo-franceschini/websonic" target="_blank" rel="noopener noreferrer" class="nav-link">GitHub</a>
+      </nav>
+
+      <div class="topbar-actions">
+        <button id="btn-instalar" type="button" class="btn btn-azul btn-compact" hidden title="Instalar WebSonic como aplicativo">
+          <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5v7.25m0 0L5.25 7M8 9.75L10.75 7M3 12.5h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+          <span>Instalar App</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Faixa de Estado de Hardware (unboxed, sem pilulas, separacao por hairline) -->
+  <div class="status-strip" aria-label="Estado do sistema">
+    <div class="status-strip-inner">
+      <div class="status-items">
+        <span id="badge-gpu" class="status-item ativo">WebGL2 · Wasm</span>
+        <span class="status-sep" aria-hidden="true">·</span>
+        <span id="badge-audio" class="status-item">Áudio inativo</span>
+        <span class="status-sep" aria-hidden="true">·</span>
+        <span id="badge-gamepad" class="status-item">Gamepad pronto</span>
+        <span id="badge-offline" class="status-item aviso" hidden>Modo offline</span>
+      </div>
+      <div class="status-spec-tag" aria-hidden="true">MD-16 · NTSC 59,92 Hz · 320×224</div>
+    </div>
+  </div>
+
+  <main class="app-container">
+    <!-- Deck Inicial: Cartucho ROM + Ficha Tecnica de Hardware (oculta automaticamente ao iniciar o jogo) -->
+    <section id="deck-inicial" class="intake-grid" aria-label="Carregamento de ROM e especificações">
+      <div class="intake-primary">
+        <div class="hero-copy">
+          <p class="eyebrow">MEGA DRIVE 1991 · RECONSTRUÇÃO DETERMINÍSTICA</p>
+          <h1>Sonic the Hedgehog REV01, direto no navegador.</h1>
+          <p class="hero-lead">Núcleo em Rust e WebAssembly rodando fora da thread principal, com VDP de 9 bits em WebGL2 e síntese YM2612 + PSG via AudioWorklet.</p>
+        </div>
+
+        <!-- Baia de Cartucho / Dropzone -->
+        <div id="dropzone" class="dropzone-container">
+          <input type="file" id="arquivo" class="input-arquivo-oculto" accept=".bin,.md,.gen,.smd" aria-label="Selecionar arquivo ROM REV01" disabled>
+          <div class="cartridge-slot-bar" aria-hidden="true">
+            <span class="slot-notch"></span>
+            <span class="slot-label">CARTUCHO MD / GENESIS · REV01</span>
+            <span class="slot-notch"></span>
+          </div>
+          <div class="dropzone-body">
+            <div class="dropzone-icone" aria-hidden="true">
+              <svg viewBox="0 0 40 40" width="36" height="36" fill="none">
+                <rect x="6" y="7" width="28" height="24" rx="3" stroke="currentColor" stroke-width="1.6"/>
+                <path d="M11 7V5.5C11 4.67 11.67 4 12.5 4H27.5C28.33 4 29 4.67 29 5.5V7" stroke="currentColor" stroke-width="1.6"/>
+                <rect x="11" y="12" width="18" height="9" rx="1.5" stroke="#2b6ef2" stroke-width="1.5"/>
+                <path d="M12 31V35M16 31V35M20 31V35M24 31V35M28 31V35" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <div class="dropzone-copy">
+              <div class="dropzone-titulo">Escolha ou arraste sua ROM REV01 aqui</div>
+              <div class="dropzone-subtitulo">Sonic the Hedgehog (USA, Europe) REV01. Verificação SHA-1 100% local, sem envio para servidores.</div>
+            </div>
+            <div class="dropzone-footer">
+              <span class="dropzone-cta" aria-hidden="true">Selecionar arquivo ROM</span>
+              <span class="dropzone-formats">.bin · .md · .gen · .smd</span>
+            </div>
+          </div>
         </div>
       </div>
-      <div class="status-pills">
-        <a href="https://github.com/marcelo-franceschini/websonic" target="_blank" rel="noopener noreferrer" class="pill link-github" title="Repositório no GitHub">⚡ GitHub</a>
-        <span id="badge-audio" class="pill">🔊 Áudio</span>
-        <span id="badge-gamepad" class="pill">🎮 Gamepad</span>
-        <span class="pill ativo">⚡ Wasm &amp; WebGL2</span>
-      </div>
-    </header>
 
-    <!-- Dropzone de ROM -->
-    <div id="dropzone" class="dropzone-container">
-      <input type="file" id="arquivo" class="input-arquivo-oculto" accept=".bin,.md,.gen,.smd" aria-label="Selecionar arquivo ROM REV01" disabled>
-      <div class="dropzone-icone" aria-hidden="true">📁</div>
-      <div class="dropzone-titulo">Escolha ou arraste sua ROM REV01 aqui</div>
-      <div class="dropzone-subtitulo">Sonic the Hedgehog (USA, Europe) REV01. Conferência 100% local no seu navegador.</div>
-    </div>
+      <!-- Coluna Lateral: Especificacoes Reais do Nucleo e Atalhos -->
+      <aside class="spec-panel" aria-label="Especificações técnicas e controles">
+        <div class="spec-header">
+          <span class="spec-eyebrow">ARQUITETURA DO NÚCLEO</span>
+          <span class="spec-rev">REV01</span>
+        </div>
 
-    <!-- Resultado da validacao -->
+        <dl class="spec-list">
+          <div class="spec-row">
+            <dt>Execução</dt>
+            <dd>Rust + Wasm (Web Worker)</dd>
+          </div>
+          <div class="spec-row">
+            <dt>Vídeo VDP</dt>
+            <dd class="mono">320×224 · RGB 9-bit · WebGL2</dd>
+          </div>
+          <div class="spec-row">
+            <dt>Síntese</dt>
+            <dd>YM2612 FM + SN76489 PSG</dd>
+          </div>
+          <div class="spec-row">
+            <dt>Cadência</dt>
+            <dd class="mono">59,92 Hz NTSC · passo fixo</dd>
+          </div>
+          <div class="spec-row">
+            <dt>Save States</dt>
+            <dd>3 slots locais + exportação .s1sav</dd>
+          </div>
+          <div class="spec-row">
+            <dt>Privacidade</dt>
+            <dd>Processamento 100% local</dd>
+          </div>
+        </dl>
+
+        <div class="spec-controls-preview">
+          <div class="spec-controls-head">
+            <span class="spec-eyebrow">ATALHOS PADRÃO</span>
+            <button id="btn-controles-spec" type="button" class="link-inline">Remapear</button>
+          </div>
+          <div class="spec-keys-grid">
+            <div class="spec-key-item">
+              <div class="teclas-caps">
+                <span class="tecla-cap" data-acao="cima" data-code="KeyW">W</span>
+                <span class="tecla-cap" data-acao="esquerda" data-code="KeyA">A</span>
+                <span class="tecla-cap" data-acao="baixo" data-code="KeyS">S</span>
+                <span class="tecla-cap" data-acao="direita" data-code="KeyD">D</span>
+              </div>
+              <span>Mover</span>
+            </div>
+            <div class="spec-key-item">
+              <div class="teclas-caps">
+                <span class="tecla-cap" data-acao="a" data-code="KeyZ">Z</span>
+                <span class="tecla-cap" data-acao="b" data-code="KeyX">X</span>
+                <span class="tecla-cap" data-acao="c" data-code="KeyC">C</span>
+              </div>
+              <span>Pulo / Ação</span>
+            </div>
+            <div class="spec-key-item">
+              <div class="teclas-caps">
+                <span class="tecla-cap" data-acao="start" data-code="Enter">Enter</span>
+                <span class="tecla-cap" data-code="F5">F5</span>
+                <span class="tecla-cap" data-code="F8">F8</span>
+              </div>
+              <span>Start · Save · Load</span>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </section>
+
+    <!-- Resultado da validacao SHA-1 da ROM -->
     <div id="resultado" aria-live="polite" hidden>
       <div class="resultado-linha">
-        <b>Veredito:</b> <span id="veredito"></span>
+        <span class="resultado-label">Veredito</span>
+        <span id="veredito" class="resultado-valor"></span>
       </div>
       <div class="resultado-linha">
-        <b>SHA-1:</b> <code id="sha1"></code>
+        <span class="resultado-label">SHA-1</span>
+        <code id="sha1"></code>
       </div>
       <div class="resultado-linha">
-        <b>Tamanho:</b> <span id="tamanho"></span> bytes
+        <span class="resultado-label">Tamanho</span>
+        <span class="resultado-valor mono"><span id="tamanho"></span> bytes</span>
       </div>
     </div>
 
-    <!-- Barra de Controles Superiores -->
-    <div id="barra-controles" hidden>
-      <div class="controles-grupo">
-        <div class="item-controle">
-          <label for="seletor-fps">Taxa:</label>
-          <select id="seletor-fps" class="select-estilizado">
-            <option value="60">60 FPS (lógica a 60 Hz)</option>
-            <option value="desbloqueado">Desbloqueado (Monitor)</option>
-          </select>
-        </div>
-        <div class="item-controle">
-          <label for="seletor-crt">Filtro CRT:</label>
-          <select id="seletor-crt" class="select-estilizado">
-            <option value="desligado">Pixel Puro</option>
-            <option value="ligado">Scanlines CRT</option>
-          </select>
-        </div>
-        <div class="item-controle">
-          <label for="seletor-cram">Modo de Vídeo:</label>
-          <select id="seletor-cram" class="select-estilizado">
-            <option value="limpo" selected>Vídeo Limpo</option>
-            <option value="hardware">Hardware Real (CRAM)</option>
-          </select>
-        </div>
-      </div>
-      <div class="controles-grupo">
-        <button id="btn-resetar" type="button" class="btn btn-cinza" title="Reiniciar o jogo atual" aria-label="Reiniciar jogo">↺ Resetar</button>
-        <button id="btn-trocar-rom" type="button" class="btn btn-cinza" title="Carregar outra ROM" aria-label="Trocar ROM">📂 Trocar ROM</button>
-        <button id="btn-hud" type="button" class="btn btn-cinza" title="Alternar HUD de FPS e Performance (Tecla F3)" aria-label="Alternar HUD de FPS">📊 FPS (F3)</button>
-        <div class="slider-volume-grupo">
-          <button id="btn-mudo" type="button" class="btn btn-cinza" title="Alternar som" aria-label="Alternar mudo">🔊</button>
-          <input type="range" id="slider-volume" class="slider-volume" min="0" max="1" step="0.05" value="1" title="Volume Geral" aria-label="Volume geral">
-        </div>
-        <button id="btn-toque" type="button" class="btn btn-cinza" title="Alternar Controles de Toque na Tela" aria-label="Alternar controles de toque">📱 Toque</button>
-        <button id="btn-fullscreen" type="button" class="btn btn-cinza" title="Alternar Tela Cheia (Tecla F)" aria-label="Alternar tela cheia">⛶ Tela Cheia</button>
-      </div>
-    </div>
+    <!-- Banner de erro / aviso critico do nucleo -->
+    <p id="erro-jogo" role="alert" aria-live="polite" hidden></p>
 
-    <!-- Container da Tela do Jogo -->
+    <!-- Barra de Controles do Console (visivel durante a sessao ativa) -->
+    <section id="barra-controles" aria-label="Controles do console" hidden>
+      <div class="barra-linha">
+        <div class="controles-grupo">
+          <div class="item-controle">
+            <label for="seletor-fps">Taxa</label>
+            <div class="select-wrap">
+              <select id="seletor-fps" class="select-estilizado">
+                <option value="60">60 FPS (60 Hz)</option>
+                <option value="desbloqueado">Monitor (Livre)</option>
+              </select>
+              <svg class="select-seta" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+            </div>
+          </div>
+          <div class="item-controle">
+            <label for="seletor-crt">CRT</label>
+            <div class="select-wrap">
+              <select id="seletor-crt" class="select-estilizado">
+                <option value="desligado">Pixel Puro</option>
+                <option value="ligado">Scanlines</option>
+              </select>
+              <svg class="select-seta" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+            </div>
+          </div>
+          <div class="item-controle">
+            <label for="seletor-cram">Vídeo</label>
+            <div class="select-wrap">
+              <select id="seletor-cram" class="select-estilizado">
+                <option value="limpo" selected>Limpo</option>
+                <option value="hardware">CRAM Real</option>
+              </select>
+              <svg class="select-seta" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+            </div>
+          </div>
+        </div>
+
+        <div class="controles-grupo">
+          <button id="btn-resetar" type="button" class="btn btn-cinza" title="Reiniciar o jogo atual" aria-label="Reiniciar jogo">
+            <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8a4.5 4.5 0 1 1 1.32 3.18M3.5 4.5v3.5H7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+            <span>Resetar</span>
+          </button>
+          <button id="btn-trocar-rom" type="button" class="btn btn-cinza" title="Carregar outra ROM" aria-label="Trocar ROM">
+            <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 5.5h10v7H3v-7zm2-2h6l1 2H4l1-2z" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round" fill="none"/></svg>
+            <span>Trocar ROM</span>
+          </button>
+          <button id="btn-hud" type="button" class="btn btn-cinza" title="Alternar HUD de FPS e Performance (Tecla F3)" aria-label="Alternar HUD de FPS" aria-pressed="false">
+            <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 11.5L5.5 7l3 2.5L13.5 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+            <span>FPS (F3)</span>
+          </button>
+          <div class="slider-volume-grupo">
+            <button id="btn-mudo" type="button" class="btn btn-cinza btn-icone" title="Alternar som" aria-label="Silenciar som" aria-pressed="false">
+              <svg class="ico ico-som" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6.2h2.8L9 3.2v9.6L5.3 9.8H2.5V6.2zm8.7-.7a3.5 3.5 0 0 1 0 5m1.8-7a6 6 0 0 1 0 9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+              <svg class="ico ico-mudo" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6.2h2.8L9 3.2v9.6L5.3 9.8H2.5V6.2zm8.2.3l3.3 3.3m0-3.3l-3.3 3.3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+            </button>
+            <input type="range" id="slider-volume" class="slider-volume" min="0" max="1" step="0.05" value="1" title="Volume Geral" aria-label="Volume geral">
+          </div>
+          <button id="btn-toque" type="button" class="btn btn-cinza" title="Alternar Controles de Toque na Tela" aria-label="Alternar controles de toque" aria-pressed="false">
+            <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><rect x="4.5" y="2" width="7" height="12" rx="1.5" stroke="currentColor" stroke-width="1.35" fill="none"/><circle cx="8" cy="11.5" r="0.7" fill="currentColor"/></svg>
+            <span>Toque</span>
+          </button>
+          <button id="btn-fullscreen" type="button" class="btn btn-cinza" title="Alternar Tela Cheia (Tecla F)" aria-label="Alternar tela cheia">
+            <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+            <span>Tela Cheia</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Linha de Reproducao, Save States e Remapeamento -->
+      <div class="barra-linha barra-linha-secundaria">
+        <div class="controles-grupo">
+          <button id="btn-pausar" type="button" class="btn btn-cinza" title="Pausar ou retomar simulação" aria-label="Pausar simulação" aria-pressed="false">
+            <svg class="ico ico-pausar" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.2 3.5v9M10.8 3.5v9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            <svg class="ico ico-retomar" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.5l7.5 4.5L5 12.5V3.5z" fill="currentColor"/></svg>
+            <span class="btn-label">Pausar</span>
+          </button>
+          <button id="btn-passo" type="button" class="btn btn-cinza" title="Avançar exatamente 1 quadro (disponível em pausa)" aria-label="Avançar 1 quadro" disabled>
+            <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l5.5 4L4 12V4zm7.5 0v8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+            <span>+1 Quadro</span>
+          </button>
+          <button id="btn-rapido" type="button" class="btn btn-cinza" title="Aceleração 2x (ou segure Tab)" aria-label="Alternar velocidade 2x" aria-pressed="false">
+            <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5L7.5 8l-5 3.5v-7zm6 0L13.5 8l-5 3.5v-7z" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round" fill="none"/></svg>
+            <span>2x</span>
+          </button>
+        </div>
+
+        <div class="controles-grupo">
+          <div class="item-controle">
+            <label for="seletor-slot">Save</label>
+            <div class="select-wrap">
+              <select id="seletor-slot" class="select-estilizado" aria-label="Slot de Save State">
+                <option value="1">Slot 1</option>
+                <option value="2">Slot 2</option>
+                <option value="3">Slot 3</option>
+              </select>
+              <svg class="select-seta" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+            </div>
+          </div>
+          <button id="btn-salvar" type="button" class="btn btn-azul" title="Salvar estado determinístico no slot (Tecla F5)" aria-label="Salvar estado">
+            <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2.5h8.2L13.5 4.8v8.7H3v-11zm2.5 0v3.5h5V2.5m-5 11V9.2h5v4.3" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round" fill="none"/></svg>
+            <span>Salvar</span>
+          </button>
+          <button id="btn-carregar" type="button" class="btn btn-cinza" title="Carregar estado do slot (Tecla F8)" aria-label="Carregar estado">
+            <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5v7.5m0 0L5.2 7.2M8 10l2.8-2.8M3 12.8h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+            <span>Carregar</span>
+          </button>
+          <button id="btn-exportar-save" type="button" class="btn btn-cinza" title="Exportar save em arquivo .s1sav" aria-label="Exportar save">
+            <span>Exportar .s1sav</span>
+          </button>
+          <button id="btn-importar-save" type="button" class="btn btn-cinza" title="Importar arquivo .s1sav" aria-label="Importar save">
+            <span>Importar</span>
+          </button>
+          <input type="file" id="input-importar-save" accept=".s1sav,application/json" hidden>
+          <button id="btn-controles" type="button" class="btn btn-cinza" title="Personalizar teclas do controle" aria-label="Personalizar teclas">
+            <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="4" width="12" height="8" rx="1.5" stroke="currentColor" stroke-width="1.35" fill="none"/><path d="M4.5 7h1m2 0h1m2 0h1m-6 2.5h5" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/></svg>
+            <span>Teclas</span>
+          </button>
+          <span id="status-save" class="status-save" aria-live="polite" hidden></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Palco / Gabinete de Tela do Console -->
     <div id="container-tela" hidden>
       <canvas id="tela" width="320" height="224" tabindex="0" hidden></canvas>
       <div id="camada-crt" class="camada-crt"></div>
@@ -121,13 +344,13 @@
       </div>
     </div>
 
-    <!-- Controles Virtuais de Toque para Celular e Tablet -->
+    <!-- Controles Virtuais de Toque (Layout Mega Drive 3 Botoes) -->
     <div id="controles-toque" class="controles-toque-container" hidden>
       <div class="toque-dpad" id="toque-dpad">
         <button type="button" class="btn-toque dpad-btn dpad-cima" data-dir="cima" aria-label="Cima">▲</button>
         <div class="dpad-meio">
           <button type="button" class="btn-toque dpad-btn dpad-esq" data-dir="esquerda" aria-label="Esquerda">◀</button>
-          <div class="dpad-centro"></div>
+          <div class="dpad-centro" aria-hidden="true"></div>
           <button type="button" class="btn-toque dpad-btn dpad-dir" data-dir="direita" aria-label="Direita">▶</button>
         </div>
         <button type="button" class="btn-toque dpad-btn dpad-baixo" data-dir="baixo" aria-label="Baixo">▼</button>
@@ -144,95 +367,145 @@
       </div>
     </div>
 
-    <p id="aviso" hidden>🎮 Jogo carregado e áudio sincronizado. Clique na tela para focar e pressione <b>Start</b> (Enter ou Espaço) para jogar!</p>
-    <p id="erro-jogo" role="alert" aria-live="polite" hidden></p>
+    <p id="aviso" hidden>Jogo carregado e áudio sincronizado. Clique na tela para focar e pressione <b>Start</b> (Enter ou Espaço) para jogar.</p>
 
     <!-- Painel de Teclas Interativo com Iluminacao em Tempo Real -->
-    <div id="painel-teclas" hidden>
+    <section id="painel-teclas" aria-label="Mapeamento de controles ativo" hidden>
       <div class="teclas-titulo">
-        <span>🎮 Mapeamento de Controles</span>
-        <span class="teclas-dica">Clique na tela do jogo para focar</span>
+        <span>Mapeamento de Controles</span>
+        <span class="teclas-dica">Clique em "Teclas" para personalizar · F5/F8 Save/Load · Tab 2x</span>
       </div>
       <div class="teclas-grid">
         <div class="tecla-bloco">
           <div class="teclas-caps">
-            <span class="tecla-cap" data-code="KeyW">W</span>
-            <span class="tecla-cap" data-code="KeyA">A</span>
-            <span class="tecla-cap" data-code="KeyS">S</span>
-            <span class="tecla-cap" data-code="KeyD">D</span>
+            <span class="tecla-cap" data-acao="cima" data-code="KeyW">W</span>
+            <span class="tecla-cap" data-acao="esquerda" data-code="KeyA">A</span>
+            <span class="tecla-cap" data-acao="baixo" data-code="KeyS">S</span>
+            <span class="tecla-cap" data-acao="direita" data-code="KeyD">D</span>
           </div>
-          <span>ou Setas (Mover / Olhar)</span>
+          <span>ou Setas · Mover</span>
         </div>
         <div class="tecla-bloco">
           <div class="teclas-caps">
             <span class="tecla-cap" data-code="Space">Espaço</span>
-            <span class="tecla-cap" data-code="KeyZ">Z</span>
-            <span class="tecla-cap" data-code="KeyX">X</span>
-            <span class="tecla-cap" data-code="KeyC">C</span>
+            <span class="tecla-cap" data-acao="a" data-code="KeyZ">Z</span>
+            <span class="tecla-cap" data-acao="b" data-code="KeyX">X</span>
+            <span class="tecla-cap" data-acao="c" data-code="KeyC">C</span>
           </div>
-          <span>ou J / K / L (Pulo / Ação)</span>
+          <span>ou J/K/L · Pulo</span>
         </div>
         <div class="tecla-bloco">
           <div class="teclas-caps">
-            <span class="tecla-cap" data-code="Enter">Enter</span>
+            <span class="tecla-cap" data-acao="start" data-code="Enter">Enter</span>
             <span class="tecla-cap" data-code="KeyP">P</span>
           </div>
-          <span>Start / Pausa (ou Espaço no Título)</span>
+          <span>Start / Pausa</span>
         </div>
         <div class="tecla-bloco">
           <div class="teclas-caps">
             <span class="tecla-cap" data-code="KeyF">F</span>
+            <span class="tecla-cap" data-code="F5">F5</span>
+            <span class="tecla-cap" data-code="F8">F8</span>
           </div>
-          <span>Alternar Tela Cheia</span>
+          <span>Tela / Save / Load</span>
         </div>
       </div>
-    </div>
+    </section>
 
     <!-- Gaveta Retratil de Diagnostico e Telemetria -->
-    <div class="diag-wrapper">
+    <section class="diag-wrapper" aria-label="Telemetria e diagnóstico">
       <button id="btn-toggle-diag" type="button" class="btn-toggle-diag" aria-expanded="false" aria-controls="painel-diag">
-        <span>🛠️ Painel de Telemetria e Diagnóstico de Áudio</span>
-        <span id="diag-seta" aria-hidden="true">▼</span>
+        <span class="diag-toggle-left">
+          <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8h2.5l1.6-4.2 2.6 8.4L10.3 6 11.7 8h2.8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+          <span>Telemetria e Diagnóstico de Áudio</span>
+        </span>
+        <span id="diag-seta" class="diag-seta" aria-hidden="true">▼</span>
       </button>
 
       <div id="painel-diag" hidden>
         <div class="diag-cabecalho">
-          <span class="diag-titulo">Métricas em Tempo Real</span>
+          <div class="diag-titulo-grupo">
+            <span class="diag-titulo">Métricas em Tempo Real</span>
+            <span class="diag-subtitulo">Pipeline WebAudio, AudioWorklet e cadência do núcleo Wasm</span>
+          </div>
           <div class="diag-acoes">
-            <button id="btn-bipe" type="button" class="btn btn-azul" title="Toca um tom puro de 440 Hz">🔔 Testar Bipe (440 Hz)</button>
-            <button id="btn-audio" type="button" class="btn btn-verde" title="Retoma o contexto de áudio">🔊 Desbloquear Áudio</button>
+            <button id="btn-bipe" type="button" class="btn btn-azul" title="Toca um tom puro de 440 Hz">Testar Bipe (440 Hz)</button>
+            <button id="btn-audio" type="button" class="btn btn-verde" title="Retoma o contexto de áudio">Desbloquear Áudio</button>
           </div>
         </div>
-        <table id="tabela-diag">
-          <tr><td class="diag-col-label"><b>Estado do Áudio no Navegador:</b></td><td id="diag-estado" class="diag-mudo">Aguardando inicialização</td></tr>
-          <tr><td><b>Taxa de Amostragem do Navegador:</b></td><td id="diag-taxa">-</td></tr>
-          <tr><td><b>Pipeline em Uso:</b></td><td id="diag-pipeline">-</td></tr>
-          <tr><td><b>Taxa Apresentada (FPS real):</b></td><td id="diag-fps" class="diag-ativo">-</td></tr>
-          <tr><td><b>Tempo de Quadro Wasm (médio / p95):</b></td><td id="diag-tempo-wasm">-</td></tr>
-          <tr><td><b>Quadro Atual do Jogo:</b></td><td id="diag-quadro">0 (0.0s)</td></tr>
-          <tr><td><b>Amostras geradas no quadro:</b></td><td id="diag-amostras">0</td></tr>
-          <tr>
-            <td><b>Pico de Volume do Quadro:</b></td>
-            <td>
-              <span id="diag-pico">0.000</span>
-              <div id="barra-volume-container"><div id="barra-volume"></div></div>
-            </td>
-          </tr>
-          <tr><td><b>Pico Histórico Máximo:</b></td><td id="diag-pico-max">0.000</td></tr>
-          <tr><td><b>Quadros com Som Detectado:</b></td><td id="diag-quadros-som">0</td></tr>
-          <tr><td><b>Comunicação com AudioWorklet:</b></td><td id="diag-worklet">Aguardando...</td></tr>
-        </table>
+        <div class="diag-tabela-wrap">
+          <table id="tabela-diag">
+            <tr><td class="diag-col-label">Estado do Áudio no Navegador</td><td id="diag-estado" class="diag-mudo">Aguardando inicialização</td></tr>
+            <tr><td>Taxa de Amostragem</td><td id="diag-taxa">-</td></tr>
+            <tr><td>Pipeline em Uso</td><td id="diag-pipeline">-</td></tr>
+            <tr><td>Taxa Apresentada (FPS real)</td><td id="diag-fps" class="diag-ativo">-</td></tr>
+            <tr><td>Tempo de Quadro Wasm (médio / p95)</td><td id="diag-tempo-wasm">-</td></tr>
+            <tr><td>Quadro Atual do Jogo</td><td id="diag-quadro">0 (0.0s)</td></tr>
+            <tr><td>Amostras Geradas no Quadro</td><td id="diag-amostras">0</td></tr>
+            <tr>
+              <td>Pico de Volume do Quadro</td>
+              <td>
+                <div class="diag-volume-cell">
+                  <span id="diag-pico">0.000</span>
+                  <div id="barra-volume-container"><div id="barra-volume"></div></div>
+                </div>
+              </td>
+            </tr>
+            <tr><td>Pico Histórico Máximo</td><td id="diag-pico-max">0.000</td></tr>
+            <tr><td>Quadros com Som Detectado</td><td id="diag-quadros-som">0</td></tr>
+            <tr><td>Fila AudioWorklet</td><td id="diag-worklet">Aguardando...</td></tr>
+          </table>
+        </div>
         <div class="diag-rodape">
-          Dica: Os navegadores exigem uma interação do usuário para permitir saída de áudio.
+          Os navegadores exigem uma interação direta do usuário para liberar a saída de áudio.
         </div>
       </div>
-    </div>
+    </section>
 
-    <!-- Rodape com Informacoes e Links do Projeto -->
+    <!-- Rodape -->
     <footer class="rodape-projeto">
-      <p>WebSonic é uma reconstrução do Sonic 1 em Rust e WebAssembly, com foco em fidelidade e aprendizado.</p>
-      <p><a href="https://github.com/marcelo-franceschini/websonic" target="_blank" rel="noopener noreferrer">Repositório no GitHub</a> · <a href="https://github.com/marcelo-franceschini/websonic/blob/main/docs/requisitos.md" target="_blank" rel="noopener noreferrer">Requisitos e Fidelidade</a></p>
+      <p>WebSonic é uma reconstrução determinística do Sonic the Hedgehog (1991) em Rust e WebAssembly.</p>
+      <p class="rodape-links">
+        <a href="https://github.com/marcelo-franceschini/websonic" target="_blank" rel="noopener noreferrer">Repositório no GitHub</a>
+        <span aria-hidden="true">·</span>
+        <a href="https://github.com/marcelo-franceschini/websonic/blob/main/docs/requisitos.md" target="_blank" rel="noopener noreferrer">Requisitos e Fidelidade</a>
+      </p>
     </footer>
+  </main>
+
+  <!-- Modal de Remapeamento de Controles -->
+  <div id="modal-controles" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modal-controles-titulo" hidden>
+    <div class="modal-card">
+      <div class="modal-cabecalho">
+        <h2 id="modal-controles-titulo">Remapeamento de Controles</h2>
+        <button id="btn-fechar-controles" type="button" class="btn btn-cinza btn-icone-fechar" aria-label="Fechar janela de controles">
+          <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <p class="modal-subtitulo">Clique em qualquer tecla abaixo e pressione o novo botão do teclado. Pressione <b>Esc</b> para cancelar.</p>
+      <div id="lista-remap" class="lista-remap"></div>
+      <div class="modal-rodape">
+        <button id="btn-restaurar-controles" type="button" class="btn btn-cinza">Restaurar Padrão</button>
+        <button id="btn-concluir-controles" type="button" class="btn btn-azul">Concluir</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Instalacao PWA no iOS Safari -->
+  <div id="modal-ios-pwa" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modal-ios-titulo" hidden>
+    <div class="modal-card modal-card-compacto">
+      <div class="modal-cabecalho">
+        <h2 id="modal-ios-titulo">Instalar no iPhone / iPad</h2>
+        <button id="btn-fechar-ios-pwa" type="button" class="btn btn-cinza btn-icone-fechar" aria-label="Fechar instruções de instalação">
+          <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <ol class="lista-passos-ios">
+        <li>Toque no ícone <b>Compartilhar</b> na barra do Safari.</li>
+        <li>Role e selecione <b>Adicionar à Tela de Início</b>.</li>
+        <li>Confirme tocando em <b>Adicionar</b> para jogar em tela cheia e offline.</li>
+      </ol>
+    </div>
   </div>
 
   <script type="module" src="app.js"></script>

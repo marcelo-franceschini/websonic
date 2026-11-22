@@ -280,7 +280,7 @@ pub fn executar(args: &[String]) -> Result<(), String> {
             .map(String::as_str)
     };
     let dir = opc("--traces").ok_or("falta --traces")?;
-    let saida = opc("--saida").unwrap_or("docs/inventario-hardware.md");
+    let saida = opc("--saida").unwrap_or("docs/inventarios/inventario-hardware.md");
     let mut arquivos: Vec<_> = fs::read_dir(dir)
         .map_err(|e| e.to_string())?
         .filter_map(Result::ok)

@@ -19,3 +19,5 @@
 - [sintese.md](sintese.md): sintetizador unificado FM e PSG (Etapa 8), reamostragem, saida web e medicoes diferenciais.
 - [abertura.md](abertura.md): do boot à primeira demo (Etapa 7): medidas do oráculo, decisões D7.9 a D7.34, provas com a ROM (veredito IGUAL do quadro 0 ao 1166, com imagem, VRAM, CRAM e VSRAM), navegador e experimento do nível 2.
 - [desempenho-web.md](desempenho-web.md): diagnóstico de performance web, eliminação do compositor de candidatos, alocações zero e medidas em Wasm.
+- [frontend.md](frontend.md): arquitetura modular de `site/`, servidor local `server.mjs`, UI responsiva, PWA offline, Save States `.s1sav` e cobertura de testes JS.
+

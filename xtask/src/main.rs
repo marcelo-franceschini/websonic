@@ -1,25 +1,28 @@
 //! Comandos do projeto. Uso: `cargo xtask <comando>`.
 //!
-//! - `site`: monta o site em `dist/`.
-//! - `anti-rom`: procura ROM no repositório (extensão, tamanho e hash).
-//! - `rotulos`: gera `refs/rotulos.txt` (só o Marcelo roda; ver `rotulos.rs`).
-//! - `video-estado` e `video-comparar`: renderizador contra o oráculo (ver `video.rs`).
-//! - `inventario`: inventário de hardware a partir dos traces (ver `inventario.rs`).
-//! - `inventario-memoria`: inventário da memória compartilhada (ver `inventario_memoria.rs`).
-//! - `bugs-conhecidos`: lista de verificação dos trechos `FixBugs` (ver `bugs_conhecidos.rs`).
+//! - `site`: monta o site em `dist/` com Wasm SIMD, `wasm-opt` (se instalado), PWA e cache busting.
+//! - `verify-js`: executa a suite de testes unitarios do frontend em Node.js.
+//! - `bench`: monta o site, confere o tamanho do `.wasm` e roda testes de desempenho nativos e JS.
+//! - `anti-rom`: procura ROM no repositorio (extensao, tamanho e hash).
+//! - `rotulos`: gera `refs/rotulos.txt` (so o Marcelo roda; ver `rotulos.rs`).
+//! - `video-estado` e `video-comparar`: renderizador contra o oraculo (ver `video.rs`).
+//! - `inventario`: inventario de hardware a partir dos traces (ver `inventario.rs`).
+//! - `inventario-memoria`: inventario da memoria compartilhada (ver `inventario_memoria.rs`).
+//! - `bugs-conhecidos`: lista de verificacao dos trechos `FixBugs` (ver `bugs_conhecidos.rs`).
 //! - `inventario-68000`, `inventario-barramento`, `inventario-interrupcoes`: ver `inventarios5.rs`.
-//! - `inventario-som`, `ids-som`: inventário do som e lista de IDs (Etapa 6; ver `inventario_som.rs` e `ids_som.rs`).
+//! - `inventario-som`, `ids-som`: inventario do som e lista de IDs (Etapa 6; ver `inventario_som.rs` e `ids_som.rs`).
 //! - `corpus-meta`: escreve o `.meta` de um caso do corpus (ver `corpus.rs`).
 //! - `tas`: converte e confere TAS do TASVideos (ver `tas.rs`).
-//! - `descompressao-relatorio`: compara os descompressores com o oráculo (ver `descompressao.rs`).
+//! - `descompressao-relatorio`: compara os descompressores com o oraculo (ver `descompressao.rs`).
 //!
-//! O comando de fidelidade, o manifesto, os testes ocultos e os traces do corpus saíram daqui na
-//! 2.10: medem o que está certo e ficam no pacote congelado `crates/fidelidade/relatorio`
+//! O comando de fidelidade, o manifesto, os testes ocultos e os traces do corpus sairam daqui na
+//! 2.10: medem o que esta certo e ficam no pacote congelado `crates/fidelidade/relatorio`
 //! (`cargo fidelidade`).
 use std::path::PathBuf;
 use std::process::{Command, ExitCode};
 
 mod anti_rom;
+mod bench;
 mod bugs_conhecidos;
 mod corpus;
 mod descompressao;
@@ -34,7 +37,7 @@ mod site;
 mod tas;
 mod video;
 
-/// Raiz do repositório (o xtask fica em `<raiz>/xtask`).
+/// Raiz do repositorio (o xtask fica em `<raiz>/xtask`).
 fn raiz() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -46,7 +49,7 @@ fn raiz() -> PathBuf {
 fn rodar(cmd: &mut Command) -> Result<(), String> {
     let status = cmd
         .status()
-        .map_err(|e| format!("não consegui rodar {cmd:?}: {e}"))?;
+        .map_err(|e| format!("nao consegui rodar {cmd:?}: {e}"))?;
     if status.success() {
         Ok(())
     } else {
@@ -59,6 +62,8 @@ fn main() -> ExitCode {
     let resto = || std::env::args().skip(2).collect::<Vec<_>>();
     let resultado = match comando.as_deref() {
         Some("site") => site::montar(),
+        Some("verify-js") => bench::verificar_js(),
+        Some("bench") => bench::benchmark(),
         Some("gpu-comparar") => gpu_comparar::executar(&resto()),
         Some("anti-rom") => anti_rom::executar(),
         Some("rotulos") => rotulos::executar(&resto()),
@@ -77,7 +82,7 @@ fn main() -> ExitCode {
         Some("ids-som") => ids_som::executar(&resto()),
         _ => {
             eprintln!(
-                "uso: cargo xtask <site|anti-rom|rotulos|descompressao-relatorio|corpus-meta|tas|inventario|inventario-memoria|inventario-68000|inventario-barramento|inventario-interrupcoes|inventario-som|ids-som|bugs-conhecidos|video-estado|video-comparar>"
+                "uso: cargo xtask <site|verify-js|bench|anti-rom|rotulos|descompressao-relatorio|corpus-meta|tas|inventario|inventario-memoria|inventario-68000|inventario-barramento|inventario-interrupcoes|inventario-som|ids-som|bugs-conhecidos|video-estado|video-comparar>"
             );
             return ExitCode::from(2);
         }

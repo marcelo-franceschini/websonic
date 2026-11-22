@@ -7,7 +7,8 @@
 
 use crate::camadas::{
     LARGURA, ParametrosDosPlanos, Sprite, SpriteEmCache, desenhar_planos_compacto,
-    desenhar_sprites_compacto, ler_rolagem_h, resolver_ponto_compacto, varrer_sprites,
+    desenhar_sprites_compacto, ler_rolagem_h, resolver_ponto_compacto, resolver_ponto_sem_sprite,
+    varrer_sprites,
 };
 use crate::cor::da_palavra_cram;
 use crate::portas::{Efeitos, PontoDaCram, Vdp};
@@ -97,11 +98,12 @@ pub struct Renderizador {
     rolagem_h: (u16, u16),
     v_tela_cheia: (u16, u16),
     // Sprites.
-    cache: Vec<SpriteEmCache>,
-    cache_travado: Vec<SpriteEmCache>,
+    cache: [SpriteEmCache; 80],
+    cache_travado: [SpriteEmCache; 80],
     varridos: Vec<u8>,
     sprites: Vec<Sprite>,
     pontos_de_sprite: [u8; LARGURA],
+    linha_tem_sprite: bool,
     estado_sprites: EstadoDeSprites,
     // Pontos coloridos da CRAM: da linha atual e da anterior (índice 0 = ponto 18).
     pontos_atual: Vec<Option<u16>>,
@@ -137,11 +139,12 @@ impl Renderizador {
             travados: Registros::novo(),
             rolagem_h: (0, 0),
             v_tela_cheia: (0, 0),
-            cache: vec![SpriteEmCache::default(); 80],
-            cache_travado: vec![SpriteEmCache::default(); 80],
-            varridos: Vec::new(),
-            sprites: Vec::new(),
+            cache: [SpriteEmCache::default(); 80],
+            cache_travado: [SpriteEmCache::default(); 80],
+            varridos: Vec::with_capacity(20),
+            sprites: Vec::with_capacity(20),
             pontos_de_sprite: [0; LARGURA],
+            linha_tem_sprite: false,
             estado_sprites: EstadoDeSprites::default(),
             pontos_atual: vec![None; PONTOS_DA_CRAM],
             pontos_anterior: vec![None; PONTOS_DA_CRAM],
@@ -289,6 +292,13 @@ impl Renderizador {
                 self.disparar(e.evento);
             }
             p = p.saturating_add(1);
+            if !self.vdp.precisa_de_slots() {
+                self.ponto = p;
+                if p < fim {
+                    self.avancar_rapido(fim);
+                }
+                return;
+            }
         }
         self.ponto = fim;
     }
@@ -316,6 +326,9 @@ impl Renderizador {
     }
 
     fn drenar_cache_de_sprites(&mut self) {
+        if self.vdp.ao_gravar_vram.is_empty() {
+            return;
+        }
         let mut gravados = std::mem::take(&mut self.vdp.ao_gravar_vram);
         for &(endereco, valor) in &gravados {
             self.atualizar_cache_de_sprites(endereco, valor);
@@ -355,7 +368,7 @@ impl Renderizador {
                 }
             }
             Evento::InterrupcaoDeLinha => {
-                self.cache_travado.clone_from(&self.cache);
+                self.cache_travado = self.cache;
             }
             Evento::TravarRegistradores => {
                 self.travados = self.vdp.registros.clone();
@@ -540,25 +553,31 @@ impl Renderizador {
     }
 
     fn buscar_atributos(&mut self) {
-        let tabela = self.vdp.registros.tabela_de_sprites() & 0xffff;
         self.sprites.clear();
-        for id in &self.varridos {
-            let base = usize::try_from(tabela)
-                .unwrap_or(0)
-                .saturating_add(8 * usize::from(*id));
-            let ler = |d: usize| {
-                self.vdp
-                    .vram
-                    .get(base.saturating_add(d))
-                    .copied()
-                    .unwrap_or(0)
-            };
-            let bytes = [ler(4), ler(5), ler(6), ler(7)];
-            let cache = self
-                .cache
-                .get(usize::from(*id))
-                .copied()
-                .unwrap_or_default();
+        if self.varridos.is_empty() {
+            return;
+        }
+        let tabela = usize::try_from(self.vdp.registros.tabela_de_sprites() & 0xffff).unwrap_or(0);
+        for &id in &self.varridos {
+            let idx = usize::from(id);
+            let base = tabela.saturating_add(idx.saturating_mul(8));
+            let ini = base.saturating_add(4);
+            let bytes = self
+                .vdp
+                .vram
+                .get(ini..ini.saturating_add(4))
+                .and_then(|s| <[u8; 4]>::try_from(s).ok())
+                .unwrap_or_else(|| {
+                    let ler = |d: usize| {
+                        self.vdp
+                            .vram
+                            .get(base.saturating_add(d))
+                            .copied()
+                            .unwrap_or(0)
+                    };
+                    [ler(4), ler(5), ler(6), ler(7)]
+                });
+            let cache = self.cache.get(idx).copied().unwrap_or_default();
             self.sprites.push(Sprite::montar(cache, bytes));
         }
     }
@@ -583,24 +602,34 @@ impl Renderizador {
         if !self.vdp.imagem_ligada() {
             let fundo = self.cor_do_fundo();
             if linha < LINHAS_ATIVAS {
-                for x in usize::from(ponto_inicial)..LARGURA {
-                    self.quadro.definir(x, y, fundo);
+                let inicio = usize::from(ponto_inicial);
+                if let Some(fatia) = self
+                    .quadro
+                    .linha_mut(y)
+                    .and_then(|l| l.get_mut(inicio..LARGURA))
+                {
+                    fatia.fill(fundo);
                 }
             }
-            self.pontos_de_sprite.fill(0);
+            if self.linha_tem_sprite {
+                self.pontos_de_sprite.fill(0);
+                self.linha_tem_sprite = false;
+            }
             return;
         }
         if ponto_inicial == 0 {
             let pular_tiles = self.estado_sprites.pontos_desligados.div_ceil(2);
-            let estouro = desenhar_sprites_compacto(
-                &self.vdp.vram,
+            let (estouro, tem_sprite) = desenhar_sprites_compacto(
+                &self.vdp.tiles_8bpp,
                 &self.sprites,
                 linha,
                 pular_tiles,
                 self.estado_sprites.estouro_de_pontos_anterior,
+                self.linha_tem_sprite,
                 &mut self.pontos_de_sprite,
             );
             self.estado_sprites.estouro_de_pontos_anterior = estouro;
+            self.linha_tem_sprite = tem_sprite;
         }
         if linha >= LINHAS_ATIVAS {
             return;
@@ -618,7 +647,7 @@ impl Renderizador {
                 ini: i32::from(ponto_inicial),
                 fim: fim_linha,
             };
-            desenhar_planos_compacto(&par, &mut self.buf_a, &mut self.buf_b);
+            desenhar_planos_compacto(&par, &self.vdp.tiles_8bpp, &mut self.buf_a, &mut self.buf_b);
             // Só o desenho da linha inteira deixa os buffers válidos para a linha toda.
             self.chave_planos = if ponto_inicial == 0 {
                 Some(chave)
@@ -629,14 +658,32 @@ impl Renderizador {
         let fundo = self.vdp.registros.indice_do_fundo();
         let paleta = &self.vdp.cram_9bits;
         let inicio = usize::from(ponto_inicial);
-        if let Some(linha_do_quadro) = self.quadro.linha_mut(y) {
-            let pontos = self
-                .pontos_de_sprite
-                .iter()
-                .zip(self.buf_a.iter())
-                .zip(self.buf_b.iter());
-            for (destino, ((&s, &a), &b)) in linha_do_quadro.iter_mut().zip(pontos).skip(inicio) {
-                let idx = usize::from(resolver_ponto_compacto(s, a, b, fundo)) & 63;
+        if self.linha_tem_sprite {
+            if let (Some(destinos), Some(spr), Some(pa), Some(pb)) = (
+                self.quadro
+                    .linha_mut(y)
+                    .and_then(|l| l.get_mut(inicio..LARGURA)),
+                self.pontos_de_sprite.get(inicio..LARGURA),
+                self.buf_a.get(inicio..LARGURA),
+                self.buf_b.get(inicio..LARGURA),
+            ) {
+                for (destino, ((&s, &a), &b)) in destinos
+                    .iter_mut()
+                    .zip(spr.iter().zip(pa.iter()).zip(pb.iter()))
+                {
+                    let idx = usize::from(resolver_ponto_compacto(s, a, b, fundo)) & 63;
+                    *destino = paleta[idx];
+                }
+            }
+        } else if let (Some(destinos), Some(pa), Some(pb)) = (
+            self.quadro
+                .linha_mut(y)
+                .and_then(|l| l.get_mut(inicio..LARGURA)),
+            self.buf_a.get(inicio..LARGURA),
+            self.buf_b.get(inicio..LARGURA),
+        ) {
+            for (destino, (&a, &b)) in destinos.iter_mut().zip(pa.iter().zip(pb.iter())) {
+                let idx = usize::from(resolver_ponto_sem_sprite(a, b, fundo)) & 63;
                 *destino = paleta[idx];
             }
         }
@@ -754,5 +801,43 @@ mod testes {
         assert_eq!(linha[130], 448);
         assert_eq!(linha[319], 448);
         assert_eq!(linha.iter().filter(|p| **p != 448).count(), 129);
+    }
+
+    #[test]
+    fn saida_antecipada_de_avancar_devagar_preserva_eventos_da_linha() {
+        let mut r_lote = fundo_azul();
+        let mut r_passo = fundo_azul();
+        r_lote.avancar_ate(LINHA_DO_FIM_DO_QUADRO, 0);
+        r_passo.avancar_ate(LINHA_DO_FIM_DO_QUADRO, 0);
+
+        // Escrita isolada no comeco da linha 12: FIFO drena cedo e o resto da linha usa caminho rapido.
+        for r in [&mut r_lote, &mut r_passo] {
+            r.avancar_ate(12, 40);
+            controle(r, 12, 0xC000);
+            controle(r, 12, 0x0000);
+            r.aplicar(
+                12,
+                40,
+                Escrita::Dados {
+                    valor: 0x00E0,
+                    tamanho: 2,
+                },
+            );
+        }
+
+        // Um avanca direto ate o fim do quadro; o outro avanca em passos curtos de 8 mclk.
+        r_lote.avancar_ate(14, 0);
+        for linha in 12u16..14 {
+            let mut col = if linha == 12 { 48u64 } else { 0u64 };
+            while col < 3420 {
+                r_passo.avancar_ate(linha, col);
+                col = col.saturating_add(8);
+            }
+        }
+        r_passo.avancar_ate(14, 0);
+
+        assert_eq!(r_lote.posicao(), r_passo.posicao());
+        assert_eq!(r_lote.vdp().cram(), r_passo.vdp().cram());
+        assert_eq!(r_lote.quadro().pontos(), r_passo.quadro().pontos());
     }
 }

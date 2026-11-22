@@ -6,7 +6,7 @@ Fonte: arquivos `.s1tempo` dos casos: boot-demos, demos-quatro, lz-agua, partida
 
 Quadros: 29209. Com VBlank gravado: 26347. Quadros de lag (VBlank com o PC fora de `WaitForVBlank`): 337.
 
-Cada linha é uma rotina do original que o corpus interrompeu. É a lista de onde os pontos de checagem podem ser necessários: uma rotina que lê ou escreve memória compartilhada (`docs/inventario-memoria.md`) e aparece aqui precisa de ponto.
+Cada linha é uma rotina do original que o corpus interrompeu. É a lista de onde os pontos de checagem podem ser necessários: uma rotina que lê ou escreve memória compartilhada (`docs/inventarios/inventario-memoria.md`) e aparece aqui precisa de ponto.
 
 | rotina | nível | vezes | menor deslocamento | maior deslocamento |
 | --- | --- | --- | --- | --- |

@@ -141,23 +141,15 @@ impl Psg {
         {
             return false;
         }
-        // Descobre qual dos dois vem primeiro andando o divisor numa cópia (no máximo 4 ciclos).
-        let (mut a, mut b) = (self.prescaler_a, self.prescaler_b);
-        let mut serve_primeiro = true;
-        for _ in 0..4 {
-            let b_antes = b;
-            b = (b ^ a) & 1;
-            a ^= 1;
-            if a != 0 {
-                serve_primeiro = b_antes == 0;
-                break;
-            }
-        }
-        for _ in 0..4 {
-            if serve_primeiro {
+        // Nos 4 estados possiveis de (prescaler_a, prescaler_b), `serve_canal` vem antes de
+        // `fim_da_volta` exatamente quando os bits de paridade coincidem: (0,0) e (1,1).
+        if (self.prescaler_a & 1) == (self.prescaler_b & 1) {
+            for _ in 0..4 {
                 self.serve_canal();
                 self.fim_da_volta();
-            } else {
+            }
+        } else {
+            for _ in 0..4 {
                 self.fim_da_volta();
                 self.serve_canal();
             }

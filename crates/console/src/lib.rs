@@ -4,6 +4,7 @@
 //! e, nos DMAs da memória para a VDP, das palavras que o DMA leu. Esta ponte junta as duas coisas.
 //! No navegador a posição é nominal (sem tempo gravado, D7.5). No comparador a posição vem do
 //! oráculo (D7.3).
+#![forbid(unsafe_code)]
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -114,7 +115,52 @@ impl Ponte {
             0 => 0x1_0000,
             n => n,
         };
-        buffer.reserve(usize::try_from(n).unwrap_or(0));
+        let n_palavras = usize::try_from(n).unwrap_or(0);
+        let n_bytes = n_palavras.saturating_mul(2);
+        buffer.reserve(n_palavras);
+
+        // Caminho rapido para DMAs contiguos em ROM ou RAM 68k (preservando barramento aberto).
+        let addr24 = a & 0xFF_FFFF;
+        if addr24 < 0x40_0000 {
+            let ini = usize::try_from(addr24).unwrap_or(usize::MAX);
+            if let Some(fatia) = ini
+                .checked_add(n_bytes)
+                .and_then(|fim| mem.rom().get(ini..fim))
+            {
+                let mut ultima = None;
+                for par in fatia.chunks_exact(2) {
+                    let w = u16::from_be_bytes([par[0], par[1]]);
+                    buffer.push(w);
+                    ultima = Some(w);
+                }
+                if let Some(w) = ultima {
+                    mem.definir_barramento_aberto(w);
+                }
+                return (inicio, buffer.len());
+            }
+        } else if addr24 >= 0xE0_0000 {
+            let ini_ram = usize::try_from(addr24 & 0xFFFF).unwrap_or(usize::MAX);
+            let cabe_no_bloco = addr24
+                .checked_add(n.saturating_mul(2))
+                .is_some_and(|fim| fim <= 0x100_0000);
+            if cabe_no_bloco
+                && let Some(fatia) = ini_ram
+                    .checked_add(n_bytes)
+                    .and_then(|fim| mem.ram().get(ini_ram..fim))
+            {
+                let mut ultima = None;
+                for par in fatia.chunks_exact(2) {
+                    let w = u16::from_be_bytes([par[0], par[1]]);
+                    buffer.push(w);
+                    ultima = Some(w);
+                }
+                if let Some(w) = ultima {
+                    mem.definir_barramento_aberto(w);
+                }
+                return (inicio, buffer.len());
+            }
+        }
+
         for _ in 0..n {
             let w = mem.ler(a, Tamanho::Word).unwrap_or(0);
             buffer.push(u16::try_from(w & 0xFFFF).unwrap_or(0));
@@ -243,19 +289,14 @@ impl Ponte {
 
     /// Fecha o quadro e devolve a imagem em RGBA (320 por 224).
     pub fn fechar_quadro(&mut self) -> Vec<u8> {
-        let q = self.rend.fechar_quadro();
-        let mut rgba = Vec::with_capacity(LARGURA.saturating_mul(ALTURA).saturating_mul(4));
-        for y in 0..ALTURA {
-            for x in 0..LARGURA {
-                let c = q.ponto(x, y).unwrap_or(0);
-                let (b, g, r) = ((c >> 6) & 7, (c >> 3) & 7, c & 7);
-                // 3 bits para 8: replica os bits altos.
-                let exp = |v: u16| -> u8 {
-                    let v = u8::try_from(v).unwrap_or(0);
-                    (v << 5) | (v << 2) | (v >> 1)
-                };
-                rgba.extend([exp(r), exp(g), exp(b), 255]);
-            }
+        const EXP_3_PARA_8: [u8; 8] = [0, 36, 73, 109, 146, 182, 219, 255];
+        let pontos = self.rend.fechar_quadro().pontos();
+        let mut rgba = vec![0u8; LARGURA.saturating_mul(ALTURA).saturating_mul(4)];
+        for (px, &c) in rgba.chunks_exact_mut(4).zip(pontos.iter()) {
+            px[0] = EXP_3_PARA_8[usize::from(c & 7)];
+            px[1] = EXP_3_PARA_8[usize::from((c >> 3) & 7)];
+            px[2] = EXP_3_PARA_8[usize::from((c >> 6) & 7)];
+            px[3] = 255;
         }
         rgba
     }
@@ -263,13 +304,10 @@ impl Ponte {
     /// Hash simples (FNV-1a de 64 bits) da imagem de 9 bits, para testes.
     pub fn hash_da_imagem(&self) -> u64 {
         let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-        for y in 0..ALTURA {
-            for x in 0..LARGURA {
-                let c = self.rend.quadro().ponto(x, y).unwrap_or(0);
-                for b in c.to_le_bytes() {
-                    h ^= u64::from(b);
-                    h = h.wrapping_mul(0x0000_0100_0000_01B3);
-                }
+        for &c in self.rend.quadro().pontos() {
+            for b in c.to_le_bytes() {
+                h ^= u64::from(b);
+                h = h.wrapping_mul(0x0000_0100_0000_01B3);
             }
         }
         h
@@ -288,8 +326,8 @@ impl CapturasEventos {
     fn nova() -> Self {
         Self {
             ponte: Ponte::nova(),
-            saidas: Vec::new(),
-            palavras_dma: Vec::new(),
+            saidas: Vec::with_capacity(512),
+            palavras_dma: Vec::with_capacity(1024),
             linha_hblank: None,
         }
     }
@@ -355,13 +393,13 @@ impl Console {
             sint: Sintetizador::novo(),
             misturador: MisturadorSaida::novo(taxa_audio),
             quadro_num: 0,
-            buffer_audio_quadro: Vec::new(),
-            amostras_fm: Vec::new(),
-            amostras_psg: Vec::new(),
+            buffer_audio_quadro: Vec::with_capacity(2048),
+            amostras_fm: Vec::with_capacity(1024),
+            amostras_psg: Vec::with_capacity(4096),
             quadros_lag_pendentes: 0,
-            eventos_quadro: Vec::new(),
-            saidas_anteriores: Vec::new(),
-            saidas_reserva: Vec::new(),
+            eventos_quadro: Vec::with_capacity(4),
+            saidas_anteriores: Vec::with_capacity(64),
+            saidas_reserva: Vec::with_capacity(512),
         }
     }
 
@@ -472,20 +510,13 @@ impl Console {
         );
         self.escritas_no_quadro = self.saidas_reserva.len();
 
-        let n_saidas = self.saidas_reserva.len();
+        let n_saidas = self.saidas_reserva.len() as u64;
         {
             let cap = self.capturas.borrow();
             let dma_palavras = &cap.palavras_dma;
             for (i, (s, capturada, momento, linha_hblank)) in
                 self.saidas_reserva.iter().enumerate()
             {
-                let delta = if n_saidas > 0 {
-                    (MCLK_POR_QUADRO_NTSC.wrapping_mul(i as u64)) / (n_saidas as u64)
-                } else {
-                    0
-                };
-                let mclk_esc = mclk_inicio.wrapping_add(delta);
-
                 match s {
                     Saida::Vdp { .. } => {
                         if let Some(c) = capturada {
@@ -502,11 +533,26 @@ impl Console {
                         }
                     }
                     Saida::Ym { porta, valor } | Saida::YmZ80 { porta, valor } => {
-                        self.sint
-                            .agendar(mclk_esc, Chip::Fm, u32::from(*porta), *valor);
+                        let delta = if n_saidas > 0 {
+                            MCLK_POR_QUADRO_NTSC.wrapping_mul(i as u64) / n_saidas
+                        } else {
+                            0
+                        };
+                        self.sint.agendar(
+                            mclk_inicio.wrapping_add(delta),
+                            Chip::Fm,
+                            u32::from(*porta),
+                            *valor,
+                        );
                     }
                     Saida::Psg(valor) => {
-                        self.sint.agendar(mclk_esc, Chip::Psg, 0, *valor);
+                        let delta = if n_saidas > 0 {
+                            MCLK_POR_QUADRO_NTSC.wrapping_mul(i as u64) / n_saidas
+                        } else {
+                            0
+                        };
+                        self.sint
+                            .agendar(mclk_inicio.wrapping_add(delta), Chip::Psg, 0, *valor);
                     }
                     _ => {}
                 }
@@ -522,15 +568,9 @@ impl Console {
         self.misturador
             .alimentar_quadro_compacto(&self.amostras_fm, &self.amostras_psg);
 
-        // Extrai as amostras reamostradas para reprodução no navegador
-        self.buffer_audio_quadro.clear();
-        let disp = self.misturador.ocupacao_buffer();
-        if disp > 0 {
-            let total = disp.saturating_mul(2);
-            self.buffer_audio_quadro.resize(total, 0.0);
-            self.misturador
-                .extrair_bloco_worklet(&mut self.buffer_audio_quadro);
-        }
+        // Extrai as amostras reamostradas direto para o buffer do quadro (sem zero-fill previo)
+        self.misturador
+            .extrair_todos_intercalados(&mut self.buffer_audio_quadro);
 
         if imagem {
             self.ponte.fechar_quadro()
@@ -671,5 +711,29 @@ mod testes_captura_eventos {
         }
         ponte.fechar_quadro();
         assert_eq!(ponte.renderizador().vdp().cram()[1], 0x0EEE);
+    }
+
+    #[test]
+    fn dma_rapido_de_rom_equivale_a_leitura_palavra_a_palavra() {
+        let mut rom = vec![0u8; 0x100];
+        for (i, b) in rom.iter_mut().enumerate() {
+            *b = u8::try_from((i * 7 + 3) & 0xFF).unwrap_or(0);
+        }
+        let mut mem = Memoria::nova(rom.clone());
+        let mut ponte = Ponte::nova();
+        // Configura DMA de 16 palavras a partir do endereco 0x000020 na ROM.
+        ponte.regs[19] = 16;
+        ponte.regs[20] = 0;
+        ponte.regs[21] = 0x10; // base = 0x10 -> endereco = 0x20
+        ponte.regs[22] = 0;
+        ponte.regs[23] = 0;
+
+        let mut palavras = Vec::new();
+        let (ini, fim) = ponte.coletar_palavras_dma(&mut mem, &mut palavras);
+        assert_eq!((ini, fim), (0, 16));
+        for k in 0..16usize {
+            let esperado = u16::from_be_bytes([rom[0x20 + k * 2], rom[0x20 + k * 2 + 1]]);
+            assert_eq!(palavras[k], esperado);
+        }
     }
 }

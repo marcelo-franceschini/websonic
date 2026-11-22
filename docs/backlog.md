@@ -21,7 +21,7 @@ Uma linha por item: o que é, dono, etapa-alvo. Só entra aqui o que não bloque
 - Cobertura do corpus de video: so Sega, titulo, demos GHZ, MZ, SYZ (parcial) e 2000 quadros de LZ1. Faltam special stage, LZ com o Sonic dentro da agua por mais tempo, SLZ, SBZ, FZ, chefes, creditos e telas finais. Dono: Marcelo (gravar/escolher) e IA. Etapa-alvo: 7 a 12, rodar `video-comparar` em cada caso novo.
 - Medida em wasm do renderizador (`WEBSONIC_BENCH=1` passado ao wasmtime). Dono: Marcelo. Etapa-alvo: 4 (opcional) ou 7.
 - Desempate de cor com o segundo oraculo (`oraculo2 imagens`) nao foi necessario nesta etapa; implementar so se aparecer divergencia de cor. Dono: IA. Etapa-alvo: 14.
-- Lista estatica de memoria compartilhada (nomes citados pelas rotinas de interrupcao nos .asm de texto) para cruzar com `docs/inventario-memoria.md`. Dono: IA. Etapa-alvo: 5.
+- Lista estatica de memoria compartilhada (nomes citados pelas rotinas de interrupcao nos .asm de texto) para cruzar com `docs/inventarios/inventario-memoria.md`. Dono: IA. Etapa-alvo: 5.
 - Atos completos de cada zona nos testes ocultos (a Etapa 2 fecha com um caso por zona). Dono: Marcelo. Etapa-alvo: 14.
 - Mapa de rotulos sem tamanhos: o inventario de memoria agrupa pelo rotulo anterior, e pilha e areas sem rotulo caem na ultima variavel. Dono: IA. Etapa-alvo: 5.
 - Inventário de hardware sem E/S do 68000 (versão, controle, SRAM, TMSS) e sem DMA como evento; o mapa de acessos só cobre a RAM. Dono: IA. Etapa-alvo: 5 (a Etapa 5 precisa para a entrada e a versão).
@@ -41,7 +41,7 @@ Uma linha por item: o que é, dono, etapa-alvo. Só entra aqui o que não bloque
 - Reconstruir a imagem do contêiner para o congelamento valer. Dono: Marcelo. Etapa-alvo: já.
 - Mover `tas converter` e `tas conferir` do `xtask` para o `relatorio` (decidem o que fica no corpus; contraria D-R5). Dono: IA (patch) e Marcelo. Etapa-alvo: 5.
 - CI não cobre o pacote `relatorio` (workspace separado): `fmt`, `clippy` e `test` dele. Dono: Marcelo (`.github` é congelado). Etapa-alvo: 5.
-- `scripts/etapa2-fechamento.sh` lê o veredito do texto nos passos 4, 5 e 7 e `registrar` descarta o código de saída. Dono: IA. Etapa-alvo: 5.
+- `scripts/arquivo/etapa2-fechamento.sh` lê o veredito do texto nos passos 4, 5 e 7 e `registrar` descarta o código de saída. Dono: IA. Etapa-alvo: 5.
 - Universo estatico de desvios do original (decodificar o codigo sem executar) para saber quais desvios nenhum caso executou. O decodificador do jgenesis nao e publico; pede patch no oraculo. Dono: IA. Etapa-alvo: 14 (criterio 2 do pronto).
 - Anotar `decisao!` em `NemDecToRAM` e `NemDec` (porta da VDP). O piloto da Etapa 5 anota so `KosDec` e `EniDec`. Dono: IA. Etapa-alvo: 6.
 - Universo de desvios do Z80 (o programa do Z80 entra no nucleo na Etapa 6). Dono: IA. Etapa-alvo: 6.
